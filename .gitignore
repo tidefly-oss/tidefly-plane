@@ -1,0 +1,36 @@
+# Binaries
+dist/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+coverage.out
+/vendor/
+
+# Air (hot reload)
+tmp/
+
+# Environment files
+deploy/dev/.env
+deploy/prod/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Swagger (generated)
+docs/swagger.json
+docs/swagger.yaml
+docs/docs.go

@@ -12,11 +12,9 @@ During the alpha/beta phase, only the latest release receives security fixes.
 
 **Please do NOT report security vulnerabilities via GitHub Issues.**
 
-Report vulnerabilities responsibly
-via [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-backend/security/advisories/new).
+Report vulnerabilities responsibly via [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-backend/security/advisories/new).
 
 Include:
-
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
