@@ -358,24 +358,6 @@ func filterQuery(filters map[string][]string) string {
 	return string(b)
 }
 
-func ptr[T any](v T) *T { return &v }
-
-func readNDJSON(ctx context.Context, r io.Reader, fn func([]byte)) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) > 0 {
-			fn(line)
-		}
-	}
-	return scanner.Err()
-}
-
 func stripSHA(id string) string {
 	id = strings.TrimPrefix(id, "sha256:")
 	if len(id) > 12 {

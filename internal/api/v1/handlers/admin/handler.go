@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"github.com/danielgtaylor/huma/v2"
+	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"

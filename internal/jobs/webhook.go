@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"

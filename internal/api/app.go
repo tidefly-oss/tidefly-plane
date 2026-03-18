@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
+	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 

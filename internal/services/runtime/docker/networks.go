@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockernetwork "github.com/docker/docker/api/types/network"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 func (d *Runtime) ListNetworks(ctx context.Context) ([]runtime.Network, error) {

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"github.com/oklog/ulid/v2"
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

@@ -56,7 +56,7 @@ func (h *Handler) Logs(c *echo.Context) error {
 		default:
 		}
 		if _, err := io.ReadFull(logs, hdr); err != nil {
-			if err == io.EOF || errors.Is(io.ErrUnexpectedEOF, err) {
+			if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
 				_, err := fmt.Fprintf(resp, "event: done\ndata: {}\n\n")
 				if err != nil {
 					return err

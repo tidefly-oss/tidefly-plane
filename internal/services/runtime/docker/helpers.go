@@ -1,8 +1,8 @@
 package docker
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockernetwork "github.com/docker/docker/api/types/network"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 func mapStatus(state string) runtime.ContainerStatus {

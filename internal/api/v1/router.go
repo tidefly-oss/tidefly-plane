@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	"github.com/aarondl/authboss/v3"
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"

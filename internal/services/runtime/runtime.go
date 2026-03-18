@@ -184,7 +184,7 @@ type Runtime interface {
 	GetResources(ctx context.Context, containerID string) (*ResourceConfig, error)
 	UpdateResources(ctx context.Context, containerID string, cfg ResourceConfig) (*UpdateResult, error)
 
-	// ExecAttach — interaktive TTY-Session via WebSocket (bash → sh fallback)
+	// ExecAttach — interactive TTY-Session via WebSocket (bash → sh fallback)
 	ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error
 
 	// ListImages Images
@@ -225,11 +225,4 @@ func MapStatus(state string) ContainerStatus {
 	default:
 		return StatusUnknown
 	}
-}
-
-func UnixTime(v *int64) time.Time {
-	if v == nil {
-		return time.Time{}
-	}
-	return time.Unix(*v, 0)
 }

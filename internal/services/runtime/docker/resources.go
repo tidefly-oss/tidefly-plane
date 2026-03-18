@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 // UpdateResources implementiert die Hybrid-Strategie:

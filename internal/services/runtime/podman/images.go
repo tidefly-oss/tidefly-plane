@@ -72,7 +72,7 @@ func (p *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
 }
 
 // internalImageIDs returns the set of image IDs (short SHA) that are used
-// exclusively by containers labelled tidefly.internal=true. Images used by
+// exclusively by containers labeled tidefly.internal=true. Images used by
 // at least one non-internal container are NOT included so they remain visible.
 func (p *Runtime) internalImageIDs(ctx context.Context) (map[string]struct{}, error) {
 	var raw []struct {

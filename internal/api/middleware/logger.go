@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
 	"github.com/labstack/echo/v5"
+	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
 )
 
 type RequestLoggerOptions struct {

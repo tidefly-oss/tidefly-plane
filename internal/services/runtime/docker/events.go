@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockerevents "github.com/docker/docker/api/types/events"
 	dockerfilters "github.com/docker/docker/api/types/filters"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 var relevantActions = map[dockerevents.Action]runtime.ContainerEventType{
