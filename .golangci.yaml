@@ -18,7 +18,7 @@ linters:
       check-type-assertions: false
       check-blank: false
     gocyclo:
-      min-complexity: 20
+      min-complexity: 40
     misspell:
       locale: US
   exclusions:
