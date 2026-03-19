@@ -13,20 +13,19 @@ linters:
     - staticcheck
     - unused
     - whitespace
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+    gocyclo:
+      min-complexity: 20
+    misspell:
+      locale: US
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: false
-    check-blank: false
-  gocyclo:
-    min-complexity: 20
-  misspell:
-    locale: US
 
 issues:
   exclude-rules:
@@ -42,6 +41,9 @@ issues:
     - linters:
         - errcheck
       text: "Error return value of `huma.WriteErr` is not checked"
+    - path: ".*podman.*"
+      linters:
+        - bodyclose
   max-issues-per-linter: 0
   max-same-issues: 0
 
