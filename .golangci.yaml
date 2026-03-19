@@ -21,29 +21,28 @@ linters:
       min-complexity: 20
     misspell:
       locale: US
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - goconst
+      - path: "cmd/.*\\.go"
+        linters:
+          - govet
+      - linters:
+          - errcheck
+        text: "Error return value of `fmt.Fprintf` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `huma.WriteErr` is not checked"
+      - path: ".*podman.*"
+        linters:
+          - bodyclose
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-exclusions:
-  rules:
-    - path: "_test\\.go"
-      linters:
-        - goconst
-    - path: "cmd/.*\\.go"
-      linters:
-        - govet
-    - linters:
-        - errcheck
-      text: "Error return value of `fmt.Fprintf` is not checked"
-    - linters:
-        - errcheck
-      text: "Error return value of `huma.WriteErr` is not checked"
-    - path: ".*podman.*"
-      linters:
-        - bodyclose
 
 run:
   timeout: 5m
