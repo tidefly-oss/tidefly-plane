@@ -11,8 +11,6 @@ import (
 )
 
 func (p *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
-	// Collect image IDs used by internal (tidefly.internal=true) containers
-	// so we can hide them from the image list.
 	internalImageIDs, err := p.internalImageIDs(ctx)
 	if err != nil {
 		// Non-fatal — worst case we show internal images
@@ -44,7 +42,6 @@ func (p *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
 		id := derefStr(img.ID)
 		id = stripSHA(id)
 
-		// Skip images exclusively used by internal tidefly containers
 		if _, internal := internalImageIDs[id]; internal {
 			continue
 		}
@@ -71,9 +68,6 @@ func (p *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
 	return result, nil
 }
 
-// internalImageIDs returns the set of image IDs (short SHA) that are used
-// exclusively by containers labelled tidefly.internal=true. Images used by
-// at least one non-internal container are NOT included so they remain visible.
 func (p *Runtime) internalImageIDs(ctx context.Context) (map[string]struct{}, error) {
 	var raw []struct {
 		ImageID string            `json:"ImageID"`
@@ -91,7 +85,6 @@ func (p *Runtime) internalImageIDs(ctx context.Context) (map[string]struct{}, er
 		return nil, fmt.Errorf("status %d", code)
 	}
 
-	// Track how many containers use each image, and how many of those are internal.
 	type counts struct{ total, internal int }
 	usage := map[string]*counts{}
 
@@ -111,7 +104,6 @@ func (p *Runtime) internalImageIDs(ctx context.Context) (map[string]struct{}, er
 
 	result := make(map[string]struct{})
 	for imgID, cnt := range usage {
-		// Only hide if ALL containers using this image are internal
 		if cnt.total > 0 && cnt.total == cnt.internal {
 			result[imgID] = struct{}{}
 		}

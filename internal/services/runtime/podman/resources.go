@@ -136,7 +136,6 @@ func (p *Runtime) UpdateResources(
 		body.Memory = mem
 	}
 
-	// RestartPolicy via query param
 	q := url.Values{}
 	if cfg.RestartPolicy != "" {
 		q.Set("restartPolicy", cfg.RestartPolicy)
