@@ -9,7 +9,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ExecMessage — WebSocket message format (identical to Docker runtime).
 type ExecMessage struct {
 	Type string `json:"type"`
 	Data string `json:"data,omitempty"`
@@ -17,13 +16,6 @@ type ExecMessage struct {
 	Rows uint   `json:"rows,omitempty"`
 }
 
-// ExecAttach opens an interactive TTY session via Podman's Exec API
-// and bridges it with a gorilla WebSocket connection.
-//
-// Flow:
-//  1. POST /libpod/containers/{id}/exec  → create exec session, get ID
-//  2. POST /libpod/exec/{id}/start       → HTTP Upgrade to raw TCP (hijack)
-//  3. Bidirectional pipe: WebSocket ↔ raw TCP conn
 func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error {
 	shell := p.detectShell(ctx, containerID)
 
@@ -52,20 +44,17 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 	}
 	execID := createResult.ID
 
-	// Send shell info to frontend
 	shellInfo, _ := json.Marshal(ExecMessage{Type: "shell", Data: shell})
 	_ = ws.WriteMessage(websocket.TextMessage, shellInfo)
 
-	// 2. Start exec via HTTP Upgrade (hijack) directly on the Unix socket
 	conn, err := p.c.hijack(ctx, "/libpod/exec/"+execID+"/start", `{"Detach":false,"Tty":true,"h":24,"w":80}`)
 	if err != nil {
 		return fmt.Errorf("podman exec start hijack: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	errCh := make(chan error, 2)
 
-	// raw TCP → WebSocket (output)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -89,7 +78,6 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		}
 	}()
 
-	// WebSocket → raw TCP (input + resize)
 	go func() {
 		for {
 			msgType, raw, readErr := ws.ReadMessage()
@@ -124,7 +112,6 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 				}
 			case "resize":
 				if msg.Cols > 0 && msg.Rows > 0 {
-					// Resize via Podman exec resize endpoint
 					resizeBody := fmt.Sprintf(`{"h":%d,"w":%d}`, msg.Rows, msg.Cols)
 					_, _, _ = p.c.post(ctx, "/libpod/exec/"+execID+"/resize", nil, json.RawMessage(resizeBody))
 				}
@@ -142,7 +129,6 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 	return nil
 }
 
-// detectShell tries shells in order and returns the first available one.
 func (p *Runtime) detectShell(ctx context.Context, containerID string) string {
 	for _, shell := range []string{"/bin/bash", "/bin/sh", "/bin/ash", "redis-cli"} {
 		if p.canExec(ctx, containerID, shell) {
@@ -152,7 +138,6 @@ func (p *Runtime) detectShell(ctx context.Context, containerID string) string {
 	return "/bin/sh"
 }
 
-// canExec checks if a binary is executable inside the container.
 func (p *Runtime) canExec(ctx context.Context, containerID string, binary string) bool {
 	execBody := map[string]any{
 		"AttachStdout": true,

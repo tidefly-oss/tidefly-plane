@@ -12,7 +12,7 @@ import (
 func (d *Runtime) BuildImage(ctx context.Context, tag string, dockerfile string) (io.ReadCloser, error) {
 	buf := new(bytes.Buffer)
 	tw := tar.NewWriter(buf)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 
 	dfBytes := []byte(dockerfile)
 	if err := tw.WriteHeader(

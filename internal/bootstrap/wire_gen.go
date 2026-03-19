@@ -6,16 +6,12 @@
 
 package bootstrap
 
-import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api"
-)
-
 // Injectors from wire.go:
 
 // InitializeApp is the Wire entry point.
 // Wire reads this file and generates wire_gen.go with the full wiring.
 // Run: wire ./internal/bootstrap/
-func InitializeApp() (*api.App, func(), error) {
+func InitializeApp() (*App, func(), error) {
 	config, err := ProvideConfig()
 	if err != nil {
 		return nil, nil, err
@@ -73,7 +69,7 @@ func InitializeApp() (*api.App, func(), error) {
 		return nil, nil, err
 	}
 	notifierService := ProvideNotifierService(db, logger)
-	app := api.NewApp(config, logger, runtime, db, authboss, loader, service, gitService, webhookService, server, asynqClient, notifierService)
+	app := NewApp(config, logger, runtime, db, authboss, loader, service, gitService, webhookService, server, asynqClient, notifierService)
 	return app, func() {
 		cleanup5()
 		cleanup4()

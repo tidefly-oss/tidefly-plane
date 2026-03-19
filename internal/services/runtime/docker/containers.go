@@ -23,7 +23,7 @@ func (d *Runtime) ListContainers(ctx context.Context, all bool) ([]runtime.Conta
 	}
 	result := make([]runtime.Container, 0, len(list))
 	for _, c := range list {
-		if c.Labels["tidefly.internal"] == "true" {
+		if c.Labels[runtime.LabelInternal] == runtime.LabelTrue {
 			continue
 		}
 		name := ""

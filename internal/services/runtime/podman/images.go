@@ -104,7 +104,7 @@ func (p *Runtime) internalImageIDs(ctx context.Context) (map[string]struct{}, er
 			usage[imgID] = &counts{}
 		}
 		usage[imgID].total++
-		if c.Labels["tidefly.internal"] == "true" {
+		if c.Labels[runtime.LabelInternal] == runtime.LabelTrue {
 			usage[imgID].internal++
 		}
 	}

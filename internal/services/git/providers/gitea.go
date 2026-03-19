@@ -40,10 +40,6 @@ func NewGitea(token, baseURL string) *GiteaForgejo {
 	return &GiteaForgejo{token: token, baseURL: baseURL, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
-func NewForgejo(token, baseURL string) *GiteaForgejo {
-	return &GiteaForgejo{token: token, baseURL: baseURL, isForgejo: true, client: &http.Client{Timeout: 15 * time.Second}}
-}
-
 func (g *GiteaForgejo) GetInfo() types.ProviderInfo {
 	displayName := "Gitea"
 	if g.isForgejo {
@@ -61,7 +57,7 @@ func (g *GiteaForgejo) ValidateCredentials(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("gitea: validating credentials: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("gitea: invalid or expired token")
 	}
@@ -80,7 +76,7 @@ func (g *GiteaForgejo) ListRepositories(ctx context.Context) ([]types.Repository
 	if err != nil {
 		return nil, fmt.Errorf("gitea: listing repositories: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gitea: unexpected status %d", resp.StatusCode)
 	}
@@ -110,7 +106,7 @@ func (g *GiteaForgejo) GetRepository(ctx context.Context, owner, name string) (*
 	if err != nil {
 		return nil, fmt.Errorf("gitea: getting repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("gitea: repository %s/%s not found", owner, name)
 	}
@@ -141,7 +137,7 @@ func (g *GiteaForgejo) ListBranches(ctx context.Context, owner, name string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("gitea: listing branches: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gitea: unexpected status %d", resp.StatusCode)
 	}

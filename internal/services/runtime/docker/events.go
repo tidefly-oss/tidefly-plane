@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockerevents "github.com/docker/docker/api/types/events"
 	dockerfilters "github.com/docker/docker/api/types/filters"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 var relevantActions = map[dockerevents.Action]runtime.ContainerEventType{
@@ -49,7 +49,7 @@ func (d *Runtime) EventStream(ctx context.Context) (<-chan runtime.ContainerEven
 				if !ok {
 					continue
 				}
-				if msg.Actor.Attributes["tidefly.internal"] == "true" {
+				if msg.Actor.Attributes[runtime.LabelInternal] == runtime.LabelTrue {
 					continue
 				}
 

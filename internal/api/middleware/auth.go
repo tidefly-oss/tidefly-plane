@@ -9,8 +9,6 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// ── Echo Middleware (unverändert) ─────────────────────────────────────────────
-
 func RequireAuth(ab *authboss.Authboss) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -27,11 +25,6 @@ func RequireAuth(ab *authboss.Authboss) echo.MiddlewareFunc {
 	}
 }
 
-// ── Huma Middleware ───────────────────────────────────────────────────────────
-// Signatur: func(huma.Context, func(huma.Context))
-// huma.Context hat kein API()-Method — die huma.API Instanz wird per Closure
-// reingezogen, nicht vom Context gelesen.
-
 func RequireAuthHuma(api huma.API, ab *authboss.Authboss) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		cookie := ctx.Header("Cookie")
@@ -45,13 +38,13 @@ func RequireAuthHuma(api huma.API, ab *authboss.Authboss) func(huma.Context, fun
 		nr, err := ab.LoadClientState(w, r)
 
 		if err != nil {
-			huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
 			return
 		}
 		user, err := ab.LoadCurrentUser(&nr)
 
 		if err != nil || user == nil {
-			huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
 			return
 		}
 
@@ -69,7 +62,6 @@ func UserFromHumaCtx(ctx context.Context) authboss.User {
 	return u
 }
 
-// discardResponseWriter fängt Authboss-Writes ab die wir nicht brauchen.
 type discardResponseWriter struct {
 	header http.Header
 }

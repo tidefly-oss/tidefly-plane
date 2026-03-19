@@ -70,7 +70,7 @@ func (g *GitLab) ValidateCredentials(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("gitlab: validating credentials: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("gitlab: invalid or expired token")
@@ -92,7 +92,7 @@ func (g *GitLab) ListRepositories(ctx context.Context) ([]types.Repository, erro
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: listing repositories: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gitlab: unexpected status %d", resp.StatusCode)
@@ -132,7 +132,7 @@ func (g *GitLab) GetRepository(ctx context.Context, owner, name string) (*types.
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: getting repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("gitlab: repository %s/%s not found", owner, name)
@@ -171,7 +171,7 @@ func (g *GitLab) ListBranches(ctx context.Context, owner, name string) ([]types.
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: listing branches: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gitlab: unexpected status %d", resp.StatusCode)

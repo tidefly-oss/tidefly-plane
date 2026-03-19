@@ -158,17 +158,13 @@ type LogOptions struct {
 	Timestamps bool
 }
 
-// Runtime is the abstract interface for Docker, Podman, etc.
-// Implementations live in runtime/docker and runtime/podman.
 type Runtime interface {
 	Type() RuntimeType
 	Ping(ctx context.Context) error
 	SystemInfo(ctx context.Context) (SystemInfo, error)
 
-	// ListContainers lifecycle
 	ListContainers(ctx context.Context, all bool) ([]Container, error)
-	// ListAllContainers returns every container including tidefly.internal ones.
-	// Use only for host-level operations like port conflict detection.
+
 	ListAllContainers(ctx context.Context) ([]Container, error)
 	GetContainer(ctx context.Context, id string) (*ContainerDetails, error)
 	CreateContainer(ctx context.Context, spec ContainerSpec) error
@@ -180,33 +176,27 @@ type Runtime interface {
 	ContainerStats(ctx context.Context, id string) (io.ReadCloser, error)
 	BuildImage(ctx context.Context, tag string, dockerfile string) (io.ReadCloser, error)
 
-	// GetResources Resource Limits — Hybrid: live wo möglich, restart bei RAM-Verringerung
 	GetResources(ctx context.Context, containerID string) (*ResourceConfig, error)
 	UpdateResources(ctx context.Context, containerID string, cfg ResourceConfig) (*UpdateResult, error)
 
-	// ExecAttach — interaktive TTY-Session via WebSocket (bash → sh fallback)
 	ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error
 
-	// ListImages Images
 	ListImages(ctx context.Context) ([]Image, error)
 	DeleteImage(ctx context.Context, id string, force bool) error
 
-	// ListVolumes Volumes
 	ListVolumes(ctx context.Context) ([]Volume, error)
 	CreateVolume(ctx context.Context, name string) error
 	DeleteVolume(ctx context.Context, name string) error
 
-	// ListNetworks Networks
 	ListNetworks(ctx context.Context) ([]Network, error)
 	GetNetwork(ctx context.Context, id string) (*Network, error)
 	CreateNetwork(ctx context.Context, name string) error
 	DeleteNetwork(ctx context.Context, id string) error
 
-	// EventStream provides a real-time stream of container events (start, stop, die, etc.) for live updates in the UI.
 	EventStream(ctx context.Context) (<-chan ContainerEvent, <-chan error)
 }
 
-// MapStatus helper functions
+//nolint:whitespace
 func MapStatus(state string) ContainerStatus {
 	switch strings.ToLower(state) {
 
@@ -225,11 +215,4 @@ func MapStatus(state string) ContainerStatus {
 	default:
 		return StatusUnknown
 	}
-}
-
-func UnixTime(v *int64) time.Time {
-	if v == nil {
-		return time.Time{}
-	}
-	return time.Unix(*v, 0)
 }

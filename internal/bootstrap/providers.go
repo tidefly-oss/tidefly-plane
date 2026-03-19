@@ -11,7 +11,6 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api"
 	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/db"
 	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
@@ -42,7 +41,7 @@ var ProviderSet = wire.NewSet(
 	ProvideWebhookService,
 	ProvideJobServer,
 	ProvideNotifierService,
-	api.NewApp,
+	NewApp,
 )
 
 func ProvideConfig() (*config.Config, error) {

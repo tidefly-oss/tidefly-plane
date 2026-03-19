@@ -3,8 +3,8 @@ package middleware
 import (
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
 	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/logger"
 )
 
 func Recover(log *logger.Logger) echo.MiddlewareFunc {

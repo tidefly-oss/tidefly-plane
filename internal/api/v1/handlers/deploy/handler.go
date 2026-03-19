@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/config"

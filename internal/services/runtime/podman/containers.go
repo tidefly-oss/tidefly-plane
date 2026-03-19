@@ -44,7 +44,7 @@ func (p *Runtime) ListContainers(ctx context.Context, all bool) ([]runtime.Conta
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		if labels["tidefly.internal"] == "true" {
+		if labels[runtime.LabelInternal] == runtime.LabelTrue {
 			continue
 		}
 

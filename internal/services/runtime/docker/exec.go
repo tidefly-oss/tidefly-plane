@@ -10,7 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ExecMessage — WebSocket-Nachrichtenformat
 type ExecMessage struct {
 	Type string `json:"type"`
 	Data string `json:"data,omitempty"`
@@ -18,11 +17,9 @@ type ExecMessage struct {
 	Rows uint   `json:"rows,omitempty"`
 }
 
-// ExecAttach öffnet eine interaktive TTY-Session und bridged sie mit gorilla WebSocket.
 func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error {
 	shell := d.detectShell(ctx, containerID)
 
-	// redis-cli braucht -i flag für interaktiven Modus im TTY
 	cmd := []string{shell}
 	if shell == "redis-cli" {
 		cmd = []string{"redis-cli", "-i"}
@@ -58,13 +55,11 @@ func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		},
 	)
 
-	// Shell-Info ans Frontend schicken damit die Statusbar korrekt angezeigt wird
 	shellInfo, _ := json.Marshal(ExecMessage{Type: "shell", Data: shell})
 	_ = ws.WriteMessage(websocket.TextMessage, shellInfo)
 
 	errCh := make(chan error, 2)
 
-	// Docker → WebSocket (output)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -88,12 +83,10 @@ func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		}
 	}()
 
-	// WebSocket → Docker (input + resize)
 	go func() {
 		for {
 			msgType, raw, err := ws.ReadMessage()
 			if err != nil {
-				// websocket.IsCloseError: normales Close vom Client (Tab-Wechsel)
 				if websocket.IsCloseError(
 					err,
 					websocket.CloseNormalClosure,
@@ -107,7 +100,6 @@ func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 				return
 			}
 
-			// Ping/Pong/Close frames ignorieren
 			if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
 				continue
 			}
@@ -133,7 +125,6 @@ func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 					)
 				}
 			case "close":
-				// Explizite Close-Message vom Frontend (Vite Proxy Problem)
 				errCh <- nil
 				return
 			}
@@ -147,8 +138,6 @@ func (d *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 	return nil
 }
 
-// detectShell probiert Shells der Reihe nach durch — robuster für minimale Images.
-// Reihenfolge: bash → sh → ash (Alpine) → redis-cli als letzter Ausweg
 func (d *Runtime) detectShell(ctx context.Context, containerID string) string {
 	candidates := []string{"/bin/bash", "/bin/sh", "/bin/ash", "redis-cli"}
 	for _, shell := range candidates {
@@ -156,11 +145,9 @@ func (d *Runtime) detectShell(ctx context.Context, containerID string) string {
 			return shell
 		}
 	}
-	// Absoluter Fallback — wird wahrscheinlich scheitern, aber bessere Fehlermeldung
 	return "/bin/sh"
 }
 
-// canExec prüft ob ein Binary im Container ausführbar ist.
 func (d *Runtime) canExec(ctx context.Context, containerID string, binary string) bool {
 	execResp, err := d.client.ContainerExecCreate(
 		ctx, containerID, container.ExecOptions{
@@ -178,12 +165,10 @@ func (d *Runtime) canExec(ctx context.Context, containerID string, binary string
 	}
 	resp.Close()
 
-	// Exec-Status prüfen
 	inspect, err := d.client.ContainerExecInspect(ctx, execResp.ID)
 	if err != nil {
 		return false
 	}
-	// Exit code 0 oder 1 = Binary existiert (1 = falsche Args aber Binary da)
-	// Exit code 126/127 = nicht gefunden
+
 	return inspect.ExitCode != 126 && inspect.ExitCode != 127
 }

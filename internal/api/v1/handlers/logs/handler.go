@@ -138,7 +138,7 @@ func (h *Handler) StreamAppLogs(c *echo.Context) error {
 	defer poll.Stop()
 
 	sendEvent := func(event, data string) {
-		fmt.Fprintf(resp, "event: %s\ndata: %s\n\n", event, data)
+		_, _ = fmt.Fprintf(resp, "event: %s\ndata: %s\n\n", event, data)
 		flusher.Flush()
 	}
 
@@ -147,7 +147,7 @@ func (h *Handler) StreamAppLogs(c *echo.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-heartbeat.C:
-			fmt.Fprintf(resp, ": heartbeat\n\n")
+			_, _ = fmt.Fprintf(resp, ": heartbeat\n\n")
 			flusher.Flush()
 		case <-poll.C:
 			query := h.db.Model(&models.AppLog{}).Where("id > ?", lastID).Order("id ASC")

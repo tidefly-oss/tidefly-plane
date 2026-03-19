@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"github.com/hibiken/asynq"
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
 )
 
 func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error {
@@ -19,7 +19,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 	}
 	_ = json.Unmarshal(t.Payload(), &payload)
 
-	// Fallback auf sinnvolle Defaults
 	if payload.LogRetentionDays <= 0 {
 		payload.LogRetentionDays = 30
 	}
@@ -33,7 +32,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		payload.MetricsRetentionDays = 30
 	}
 
-	// 1. App Logs
 	appLogCutoff := time.Now().AddDate(0, 0, -payload.LogRetentionDays)
 	result := h.db.WithContext(ctx).
 		Where("created_at < ?", appLogCutoff).
@@ -42,7 +40,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("log retention: delete app logs: %w", result.Error)
 	}
 
-	// 2. Audit Logs
 	auditCutoff := time.Now().AddDate(0, 0, -payload.AuditRetentionDays)
 	auditResult := h.db.WithContext(ctx).
 		Where("created_at < ?", auditCutoff).
@@ -51,7 +48,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("log retention: delete audit logs: %w", auditResult.Error)
 	}
 
-	// 3. Notifications — nur acknowledged UND älter als retention window
 	notifCutoff := time.Now().AddDate(0, 0, -payload.NotificationRetentionDays)
 	notifResult := h.db.WithContext(ctx).
 		Where("acknowledged_at IS NOT NULL AND acknowledged_at < ?", notifCutoff).
@@ -60,7 +56,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("log retention: delete notifications: %w", notifResult.Error)
 	}
 
-	// 4. System Metrics
 	metricsCutoff := time.Now().AddDate(0, 0, -payload.MetricsRetentionDays)
 	metricsResult := h.db.WithContext(ctx).
 		Where("collected_at < ?", metricsCutoff).

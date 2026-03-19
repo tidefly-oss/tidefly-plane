@@ -42,13 +42,13 @@ func (s *Service) Send(ctx context.Context, event Event) {
 	}
 
 	if settings.SlackWebhookURL != "" {
-		go s.sendSlack(settings.SlackWebhookURL, event)
+		go s.sendSlack(context.Background(), settings.SlackWebhookURL, event)
 	}
 	if settings.DiscordWebhookURL != "" {
-		go s.sendDiscord(settings.DiscordWebhookURL, event)
+		go s.sendDiscord(context.Background(), settings.DiscordWebhookURL, event)
 	}
 	if settings.SMTPHost != "" && settings.SMTPFrom != "" {
-		go s.sendEmail(settings, event)
+		go s.sendEmail(context.Background(), settings, event)
 	}
 }
 
@@ -71,17 +71,17 @@ func (s *Service) Test(ctx context.Context, channel string) error {
 		if settings.SlackWebhookURL == "" {
 			return s.missingURL("slack")
 		}
-		s.sendSlack(settings.SlackWebhookURL, event)
+		s.sendSlack(ctx, settings.SlackWebhookURL, event)
 	case "discord":
 		if settings.DiscordWebhookURL == "" {
 			return s.missingURL("discord")
 		}
-		s.sendDiscord(settings.DiscordWebhookURL, event)
+		s.sendDiscord(ctx, settings.DiscordWebhookURL, event)
 	case "email":
 		if settings.SMTPHost == "" {
 			return s.missingURL("smtp")
 		}
-		s.sendEmail(settings, event)
+		s.sendEmail(ctx, settings, event)
 	default:
 		return s.missingURL("unknown channel")
 	}
@@ -90,28 +90,29 @@ func (s *Service) Test(ctx context.Context, channel string) error {
 
 // ── Slack ─────────────────────────────────────────────────────────────────────
 
-func (s *Service) sendSlack(webhookURL string, event Event) {
+func (s *Service) sendSlack(ctx context.Context, webhookURL string, event Event) {
 	emoji := ":white_check_mark:"
-	if event.Level == "warning" {
+	switch event.Level {
+	case "warning":
 		emoji = ":warning:"
-	} else if event.Level == "error" {
+	case "error":
 		emoji = ":x:"
 	}
-
 	payload := map[string]any{
 		"text": fmt.Sprintf("%s *%s*\n%s", emoji, event.Title, event.Message),
 	}
-	s.postJSON(webhookURL, payload)
+	s.postJSON(ctx, webhookURL, payload)
 }
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 
-func (s *Service) sendDiscord(webhookURL string, event Event) {
-	color := 0x57F287 // green
-	if event.Level == "warning" {
-		color = 0xFEE75C // yellow
-	} else if event.Level == "error" {
-		color = 0xED4245 // red
+func (s *Service) sendDiscord(ctx context.Context, webhookURL string, event Event) {
+	color := 0x57F287
+	switch event.Level {
+	case "warning":
+		color = 0xFEE75C
+	case "error":
+		color = 0xED4245
 	}
 
 	payload := map[string]any{
@@ -127,12 +128,12 @@ func (s *Service) sendDiscord(webhookURL string, event Event) {
 			},
 		},
 	}
-	s.postJSON(webhookURL, payload)
+	s.postJSON(ctx, webhookURL, payload)
 }
 
 // ── SMTP ──────────────────────────────────────────────────────────────────────
 
-func (s *Service) sendEmail(settings models.SystemSettings, event Event) {
+func (s *Service) sendEmail(ctx context.Context, settings models.SystemSettings, event Event) {
 	s.log.Info(
 		"notifier", fmt.Sprintf(
 			"sending email: host=%s port=%d from=%s tls=%v",
@@ -160,16 +161,19 @@ func (s *Service) sendEmail(settings models.SystemSettings, event Event) {
 
 	if settings.SMTPTLSEnabled {
 		tlsCfg := &tls.Config{ServerName: settings.SMTPHost}
-		conn, err := tls.Dial("tcp", addr, tlsCfg)
+		dialer := &tls.Dialer{Config: tlsCfg}
+		conn, err := dialer.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
+
 		client, err := smtp.NewClient(conn, settings.SMTPHost)
 		if err != nil {
 			return
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
+
 		if auth != nil {
 			if err := client.Auth(auth); err != nil {
 				return
@@ -185,23 +189,29 @@ func (s *Service) sendEmail(settings models.SystemSettings, event Event) {
 		if err != nil {
 			return
 		}
-		fmt.Fprint(w, body)
-		w.Close()
-		client.Quit()
+		if _, err := fmt.Fprint(w, body); err != nil {
+			return
+		}
+		if err := w.Close(); err != nil {
+			return
+		}
+		_ = client.Quit()
 	} else {
-		smtp.SendMail(addr, auth, settings.SMTPFrom, []string{settings.SMTPFrom}, []byte(body))
+		if err := smtp.SendMail(addr, auth, settings.SMTPFrom, []string{settings.SMTPFrom}, []byte(body)); err != nil {
+			s.log.Error("notifier", "send email failed", err)
+		}
 	}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func (s *Service) postJSON(url string, payload any) {
+func (s *Service) postJSON(ctx context.Context, url string, payload any) {
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return
 	}
@@ -210,7 +220,7 @@ func (s *Service) postJSON(url string, payload any) {
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 func (s *Service) missingURL(channel string) error {

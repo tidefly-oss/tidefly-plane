@@ -53,7 +53,7 @@ func (g *GitHub) GetInfo() types.ProviderInfo {
 }
 
 func (g *GitHub) ValidateCredentials(ctx context.Context) error {
-	req, err := g.newRequest(ctx, http.MethodGet, "https://api.github.com/user", nil)
+	req, err := g.newRequest(ctx, http.MethodGet, "https://api.github.com/user")
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (g *GitHub) ValidateCredentials(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("github: validating credentials: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("github: invalid or expired token")
@@ -75,7 +75,7 @@ func (g *GitHub) ValidateCredentials(ctx context.Context) error {
 
 func (g *GitHub) ListRepositories(ctx context.Context) ([]types.Repository, error) {
 	url := "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member"
-	req, err := g.newRequest(ctx, http.MethodGet, url, nil)
+	req, err := g.newRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (g *GitHub) ListRepositories(ctx context.Context) ([]types.Repository, erro
 	if err != nil {
 		return nil, fmt.Errorf("github: listing repositories: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github: unexpected status %d", resp.StatusCode)
@@ -114,7 +114,7 @@ func (g *GitHub) ListRepositories(ctx context.Context) ([]types.Repository, erro
 
 func (g *GitHub) GetRepository(ctx context.Context, owner, name string) (*types.Repository, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, name)
-	req, err := g.newRequest(ctx, http.MethodGet, url, nil)
+	req, err := g.newRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (g *GitHub) GetRepository(ctx context.Context, owner, name string) (*types.
 	if err != nil {
 		return nil, fmt.Errorf("github: getting repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("github: repository %s/%s not found", owner, name)
@@ -153,7 +153,7 @@ func (g *GitHub) GetRepository(ctx context.Context, owner, name string) (*types.
 
 func (g *GitHub) ListBranches(ctx context.Context, owner, name string) ([]types.Branch, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/branches?per_page=100", owner, name)
-	req, err := g.newRequest(ctx, http.MethodGet, url, nil)
+	req, err := g.newRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (g *GitHub) ListBranches(ctx context.Context, owner, name string) ([]types.
 	if err != nil {
 		return nil, fmt.Errorf("github: listing branches: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github: unexpected status %d", resp.StatusCode)
@@ -184,7 +184,7 @@ func (g *GitHub) ListBranches(ctx context.Context, owner, name string) ([]types.
 	return branches, nil
 }
 
-func (g *GitHub) newRequest(ctx context.Context, method, url string, body interface{}) (*http.Request, error) {
+func (g *GitHub) newRequest(ctx context.Context, method, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("github: creating request: %w", err)

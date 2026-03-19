@@ -1,9 +1,13 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -29,38 +33,46 @@ func CheckContainerAccess(c *echo.Context, db *gorm.DB, labels map[string]string
 	if user == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
 	}
-
-	// Admins have unrestricted access.
 	if user.IsAdmin() {
 		return nil
 	}
-
-	// For members: resolve the project this container belongs to.
-	projectID, ok := labels["tidefly.project_id"]
-	if !ok || projectID == "" {
-		// Container has no project label → not a project container → members cannot access it.
-		return c.JSON(
-			http.StatusForbidden, map[string]string{
-				"message": "access denied: container is not part of any project",
-			},
-		)
+	if err := checkProjectMembership(db, user.ID, labels); err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"message": err.Error()})
 	}
+	return nil
+}
 
-	// Check membership via the project_members join table.
+func CheckContainerAccessHuma(ctx context.Context, db *gorm.DB, labels map[string]string) error {
+	u := UserFromHumaCtx(ctx)
+	if u == nil {
+		return huma.Error401Unauthorized("unauthorized")
+	}
+	user, ok := u.(*models.User)
+	if !ok {
+		return huma.Error401Unauthorized("unauthorized")
+	}
+	if user.IsAdmin() {
+		return nil
+	}
+	if err := checkProjectMembership(db, user.ID, labels); err != nil {
+		return huma.Error403Forbidden(err.Error())
+	}
+	return nil
+}
+
+func checkProjectMembership(db *gorm.DB, userID string, labels map[string]string) error {
+	projectID, exists := labels["tidefly.project_id"]
+	if !exists || projectID == "" {
+		return fmt.Errorf("access denied: container is not part of any project")
+	}
 	var count int64
-	err := db.Table("project_members").
-		Where("project_id = ? AND user_id = ?", projectID, user.ID).
-		Count(&count).Error
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "access check failed"})
+	if err := db.Table("project_members").
+		Where("project_id = ? AND user_id = ?", projectID, userID).
+		Count(&count).Error; err != nil {
+		return fmt.Errorf("access check failed")
 	}
 	if count == 0 {
-		return c.JSON(
-			http.StatusForbidden, map[string]string{
-				"message": "access denied: you are not a member of this container's project",
-			},
-		)
+		return fmt.Errorf("access denied: you are not a member of this container's project")
 	}
-
 	return nil
 }

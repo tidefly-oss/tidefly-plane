@@ -202,7 +202,7 @@ func (w *Watcher) watchRunning(ctx context.Context, c runtime.Container) {
 	if err != nil {
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	w.processStream(ctx, c, bufio.NewReaderSize(rc, 32*1024))
 }
 
@@ -217,7 +217,7 @@ func (w *Watcher) scanExited(ctx context.Context, c runtime.Container) {
 	if err != nil {
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	w.processStream(ctx, c, bufio.NewReaderSize(rc, 32*1024))
 }
 

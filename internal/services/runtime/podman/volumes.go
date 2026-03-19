@@ -31,7 +31,7 @@ func (p *Runtime) ListVolumes(ctx context.Context) ([]runtime.Volume, error) {
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		if labels["tidefly.internal"] == "true" {
+		if labels[runtime.LabelInternal] == runtime.LabelTrue {
 			continue
 		}
 

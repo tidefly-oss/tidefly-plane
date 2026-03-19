@@ -11,24 +11,21 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	app, cleanup, err := bootstrap.InitializeApp()
 	if err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "init error: %v\n", err)
-		if err != nil {
-			return
-		}
-		os.Exit(1)
+		return fmt.Errorf("init: %w", err)
 	}
 	defer cleanup()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.Run(ctx); err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
-		if err != nil {
-			return
-		}
-		os.Exit(1)
-	}
+	return app.Run(ctx)
 }

@@ -77,24 +77,16 @@ tasks:
       - "{{.DEV_CMD}} up -d traefik postgres redis mailpit"
       - echo 'Dev stack started'
 
-  dev:up:minio:
-    desc: Start dev infra with MinIO
-    preconditions:
-      - sh: test -f {{.DEV_ENV}}
-        msg: Run task setup first
-    cmds:
-      - "{{.DEV_CMD}} --profile minio up -d"
-
   dev:down:
     desc: Stop dev infra
     cmds:
-      - "{{.DEV_CMD}} --profile minio down"
+      - "{{.DEV_CMD}} down"
 
   dev:reset:
     desc: Stop dev infra and delete all volumes
     prompt: Delete all volumes? This will destroy all data!
     cmds:
-      - "{{.DEV_CMD}} --profile minio down -v"
+      - "{{.DEV_CMD}} down -v"
 
   dev:logs:
     desc: Follow dev logs
@@ -104,7 +96,7 @@ tasks:
   dev:ps:
     desc: Show dev service status
     cmds:
-      - "{{.DEV_CMD}} --profile minio ps"
+      - "{{.DEV_CMD}} ps"
 
   dev:restart:
     desc: Restart a single service (SERVICE=postgres)

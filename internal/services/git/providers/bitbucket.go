@@ -63,7 +63,7 @@ func (b *Bitbucket) ValidateCredentials(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("bitbucket: validating credentials: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("bitbucket: invalid credentials")
 	}
@@ -86,7 +86,7 @@ func (b *Bitbucket) ListRepositories(ctx context.Context) ([]types.Repository, e
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket: listing repositories: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("bitbucket: unexpected status %d", resp.StatusCode)
 	}
@@ -118,7 +118,7 @@ func (b *Bitbucket) GetRepository(ctx context.Context, owner, name string) (*typ
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket: getting repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("bitbucket: repository %s/%s not found", owner, name)
 	}
@@ -149,7 +149,7 @@ func (b *Bitbucket) ListBranches(ctx context.Context, owner, name string) ([]typ
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket: listing branches: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("bitbucket: unexpected status %d", resp.StatusCode)
 	}

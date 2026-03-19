@@ -1,4 +1,3 @@
-// Package webhooks handles inbound webhooks signature verification and payload parsing.
 package webhook
 
 import (
@@ -12,7 +11,6 @@ import (
 	"strings"
 )
 
-// Provider identifies the Git hosting platform.
 type Provider string
 
 const (
@@ -21,15 +19,18 @@ const (
 	ProviderGitea     Provider = "gitea"
 	ProviderBitbucket Provider = "bitbucket"
 	ProviderGeneric   Provider = "generic"
+
+	eventPush = "push"
+	eventTag  = "tag"
+	eventPing = "ping"
 )
 
-// Payload is the normalized event extracted from any provider's webhooks body.
 type Payload struct {
 	Provider  Provider
-	EventType string // "push", "tag", "ping"
-	Branch    string // "main", "develop", etc. (without refs/heads/)
-	Tag       string // populated on tag push
-	Commit    string // full SHA
+	EventType string
+	Branch    string
+	Tag       string
+	Commit    string
 	CommitMsg string
 	PushedBy  string
 	RepoURL   string
@@ -37,29 +38,20 @@ type Payload struct {
 	RawBody   []byte
 }
 
-// IsPush returns true for branch push events.
-func (p *Payload) IsPush() bool { return p.EventType == "push" }
+func (p *Payload) IsPush() bool { return p.EventType == eventPush }
+func (p *Payload) IsTag() bool  { return p.EventType == eventTag }
+func (p *Payload) IsPing() bool { return p.EventType == eventPing }
 
-// IsTag returns true for tag push events.
-func (p *Payload) IsTag() bool { return p.EventType == "tag" }
-
-// IsPing returns true for provider connection test events.
-func (p *Payload) IsPing() bool { return p.EventType == "ping" }
-
-// VerifyAndParse reads the request body, verifies the HMAC signature,
-// and returns a normalized Payload. Returns error if signature is invalid.
 func VerifyAndParse(r *http.Request, provider Provider, secret string) (*Payload, error) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 5<<20)) // 5MB limit
+	body, err := io.ReadAll(io.LimitReader(r.Body, 5<<20))
 	if err != nil {
 		return nil, fmt.Errorf("reading body: %w", err)
 	}
-
 	if secret != "" {
 		if err := verifySignature(provider, r, body, secret); err != nil {
 			return nil, err
 		}
 	}
-
 	return parsePayload(provider, r, body)
 }
 
@@ -71,20 +63,15 @@ func verifySignature(provider Provider, r *http.Request, body []byte, secret str
 	var got string
 	switch provider {
 	case ProviderGitHub, ProviderGitea:
-		sig := r.Header.Get("X-Hub-Signature-256")
-		got = strings.TrimPrefix(sig, "sha256=")
+		got = strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
 	case ProviderGitLab:
-		got = r.Header.Get("X-Gitlab-Token")
-		// GitLab sends the secret directly, not as HMAC
-		if got != secret {
+		if r.Header.Get("X-Gitlab-Token") != secret {
 			return fmt.Errorf("invalid GitLab token")
 		}
 		return nil
 	case ProviderBitbucket:
-		sig := r.Header.Get("X-Hub-Signature")
-		got = strings.TrimPrefix(sig, "sha256=")
+		got = strings.TrimPrefix(r.Header.Get("X-Hub-Signature"), "sha256=")
 	default:
-		// Generic: try X-Hub-Signature-256 first, then X-Webhook-Signature
 		sig := r.Header.Get("X-Hub-Signature-256")
 		if sig == "" {
 			sig = r.Header.Get("X-Webhook-Signature")
@@ -103,7 +90,6 @@ func verifySignature(provider Provider, r *http.Request, body []byte, secret str
 
 func parsePayload(provider Provider, r *http.Request, body []byte) (*Payload, error) {
 	p := &Payload{Provider: provider, RawBody: body}
-
 	switch provider {
 	case ProviderGitHub:
 		return parseGitHub(r, body, p)
@@ -117,8 +103,6 @@ func parsePayload(provider Provider, r *http.Request, body []byte) (*Payload, er
 		return parseGeneric(r, body, p)
 	}
 }
-
-// ── GitHub ────────────────────────────────────────────────────────────────────
 
 type githubPush struct {
 	Ref        string `json:"ref"`
@@ -136,21 +120,18 @@ type githubPush struct {
 	Pusher struct {
 		Name string `json:"name"`
 	} `json:"pusher"`
-	Zen string `json:"zen"` // ping event
+	Zen string `json:"zen"`
 }
 
 func parseGitHub(r *http.Request, body []byte, p *Payload) (*Payload, error) {
-	event := r.Header.Get("X-Github-Event")
-	if event == "ping" {
-		p.EventType = "ping"
+	if r.Header.Get("X-Github-Event") == eventPing {
+		p.EventType = eventPing
 		return p, nil
 	}
-
 	var push githubPush
 	if err := json.Unmarshal(body, &push); err != nil {
 		return nil, fmt.Errorf("parsing github payload: %w", err)
 	}
-
 	p.RepoURL = push.Repository.CloneURL
 	p.RepoName = push.Repository.FullName
 	p.Commit = push.After
@@ -158,18 +139,15 @@ func parseGitHub(r *http.Request, body []byte, p *Payload) (*Payload, error) {
 	if push.HeadCommit != nil {
 		p.CommitMsg = firstLine(push.HeadCommit.Message)
 	}
-
 	if strings.HasPrefix(push.Ref, "refs/tags/") {
-		p.EventType = "tag"
+		p.EventType = eventTag
 		p.Tag = strings.TrimPrefix(push.Ref, "refs/tags/")
 	} else {
-		p.EventType = "push"
+		p.EventType = eventPush
 		p.Branch = strings.TrimPrefix(push.Ref, "refs/heads/")
 	}
 	return p, nil
 }
-
-// ── GitLab ────────────────────────────────────────────────────────────────────
 
 type gitlabPush struct {
 	Ref        string `json:"ref"`
@@ -192,7 +170,6 @@ func parseGitLab(body []byte, p *Payload) (*Payload, error) {
 	if err := json.Unmarshal(body, &push); err != nil {
 		return nil, fmt.Errorf("parsing gitlab payload: %w", err)
 	}
-
 	p.RepoURL = push.Repository.GitHTTPURL
 	p.RepoName = push.Repository.Name
 	p.Commit = push.After
@@ -200,31 +177,25 @@ func parseGitLab(body []byte, p *Payload) (*Payload, error) {
 	if len(push.Commits) > 0 {
 		p.CommitMsg = firstLine(push.Commits[0].Message)
 	}
-
 	if strings.HasPrefix(push.Ref, "refs/tags/") {
-		p.EventType = "tag"
+		p.EventType = eventTag
 		p.Tag = strings.TrimPrefix(push.Ref, "refs/tags/")
 	} else {
-		p.EventType = "push"
+		p.EventType = eventPush
 		p.Branch = strings.TrimPrefix(push.Ref, "refs/heads/")
 	}
 	return p, nil
 }
 
-// ── Gitea ─────────────────────────────────────────────────────────────────────
-
-// Gitea uses the same payload shape as GitHub
 func parseGitea(r *http.Request, body []byte, p *Payload) (*Payload, error) {
 	return parseGitHub(r, body, p)
 }
-
-// ── Bitbucket ─────────────────────────────────────────────────────────────────
 
 type bitbucketPush struct {
 	Push struct {
 		Changes []struct {
 			New *struct {
-				Type   string `json:"type"` // "branch" or "tag"
+				Type   string `json:"type"`
 				Name   string `json:"name"`
 				Target struct {
 					Hash    string `json:"hash"`
@@ -255,8 +226,6 @@ func parseBitbucket(body []byte, p *Payload) (*Payload, error) {
 	if err := json.Unmarshal(body, &push); err != nil {
 		return nil, fmt.Errorf("parsing bitbucket payload: %w", err)
 	}
-
-	// Find HTTPS clone URL
 	for _, link := range push.Repository.Links.Clone {
 		if link.Name == "https" {
 			p.RepoURL = link.Href
@@ -265,25 +234,21 @@ func parseBitbucket(body []byte, p *Payload) (*Payload, error) {
 	}
 	p.RepoName = push.Repository.FullName
 	p.PushedBy = push.Actor.DisplayName
-
 	if len(push.Push.Changes) > 0 {
-		change := push.Push.Changes[0]
-		if change.New != nil {
+		if change := push.Push.Changes[0]; change.New != nil {
 			p.Commit = change.New.Target.Hash
 			p.CommitMsg = firstLine(change.New.Target.Message)
-			if change.New.Type == "tag" {
-				p.EventType = "tag"
+			if change.New.Type == eventTag {
+				p.EventType = eventTag
 				p.Tag = change.New.Name
 			} else {
-				p.EventType = "push"
+				p.EventType = eventPush
 				p.Branch = change.New.Name
 			}
 		}
 	}
 	return p, nil
 }
-
-// ── Generic ───────────────────────────────────────────────────────────────────
 
 type genericPush struct {
 	Ref    string `json:"ref"`
@@ -296,14 +261,12 @@ type genericPush struct {
 	Msg    string `json:"message"`
 }
 
-func parseGeneric(r *http.Request, body []byte, p *Payload) (*Payload, error) {
+func parseGeneric(_ *http.Request, body []byte, p *Payload) (*Payload, error) {
 	var push genericPush
 	if err := json.Unmarshal(body, &push); err != nil {
-		// Non-JSON body is fine for generic — just trigger
-		p.EventType = "push"
+		p.EventType = eventPush
 		return p, nil
 	}
-
 	p.RepoURL = push.Repo
 	p.PushedBy = push.By
 	p.CommitMsg = push.Msg
@@ -311,19 +274,18 @@ func parseGeneric(r *http.Request, body []byte, p *Payload) (*Payload, error) {
 	if p.Commit == "" {
 		p.Commit = push.Commit
 	}
-
 	switch {
 	case push.Branch != "":
-		p.EventType = "push"
+		p.EventType = eventPush
 		p.Branch = push.Branch
 	case push.Tag != "":
-		p.EventType = "tag"
+		p.EventType = eventTag
 		p.Tag = push.Tag
 	case strings.HasPrefix(push.Ref, "refs/tags/"):
-		p.EventType = "tag"
+		p.EventType = eventTag
 		p.Tag = strings.TrimPrefix(push.Ref, "refs/tags/")
 	default:
-		p.EventType = "push"
+		p.EventType = eventPush
 		p.Branch = strings.TrimPrefix(push.Ref, "refs/heads/")
 	}
 	return p, nil
@@ -336,8 +298,6 @@ func firstLine(s string) string {
 	return s
 }
 
-// MatchesBranch returns true if the webhooks branch filter matches the payload branch.
-// Empty filter matches all branches. "*" matches all branches.
 func MatchesBranch(filter, branch string) bool {
 	if filter == "" || filter == "*" {
 		return true

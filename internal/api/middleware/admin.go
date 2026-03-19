@@ -112,12 +112,3 @@ func RequireAdminHuma(api huma.API, db *gorm.DB) func(huma.Context, func(huma.Co
 		next(ctx)
 	}
 }
-
-func UserFromHumaCtxTyped(ctx huma.Context) *models.User {
-	abUser := UserFromHumaCtx(ctx.Context())
-	if abUser == nil {
-		return nil
-	}
-	u, _ := abUser.(*models.User)
-	return u
-}

@@ -45,35 +45,29 @@ func Setup(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) (*authbos
 
 	ab := authboss.New()
 
-	ab.Config.Paths.Mount = "/auth"
-	ab.Config.Paths.RootURL = "http://localhost:" + cfg.App.Port
-	ab.Config.Paths.LogoutOK = "/login"
-
-	ab.Config.Storage.Server = storer
-	ab.Config.Storage.SessionState = NewSessionStorer(redisClient, cfg.Auth.SessionSecret)
-	ab.Config.Storage.CookieState = NewCookieStorer()
-
-	ab.Config.Core.Logger = &ABLogger{}
-
+	ab.Paths.Mount = "/auth"
+	ab.Paths.RootURL = "http://localhost:" + cfg.App.Port
+	ab.Paths.LogoutOK = "/login"
+	ab.Storage.Server = storer
+	ab.Storage.SessionState = NewSessionStorer(redisClient, cfg.Auth.SessionSecret)
+	ab.Storage.CookieState = NewCookieStorer()
+	ab.Core.Logger = &ABLogger{}
 	defaults.SetCore(&ab.Config, false, false)
-
-	ab.Config.Core.ViewRenderer = &JSONRenderer{}
-	ab.Config.Core.MailRenderer = &JSONRenderer{}
-	ab.Config.Core.Redirector = &JSONRedirector{}
-	ab.Config.Core.ErrorHandler = &ErrorHandler{}
-
-	ab.Config.Core.BodyReader = defaults.HTTPBodyReader{
+	ab.Core.ViewRenderer = &JSONRenderer{}
+	ab.Core.MailRenderer = &JSONRenderer{}
+	ab.Core.Redirector = &JSONRedirector{}
+	ab.Core.ErrorHandler = &ErrorHandler{}
+	ab.Core.BodyReader = defaults.HTTPBodyReader{
 		ReadJSON: true,
 		Whitelist: map[string][]string{
 			"login":  {"email", "password"},
 			"logout": {},
 		},
 	}
-
-	ab.Config.Modules.LockAfter = 5
-	ab.Config.Modules.LockWindow = 10
-	ab.Config.Modules.LockDuration = 1
-	ab.Config.Modules.LogoutMethod = "POST"
+	ab.Modules.LockAfter = 5
+	ab.Modules.LockWindow = 10
+	ab.Modules.LockDuration = 1
+	ab.Modules.LogoutMethod = "POST"
 
 	if err := ab.Init(); err != nil {
 		return nil, err

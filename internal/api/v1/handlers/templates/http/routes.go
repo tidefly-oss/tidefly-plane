@@ -1,0 +1,19 @@
+package http
+
+import (
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/tidefly-oss/tidefly-backend/internal/api/shared"
+)
+
+func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
+	huma.Register(
+		api,
+		shared.Op("templates-list", "GET", "/api/v1/services/templates", "List templates", mw...),
+		h.ListTemplates,
+	)
+	huma.Register(
+		api,
+		shared.Op("templates-get", "GET", "/api/v1/services/templates/{slug}", "Get template", mw...),
+		h.GetTemplate,
+	)
+}

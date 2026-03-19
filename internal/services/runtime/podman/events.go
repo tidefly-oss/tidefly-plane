@@ -51,7 +51,7 @@ func (p *Runtime) EventStream(ctx context.Context) (<-chan runtime.ContainerEven
 			errc <- err
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
@@ -80,7 +80,7 @@ func (p *Runtime) EventStream(ctx context.Context) (<-chan runtime.ContainerEven
 				continue
 			}
 
-			if evt.Actor.Attributes["tidefly.internal"] == "true" {
+			if evt.Actor.Attributes[runtime.LabelInternal] == runtime.LabelTrue {
 				continue
 			}
 

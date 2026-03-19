@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	dockernetwork "github.com/docker/docker/api/types/network"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 func (d *Runtime) ListNetworks(ctx context.Context) ([]runtime.Network, error) {
@@ -32,10 +32,12 @@ func (d *Runtime) GetNetwork(ctx context.Context, id string) (*runtime.Network, 
 }
 
 func (d *Runtime) CreateNetwork(ctx context.Context, name string) error {
-	_, err := d.client.NetworkCreate(ctx, name, dockernetwork.CreateOptions{
-		Driver: "bridge",
-		Labels: map[string]string{"tidefly.managed": "true"},
-	})
+	_, err := d.client.NetworkCreate(
+		ctx, name, dockernetwork.CreateOptions{
+			Driver: "bridge",
+			Labels: map[string]string{"tidefly.managed": "true"},
+		},
+	)
 	return err
 }
 

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	"github.com/docker/docker/api/types/container"
 	dockerfilters "github.com/docker/docker/api/types/filters"
 	dockerimage "github.com/docker/docker/api/types/image"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
 
 func (d *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
@@ -20,7 +20,7 @@ func (d *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
 	internalImages := map[string]bool{}
 	if all, err := d.client.ContainerList(ctx, container.ListOptions{All: true}); err == nil {
 		for _, ct := range all {
-			if ct.Labels["tidefly.internal"] == "true" && ct.Image != "" {
+			if ct.Labels[runtime.LabelInternal] == runtime.LabelTrue {
 				internalImages[strings.TrimPrefix(ct.Image, "docker.io/")] = true
 			}
 		}

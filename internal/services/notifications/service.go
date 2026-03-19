@@ -10,20 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"github.com/oklog/ulid/v2"
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// normalizeRe strips dynamic parts (timestamps, PIDs, addresses, line numbers)
-// so semantically identical messages always produce the same fingerprint.
 var normalizeRe = regexp.MustCompile(
-	`\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*` + // ISO timestamps
-		`|(?:\d{1,3}\.){3}\d{1,3}` + // IPv4
-		`|0x[0-9a-fA-F]+` + // hex addresses
-		`|pid\s*\d+` + // pid 1234
-		`|\b\d{5,}\b` + // long numbers (port, fd, etc.)
+	`\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*` +
+		`|(?:\d{1,3}\.){3}\d{1,3}` +
+		`|0x[0-9a-fA-F]+` +
+		`|pid\s*\d+` +
+		`|\b\d{5,}\b` +
 		`)\b`,
 )
 
@@ -46,8 +44,6 @@ func New(db *gorm.DB) *Service {
 		clients: make(map[string]*SSEClient),
 	}
 }
-
-// ── SSE Hub ─────────────────────────────────────────────────────────────────
 
 // Subscribe registers a new SSE client and returns its channel + unsubscribe func.
 func (s *Service) Subscribe(ctx context.Context) (<-chan []byte, func()) {
@@ -82,12 +78,9 @@ func (s *Service) broadcast(n *models.Notification) {
 		select {
 		case c.ch <- data:
 		default:
-			// Slow client — skip rather than block
 		}
 	}
 }
-
-// ── Core Logic ───────────────────────────────────────────────────────────────
 
 // Upsert creates a new notifications or increments OccurrenceCount if one with
 // the same fingerprint already exists. Only broadcasts on first occurrence or
@@ -113,7 +106,6 @@ func (s *Service) Upsert(
 		UpdatedAt:       now,
 	}
 
-	// ON CONFLICT (fingerprint): increment count, clear ack, refresh updated_at.
 	result := s.db.WithContext(ctx).
 		Clauses(
 			clause.OnConflict{
@@ -132,7 +124,6 @@ func (s *Service) Upsert(
 		return fmt.Errorf("notifications.Upsert: %w", result.Error)
 	}
 
-	// Fetch the final row (may have been the upserted existing one).
 	var final models.Notification
 	if err := s.db.WithContext(ctx).
 		Where("fingerprint = ?", fp).
