@@ -38,6 +38,10 @@ func (l *Loader) Load() error {
 	loaded := make(map[string]*Template)
 	for _, e := range entries {
 		if e.IsDir() {
+			// Skip hidden directories (starting with .)
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
 			// recurse one level (e.g. databases/, messaging/)
 			sub := filepath.Join(l.dir, e.Name())
 			subEntries, err := os.ReadDir(sub)

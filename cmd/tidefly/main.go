@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,7 +11,10 @@ import (
 	"github.com/tidefly-oss/tidefly-backend/internal/bootstrap"
 )
 
+var migrateOnly = flag.Bool("migrate-only", false, "run database migrations and exit")
+
 func main() {
+	flag.Parse()
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
@@ -23,6 +27,12 @@ func run() error {
 		return fmt.Errorf("init: %w", err)
 	}
 	defer cleanup()
+
+	// If migrate-only flag is set, exit after initialization (migrations already ran)
+	if *migrateOnly {
+		fmt.Println("✅ Database migrations completed successfully")
+		return nil
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

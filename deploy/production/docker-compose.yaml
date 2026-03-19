@@ -1,0 +1,120 @@
+networks:
+  tidefly_internal:
+    driver: bridge
+    labels:
+      tidefly.internal: "true"
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  # -----------------------------
+  # Traefik Reverse Proxy
+  # -----------------------------
+  traefik:
+    image: traefik:v3.6.9
+    container_name: tidefly_traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "${TRAEFIK_DASHBOARD_ENABLED:+--api.insecure=true}"
+      - "--log.level=${TRAEFIK_LOG_LEVEL}"
+      - "${TRAEFIK_FORCE_HTTPS:+--entrypoints.web.http.redirections.entryPoint.to=websecure}"
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    env_file:
+      - ./.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - tidefly_internal
+
+  # -----------------------------
+  # Backend
+  # -----------------------------
+  backend:
+    image: tideflyoss/backend:latest
+    container_name: tidefly_backend
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    networks:
+      - tidefly_internal
+    depends_on:
+      - postgres
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`backend.${TRAEFIK_BASE_DOMAIN}`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=${APP_PORT:-8181}"
+
+  # -----------------------------
+  # Frontend
+  # -----------------------------
+  ui:
+    image: tideflyoss/ui:latest
+    container_name: tidefly_ui
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    networks:
+      - tidefly_internal
+    depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ui.rule=Host(`${TRAEFIK_BASE_DOMAIN}`)"
+      - "traefik.http.services.ui.loadbalancer.server.port=${UI_PORT:-5173}"
+
+  # -----------------------------
+  # PostgreSQL
+  # -----------------------------
+  postgres:
+    image: postgres:18-alpine
+    container_name: tidefly_postgres
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tidefly_internal
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # -----------------------------
+  # Redis
+  # -----------------------------
+  redis:
+    image: redis:8-alpine
+    container_name: tidefly_redis
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    env_file:
+      - ./.env
+    volumes:
+      - redis_data:/data
+      - ./redis:/usr/local/etc/redis
+    networks:
+      - tidefly_internal
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--user", "tidefly", "--pass", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

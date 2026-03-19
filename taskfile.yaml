@@ -27,7 +27,7 @@ tasks:
         else
           echo "{{.DEV_ENV}} already exists"
         fi
-      - bash scripts/rotate-secrets.sh
+      - bash scripts/init-env.sh
       - sed -i 's/\r//' {{.DEV_ENV}}
       - echo 'Setup done'
 
@@ -42,19 +42,19 @@ tasks:
         else
           echo "{{.PROD_ENV}} already exists"
         fi
-      - bash scripts/rotate-secrets.sh
+      - bash scripts/init-env.sh
       - sed -i 's/\r//' {{.PROD_ENV}}
 
   rotate-secrets:
     desc: Rotate all secrets in dev .env
     cmds:
-      - bash scripts/rotate-secrets.sh
+      - bash scripts/init-env.sh
       - sed -i 's/\r//' {{.DEV_ENV}}
 
   rotate-secrets:prod:
     desc: Rotate all secrets in prod .env
     cmds:
-      - bash scripts/rotate-secrets.sh
+      - bash scripts/init-env.sh
       - sed -i 's/\r//' {{.PROD_ENV}}
 
   # ── Code Generation ───────────────────────────────────────────────────────

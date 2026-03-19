@@ -100,4 +100,4 @@ Please do **not** open public issues for security vulnerabilities — use [GitHu
 
 ## License
 
-[MIT](LICENSE)
+[AGPLv3](LICENSE)
