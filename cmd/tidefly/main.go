@@ -28,7 +28,6 @@ func run() error {
 	}
 	defer cleanup()
 
-	// If migrate-only flag is set, exit after initialization (migrations already ran)
 	if *migrateOnly {
 		fmt.Println("✅ Database migrations completed successfully")
 		return nil

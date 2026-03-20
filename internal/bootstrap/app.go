@@ -134,6 +134,13 @@ func (a *App) buildEcho() *echo.Echo {
 
 	humaConfig := huma.DefaultConfig("Tidefly API", "0.1.0")
 	humaConfig.Info.Description = "Container Management Platform"
+	humaConfig.DocsRenderer = huma.DocsRendererScalar
+
+	if !a.cfg.App.DocsEnabled {
+		humaConfig.DocsPath = ""
+		a.log.Info("app", "API docs disabled via API_DOCS_ENABLED=false")
+	}
+
 	humaAPI := adapter.NewEchoV5Adapter(e, humaConfig)
 
 	v1.Register(

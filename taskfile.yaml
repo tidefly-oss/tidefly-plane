@@ -1,10 +1,10 @@
 version: "3"
 
 vars:
-  DEV_COMPOSE: deploy/dev/docker-compose.yaml
-  PROD_COMPOSE: deploy/prod/docker-compose.yaml
-  DEV_ENV: deploy/dev/.env
-  PROD_ENV: deploy/prod/.env
+  DEV_COMPOSE: deploy/development/docker-compose.yaml
+  PROD_COMPOSE: deploy/production/docker-compose.yaml
+  DEV_ENV: deploy/development/.env
+  PROD_ENV: deploy/production/.env
   DEV_CMD: "docker compose -f {{.DEV_COMPOSE}} --env-file {{.DEV_ENV}}"
   PROD_CMD: "docker compose -f {{.PROD_COMPOSE}} --env-file {{.PROD_ENV}}"
 
@@ -22,7 +22,7 @@ tasks:
     cmds:
       - |
         if [ ! -f {{.DEV_ENV}} ]; then
-          cp deploy/dev/.env.example {{.DEV_ENV}}
+          cp deploy/development/.env.example {{.DEV_ENV}}
           echo "Created {{.DEV_ENV}}"
         else
           echo "{{.DEV_ENV}} already exists"
@@ -34,10 +34,10 @@ tasks:
   setup:prod:
     desc: Create prod .env and generate secrets
     cmds:
-      - mkdir -p deploy/prod
+      - mkdir -p deploy/production
       - |
         if [ ! -f {{.PROD_ENV}} ]; then
-          cp deploy/dev/.env.example {{.PROD_ENV}}
+          cp deploy/development/.env.example {{.PROD_ENV}}
           echo "Created {{.PROD_ENV}}"
         else
           echo "{{.PROD_ENV}} already exists"
