@@ -4,7 +4,7 @@ import "github.com/spf13/viper"
 
 func Load() (*Config, error) {
 	viper.AutomaticEnv()
-	
+
 	setAppDefaults()
 	setDatabaseDefaults()
 	setJobsDefaults()
