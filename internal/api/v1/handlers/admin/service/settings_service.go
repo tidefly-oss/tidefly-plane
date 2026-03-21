@@ -5,6 +5,7 @@ import (
 
 	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/helpers"
 	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"gorm.io/gorm"
 )
 
@@ -12,6 +13,7 @@ type SettingsUpdateInput struct {
 	InstanceName          *string
 	InstanceURL           *string
 	RegistrationMode      *string
+	CaddyBaseDomain       *string
 	SMTPHost              *string
 	SMTPPort              *int
 	SMTPUsername          *string
@@ -26,12 +28,14 @@ type SettingsUpdateInput struct {
 	NotifyOnContainerDown *bool
 	NotifyOnWebhookFail   *bool
 }
+
 type SettingsService struct {
-	db *gorm.DB
+	db    *gorm.DB
+	caddy *caddysvc.Client
 }
 
-func NewSettingsService(db *gorm.DB) *SettingsService {
-	return &SettingsService{db: db}
+func NewSettingsService(db *gorm.DB, caddy *caddysvc.Client) *SettingsService {
+	return &SettingsService{db: db, caddy: caddy}
 }
 
 func (s *SettingsService) Get() (models.SystemSettings, error) {
@@ -49,6 +53,7 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	helpers.ApplyIfSet(&settings.InstanceName, input.InstanceName)
 	helpers.ApplyIfSet(&settings.InstanceURL, input.InstanceURL)
 	helpers.ApplyIfSet(&settings.RegistrationMode, input.RegistrationMode)
+	helpers.ApplyIfSet(&settings.CaddyBaseDomain, input.CaddyBaseDomain)
 	helpers.ApplyIfSet(&settings.SMTPHost, input.SMTPHost)
 	helpers.ApplyIfSet(&settings.SMTPPort, input.SMTPPort)
 	helpers.ApplyIfSet(&settings.SMTPUsername, input.SMTPUsername)
@@ -66,5 +71,11 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	if err := s.db.Save(&settings).Error; err != nil {
 		return models.SystemSettings{}, fmt.Errorf("update settings: %w", err)
 	}
+
+	// Update Caddy base domain live if changed
+	if input.CaddyBaseDomain != nil && s.caddy != nil {
+		s.caddy.SetBaseDomain(*input.CaddyBaseDomain)
+	}
+
 	return settings, nil
 }
