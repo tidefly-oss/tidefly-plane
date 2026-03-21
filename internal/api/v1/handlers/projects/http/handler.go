@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/projects/service"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
@@ -73,14 +74,19 @@ type ListContainersOutput struct {
 	Body []runtime.Container
 }
 
-func (h *Handler) List(_ context.Context, _ *ListInput) (*ListOutput, error) {
-	list, err := h.projects.List()
+func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
+		return nil, huma.Error401Unauthorized("unauthorized")
+	}
+
+	isAdmin := claims.Role == string(models.RoleAdmin)
+	list, err := h.projects.ListForUser(claims.UserID, isAdmin)
 	if err != nil {
 		return nil, err
 	}
 	return &ListOutput{Body: list}, nil
 }
-
 func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
 	if input.Body.Color == "" {
 		input.Body.Color = "#6366f1"

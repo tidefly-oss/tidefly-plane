@@ -9,8 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	traefiksvc "github.com/tidefly-oss/tidefly-backend/internal/services/traefik"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,15 +33,12 @@ type composeService struct {
 	Networks    any               `yaml:"networks"`
 }
 
-// ── DeployCompose (Echo SSE → Huma typed) ─────────────────────────────────────
-// DeployCompose hat kein Streaming → kann auf Huma migriert werden.
-
 type DeployComposeInput struct {
 	Body struct {
-		Compose   string `json:"compose" minLength:"1" doc:"Docker Compose YAML"`
-		StackName string `json:"stack_name" minLength:"1" maxLength:"128" doc:"Stack name (alphanumeric)"`
-		ProjectID string `json:"project_id" format:"uuid" doc:"Project ID"`
-		Expose    bool   `json:"expose" doc:"Route all services via Traefik"`
+		Compose   string `json:"compose"     minLength:"1"   doc:"Docker Compose YAML"`
+		StackName string `json:"stack_name"  minLength:"1"   maxLength:"128" doc:"Stack name"`
+		ProjectID string `json:"project_id"  format:"uuid"   doc:"Project ID"`
+		Expose    bool   `json:"expose"      doc:"Route all HTTP services via Caddy"`
 	}
 }
 
@@ -54,8 +51,8 @@ type DeployComposeOutput struct {
 }
 
 func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) (*DeployComposeOutput, error) {
-	if input.Body.Expose && !h.traefik.Enabled {
-		return nil, huma.Error400BadRequest("Traefik integration is not enabled on this instance")
+	if input.Body.Expose && !h.CaddyEnabled() {
+		return nil, huma.Error400BadRequest("Caddy integration is not enabled on this instance")
 	}
 
 	project, err := h.projects.GetByID(input.Body.ProjectID)
@@ -91,29 +88,30 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 		for k, v := range svc.Labels {
 			labels[k] = v
 		}
+
 		ports := parseComposePorts(svc.Ports)
-		if input.Body.Expose && len(ports) > 0 {
-			traefikLabels := traefiksvc.LabelsFor(
-				*h.traefik, traefiksvc.ServiceConfig{
-					Name: containerName, Port: ports[0].ContainerPort,
-				},
-			)
-			traefiksvc.MergeLabels(labels, traefikLabels)
-			urls[svcName] = "https://" + traefiksvc.Domain(*h.traefik, containerName)
-			ports = nil
-		}
 		restart := svc.Restart
 		if restart == "" {
 			restart = "unless-stopped"
 		}
+
 		spec := runtime.ContainerSpec{
-			Name: containerName, Image: svc.Image,
+			Name:    containerName,
+			Image:   svc.Image,
 			Env:     parseComposeEnv(svc.Environment),
 			Ports:   ports,
 			Volumes: parseComposeVolumes(svc.Volumes, input.Body.StackName),
-			Labels:  labels, Restart: restart, Command: svc.Command,
+			Labels:  labels,
+			Restart: restart,
+			Command: svc.Command,
 			Network: project.NetworkName,
 		}
+
+		// When exposing via Caddy — no host port binding needed
+		if input.Body.Expose && len(ports) > 0 {
+			spec.Ports = nil
+		}
+
 		if err := h.runtime.CreateContainer(ctx, spec); err != nil {
 			for _, name := range created {
 				_ = h.runtime.DeleteContainer(ctx, name, true)
@@ -122,8 +120,11 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 				ctx, logger.AuditEntry{
 					Action: logger.AuditContainerDeploy, ResourceID: stackID, Success: false,
 					Details: fmt.Sprintf(
-						"compose stack=%q create=%q rolled_back=%d err=%s", input.Body.StackName, containerName,
-						len(created), err,
+						"compose stack=%q create=%q rolled_back=%d err=%s",
+						input.Body.StackName,
+						containerName,
+						len(created),
+						err,
 					),
 				},
 			)
@@ -137,13 +138,35 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 				ctx, logger.AuditEntry{
 					Action: logger.AuditContainerDeploy, ResourceID: stackID, Success: false,
 					Details: fmt.Sprintf(
-						"compose stack=%q start=%q rolled_back=%d err=%s", input.Body.StackName, containerName,
-						len(created), err,
+						"compose stack=%q start=%q rolled_back=%d err=%s",
+						input.Body.StackName,
+						containerName,
+						len(created),
+						err,
 					),
 				},
 			)
 			return nil, fmt.Errorf("start container %q: %w", containerName, err)
 		}
+
+		if input.Body.Expose {
+			if err := h.runtime.ConnectNetwork(ctx, containerName, "tidefly_proxy"); err != nil {
+				h.log.Warn("caddy", "failed to connect to proxy network", err)
+			}
+		}
+
+		// Register Caddy route if expose=true and service has a port
+		if input.Body.Expose && h.CaddyEnabled() && len(ports) > 0 {
+			domain := caddysvc.Domain(h.caddy.Config(), containerName)
+			upstream := fmt.Sprintf("%s:%d", containerName, ports[0].ContainerPort)
+			routeID := caddysvc.RouteID(containerName)
+			if err := h.caddy.AddHTTPRoute(ctx, routeID, domain, upstream); err != nil {
+				h.log.Error("caddy", "failed to register route for "+containerName, err)
+			} else {
+				urls[svcName] = "https://" + domain
+			}
+		}
+
 		created = append(created, containerName)
 	}
 
@@ -151,8 +174,11 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 		ctx, logger.AuditEntry{
 			Action: logger.AuditContainerDeploy, ResourceID: stackID, Success: true,
 			Details: fmt.Sprintf(
-				"compose stack=%q project=%s containers=%d expose=%v", input.Body.StackName, input.Body.ProjectID,
-				len(created), input.Body.Expose,
+				"compose stack=%q project=%s containers=%d expose=%v",
+				input.Body.StackName,
+				input.Body.ProjectID,
+				len(created),
+				input.Body.Expose,
 			),
 		},
 	)
@@ -166,7 +192,7 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 	return out, nil
 }
 
-// ── DeleteStack (Huma typed) ──────────────────────────────────────────────────
+// ── DeleteStack ───────────────────────────────────────────────────────────────
 
 type DeleteStackInput struct {
 	StackID string `path:"stack_id" doc:"Stack ID"`
@@ -181,6 +207,10 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteStackInput) (*st
 	for _, ct := range all {
 		if ct.Labels["tidefly.stack_id"] != input.StackID {
 			continue
+		}
+		// Remove Caddy route before deleting container
+		if h.CaddyEnabled() {
+			_ = h.caddy.RemoveRoute(ctx, caddysvc.RouteID(ct.Name))
 		}
 		if err := h.runtime.DeleteContainer(ctx, ct.ID, true); err != nil {
 			h.log.Audit(
@@ -202,11 +232,7 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteStackInput) (*st
 	return nil, nil
 }
 
-// ── Echo-only: BuildAndDeploy bleibt in build.go ─────────────────────────────
-
-// Registrierung im Router:
-// Huma-Endpoints: List, Get, Start, Stop, Restart, Delete, GetResources, UpdateResources, DeployCompose, DeleteStack
-// Echo-Endpoints (raw): Logs, Stats, Exec, BuildAndDeploy
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func parseComposeEnv(raw any) []string {
 	if raw == nil {

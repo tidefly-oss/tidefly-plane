@@ -67,6 +67,30 @@ func (p *Runtime) DeleteNetwork(ctx context.Context, id string) error {
 	return nil
 }
 
+func (p *Runtime) ConnectNetwork(ctx context.Context, containerID, networkName string) error {
+	body := map[string]any{"Container": containerID}
+	code, _, err := p.c.post(ctx, "/libpod/networks/"+escPath(networkName)+"/connect", nil, body)
+	if err != nil {
+		return fmt.Errorf("podman connect network %q: %w", networkName, err)
+	}
+	if code >= 300 {
+		return fmt.Errorf("podman connect network %q: status %d", networkName, code)
+	}
+	return nil
+}
+
+func (p *Runtime) DisconnectNetwork(ctx context.Context, containerID, networkName string) error {
+	body := map[string]any{"Container": containerID, "Force": true}
+	code, _, err := p.c.post(ctx, "/libpod/networks/"+escPath(networkName)+"/disconnect", nil, body)
+	if err != nil {
+		return fmt.Errorf("podman disconnect network %q: %w", networkName, err)
+	}
+	if code >= 300 {
+		return fmt.Errorf("podman disconnect network %q: status %d", networkName, code)
+	}
+	return nil
+}
+
 type podmanNetwork struct {
 	ID      *string           `json:"id"`
 	Name    *string           `json:"name"`

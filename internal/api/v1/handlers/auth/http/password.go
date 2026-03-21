@@ -6,17 +6,18 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
 )
 
 type ChangePasswordInput struct {
 	Body struct {
 		CurrentPassword string `json:"current_password" minLength:"1"`
-		NewPassword     string `json:"new_password" minLength:"8"`
+		NewPassword     string `json:"new_password"     minLength:"8"`
 	}
 }
+
 type ChangePasswordOutput struct {
 	Body struct {
 		Message string `json:"message"`
@@ -24,18 +25,27 @@ type ChangePasswordOutput struct {
 }
 
 func (h *Handler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*ChangePasswordOutput, error) {
-	abUser, ok := middleware.UserFromHumaCtx(ctx).(*models.User)
-	if !ok || abUser == nil {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
 		return nil, huma401("unauthorized")
 	}
 
-	err := h.auth.ChangePassword(abUser, input.Body.CurrentPassword, input.Body.NewPassword)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditPasswordChange,
-		ResourceID: abUser.ID,
-		Success:    err == nil,
-		Details:    fmt.Sprintf("email=%s reason=%v", abUser.Email, err),
-	})
+	// Load full user for password check
+	u, err := h.auth.GetFreshUser(claims.UserID)
+	if err != nil {
+		return nil, huma401("user not found")
+	}
+
+	err = h.auth.ChangePassword(&u, input.Body.CurrentPassword, input.Body.NewPassword)
+	h.log.Audit(
+		ctx, logger.AuditEntry{
+			Action:     logger.AuditPasswordChange,
+			ResourceID: claims.UserID,
+			Success:    err == nil,
+			Details:    fmt.Sprintf("email=%s reason=%v", claims.Email, err),
+		},
+	)
+
 	if err != nil {
 		switch err.Error() {
 		case "wrong_current_password":

@@ -10,57 +10,65 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
 
 services:
   # -----------------------------
-  # Traefik Reverse Proxy
+  # Caddy Reverse Proxy
   # -----------------------------
-  traefik:
-    image: traefik:v3.6.9
-    container_name: tidefly_traefik
+  caddy:
+    image: ghcr.io/tidefly-oss/tidefly-caddy:0.0.1
+    container_name: tidefly_caddy
+    labels:
+      tidefly.internal: "true"
     restart: unless-stopped
-    command:
-      - "--providers.docker=true"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "${TRAEFIK_DASHBOARD_ENABLED:+--api.insecure=true}"
-      - "--log.level=${TRAEFIK_LOG_LEVEL}"
-      - "${TRAEFIK_FORCE_HTTPS:+--entrypoints.web.http.redirections.entryPoint.to=websecure}"
     ports:
-      - "${TRAEFIK_HTTP_PORT:-80}:80"
-      - "${TRAEFIK_HTTPS_PORT:-443}:443"
-    env_file:
-      - ./.env
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy_data:/data
     networks:
-      - tidefly_internal
+      - tidefly_proxy
+    environment:
+      - CADDY_ADMIN=0.0.0.0:2019
+    command: caddy run --resume
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # -----------------------------
   # Backend
   # -----------------------------
   backend:
-    image: tideflyoss/backend:latest
+    image: ghcr.io/tidefly-oss/tidefly-backend:latest
     container_name: tidefly_backend
+    labels:
+      tidefly.internal: "true"
     restart: unless-stopped
     env_file:
       - ./.env
     networks:
       - tidefly_internal
     depends_on:
-      - postgres
-      - redis
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`backend.${TRAEFIK_BASE_DOMAIN}`)"
-      - "traefik.http.services.backend.loadbalancer.server.port=${APP_PORT:-8181}"
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
 
   # -----------------------------
-  # Frontend
+  # Frontend (optional profile)
   # -----------------------------
   ui:
-    image: tideflyoss/ui:latest
+    image: ghcr.io/tidefly-oss/tidefly-ui:latest
     container_name: tidefly_ui
+    labels:
+      tidefly.internal: "true"
     restart: unless-stopped
     env_file:
       - ./.env
@@ -68,10 +76,8 @@ services:
       - tidefly_internal
     depends_on:
       - backend
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ui.rule=Host(`${TRAEFIK_BASE_DOMAIN}`)"
-      - "traefik.http.services.ui.loadbalancer.server.port=${UI_PORT:-5173}"
+    profiles:
+      - dashboard
 
   # -----------------------------
   # PostgreSQL
@@ -79,6 +85,8 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: tidefly_postgres
+    labels:
+      tidefly.internal: "true"
     restart: unless-stopped
     env_file:
       - ./.env
@@ -86,10 +94,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - tidefly_internal
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tidefly} -d ${POSTGRES_DB:-tidefly}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -101,6 +107,8 @@ services:
   redis:
     image: redis:8-alpine
     container_name: tidefly_redis
+    labels:
+      tidefly.internal: "true"
     restart: unless-stopped
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     env_file:
@@ -110,8 +118,6 @@ services:
       - ./redis:/usr/local/etc/redis
     networks:
       - tidefly_internal
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "--user", "tidefly", "--pass", "${REDIS_PASSWORD}", "ping"]
       interval: 5s

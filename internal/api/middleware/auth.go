@@ -3,74 +3,69 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
-	"github.com/aarondl/authboss/v3"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/auth"
 )
 
-func RequireAuth(ab *authboss.Authboss) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			w := ab.NewResponse(c.Response())
-			r, err := ab.LoadClientState(w, c.Request())
-			if err != nil {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			if _, err := ab.LoadCurrentUser(&r); err != nil {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			return next(c)
-		}
-	}
-}
+// ── Context keys ──────────────────────────────────────────────────────────────
 
-func RequireAuthHuma(api huma.API, ab *authboss.Authboss) func(huma.Context, func(huma.Context)) {
+type humaUserKey struct{}
+
+type humaCtxKey struct{}
+
+// ── Huma Middleware ───────────────────────────────────────────────────────────
+
+func RequireAuthHuma(api huma.API, jwtSvc *auth.Service) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		cookie := ctx.Header("Cookie")
-
-		r, _ := http.NewRequestWithContext(ctx.Context(), http.MethodGet, "/", nil)
-		if cookie != "" {
-			r.Header.Set("Cookie", cookie)
+		token := extractBearerToken(ctx.Header("Authorization"))
+		if token == "" {
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing authorization header", nil)
+			return
 		}
 
-		w := ab.NewResponse(&discardResponseWriter{})
-		nr, err := ab.LoadClientState(w, r)
-
+		claims, err := jwtSvc.ValidateAccessToken(token)
 		if err != nil {
-			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
-			return
-		}
-		user, err := ab.LoadCurrentUser(&nr)
-
-		if err != nil || user == nil {
-			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "unauthorized", nil)
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "invalid or expired token", nil)
 			return
 		}
 
-		newCtx := context.WithValue(ctx.Context(), humaUserKey{}, user)
+		newCtx := context.WithValue(ctx.Context(), humaUserKey{}, claims)
 		next(huma.WithContext(ctx, newCtx))
 	}
 }
 
-// ── Context helpers ───────────────────────────────────────────────────────────
-
-type humaUserKey struct{}
-
-func UserFromHumaCtx(ctx context.Context) authboss.User {
-	u, _ := ctx.Value(humaUserKey{}).(authboss.User)
-	return u
+// UserFromHumaCtx returns *auth.Claims from a Huma context.
+func UserFromHumaCtx(ctx context.Context) *auth.Claims {
+	claims, _ := ctx.Value(humaUserKey{}).(*auth.Claims)
+	return claims
 }
 
-type discardResponseWriter struct {
-	header http.Header
-}
+// ── Echo Middleware ───────────────────────────────────────────────────────────
 
-func (d *discardResponseWriter) Header() http.Header {
-	if d.header == nil {
-		d.header = make(http.Header)
+func InjectHumaContext() func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		newCtx := context.WithValue(ctx.Context(), humaCtxKey{}, ctx)
+		next(huma.WithContext(ctx, newCtx))
 	}
-	return d.header
 }
-func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
-func (d *discardResponseWriter) WriteHeader(_ int)           {}
+
+// HumaContextFrom extrahiert den huma.Context aus einem stdlib context.Context.
+func HumaContextFrom(ctx context.Context) huma.Context {
+	hc, _ := ctx.Value(humaCtxKey{}).(huma.Context)
+	return hc
+}
+
+// ── internal ──────────────────────────────────────────────────────────────────
+
+func extractBearerToken(header string) string {
+	if header == "" {
+		return ""
+	}
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}

@@ -2,8 +2,8 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/containers/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	"gorm.io/gorm"
@@ -16,7 +16,7 @@ type Handler struct {
 	access   *service.AccessService
 	db       *gorm.DB
 	log      *logger.Logger
-	traefik  *config.TraefikConfig
+	caddy    *caddysvc.Client
 }
 
 func New(
@@ -24,11 +24,8 @@ func New(
 	deployer *deploy.Deployer,
 	db *gorm.DB,
 	log *logger.Logger,
-	traefik *config.TraefikConfig,
+	caddy *caddysvc.Client,
 ) *Handler {
-	if traefik == nil {
-		traefik = &config.TraefikConfig{}
-	}
 	return &Handler{
 		runtime:  rt,
 		deployer: deployer,
@@ -36,6 +33,11 @@ func New(
 		access:   service.NewAccessService(db),
 		db:       db,
 		log:      log,
-		traefik:  traefik,
+		caddy:    caddy,
 	}
+}
+
+// CaddyEnabled returns true if Caddy integration is configured.
+func (h *Handler) CaddyEnabled() bool {
+	return h.caddy != nil
 }

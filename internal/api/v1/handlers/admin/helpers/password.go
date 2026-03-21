@@ -2,15 +2,17 @@ package helpers
 
 import (
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+	"github.com/tidefly-oss/tidefly-backend/internal/auth"
 )
 
 func GenerateTempPassword() (plain string, hash string, err error) {
 	id := uuid.New().String()
 	plain = id[:8] + id[9:13]
-	b, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+
+	hash, err = auth.HashPassword(plain)
 	if err != nil {
 		return "", "", err
 	}
-	return plain, string(b), nil
+
+	return plain, hash, nil
 }

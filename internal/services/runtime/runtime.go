@@ -192,6 +192,8 @@ type Runtime interface {
 	GetNetwork(ctx context.Context, id string) (*Network, error)
 	CreateNetwork(ctx context.Context, name string) error
 	DeleteNetwork(ctx context.Context, id string) error
+	ConnectNetwork(ctx context.Context, containerID, networkName string) error
+	DisconnectNetwork(ctx context.Context, containerID, networkName string) error
 
 	EventStream(ctx context.Context) (<-chan ContainerEvent, <-chan error)
 }

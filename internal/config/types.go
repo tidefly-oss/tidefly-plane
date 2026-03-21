@@ -13,7 +13,7 @@ type Config struct {
 	Logger     LoggerConfig
 	LogWatcher LogWatcherConfig
 	Jobs       JobsConfig
-	Traefik    TraefikConfig
+	Caddy      CaddyConfig
 }
 
 type AppConfig struct {
@@ -35,8 +35,7 @@ type RedisConfig struct {
 }
 
 type AuthConfig struct {
-	SessionSecret string
-	CookieSecret  string
+	JWTSecret string
 }
 
 type SMTPConfig struct {
@@ -57,17 +56,16 @@ type TemplatesConfig struct {
 	Dir string
 }
 
-// TraefikConfig — controls Traefik reverse proxy integration.
-type TraefikConfig struct {
-	Enabled          bool
-	BaseDomain       string
-	ACMEEmail        string
-	ACMEStaging      bool
-	Network          string
-	EntrypointHTTP   string
-	EntrypointHTTPS  string
-	ForceHTTPS       bool
-	DashboardEnabled bool
+// CaddyConfig controls Caddy reverse proxy integration.
+// All configuration is applied via the Caddy Admin API — no Caddyfile needed.
+type CaddyConfig struct {
+	Enabled     bool
+	AdminURL    string
+	BaseDomain  string
+	ACMEEmail   string
+	ACMEStaging bool
+	ForceHTTPS  bool
+	InternalTLS bool
 }
 
 type LoggerConfig struct {

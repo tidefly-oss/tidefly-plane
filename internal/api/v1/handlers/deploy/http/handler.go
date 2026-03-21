@@ -2,11 +2,12 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/deploy/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
 	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
 	"gorm.io/gorm"
 )
@@ -24,15 +25,13 @@ func New(
 	deployer *deploy.Deployer,
 	loader *template.Loader,
 	log *logger.Logger,
-	traefik *config.TraefikConfig,
+	caddy *caddysvc.Client,
+	rt runtime.Runtime,
 	notifSvc *notifications.Service,
 	notifierSvc *notifiersvc.Service,
 ) *Handler {
-	if traefik == nil {
-		traefik = &config.TraefikConfig{}
-	}
 	return &Handler{
-		deploy:      service.NewDeployService(db, deployer, loader, traefik),
+		deploy:      service.NewDeployService(db, deployer, loader, caddy, rt),
 		credentials: service.NewCredentialsService(db),
 		notifSvc:    notifSvc,
 		notifierSvc: notifierSvc,

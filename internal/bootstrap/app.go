@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aarondl/authboss/v3"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
@@ -17,9 +16,11 @@ import (
 	"github.com/tidefly-oss/tidefly-backend/internal/api/adapter"
 	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
 	v1 "github.com/tidefly-oss/tidefly-backend/internal/api/v1"
+	"github.com/tidefly-oss/tidefly-backend/internal/auth"
 	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
 	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/logwatcher"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
@@ -34,7 +35,9 @@ type App struct {
 	log         *applogger.Logger
 	rt          runtime.Runtime
 	db          *gorm.DB
-	ab          *authboss.Authboss
+	jwtSvc      *auth.Service
+	tokenStore  *auth.TokenStore
+	caddy       *caddysvc.Client
 	templateLd  *template.Loader
 	notifSvc    *notifications.Service
 	gitSvc      *git.Service
@@ -49,7 +52,9 @@ func NewApp(
 	log *applogger.Logger,
 	rt runtime.Runtime,
 	db *gorm.DB,
-	ab *authboss.Authboss,
+	jwtSvc *auth.Service,
+	tokenStore *auth.TokenStore,
+	caddy *caddysvc.Client,
 	templateLd *template.Loader,
 	notifSvc *notifications.Service,
 	gitSvc *git.Service,
@@ -60,7 +65,9 @@ func NewApp(
 ) *App {
 	return &App{
 		cfg: cfg, log: log, rt: rt, db: db,
-		ab: ab, templateLd: templateLd, notifSvc: notifSvc,
+		jwtSvc: jwtSvc, tokenStore: tokenStore,
+		caddy:      caddy,
+		templateLd: templateLd, notifSvc: notifSvc,
 		gitSvc: gitSvc, webhookSvc: webhookSvc,
 		jobServer: jobServer, asynq: asynqClient,
 		notifierSvc: notifierSvc,
@@ -69,6 +76,15 @@ func NewApp(
 
 func (a *App) Run(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
+
+	// Bootstrap Caddy on startup
+	if a.cfg.Caddy.Enabled {
+		if err := a.caddy.Bootstrap(ctx); err != nil {
+			a.log.Warn("app", "caddy bootstrap failed — continuing without proxy", err)
+		} else {
+			a.log.Info("app", "caddy bootstrapped successfully")
+		}
+	}
 
 	a.startBackgroundServices(eg, ctx)
 
@@ -142,11 +158,12 @@ func (a *App) buildEcho() *echo.Echo {
 	}
 
 	humaAPI := adapter.NewEchoV5Adapter(e, humaConfig)
+	humaAPI.UseMiddleware(middleware.InjectHumaContext())
 
 	v1.Register(
-		humaAPI, e, a.ab, a.rt, a.db, a.log,
+		humaAPI, e, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
-		a.asynq, &a.cfg.Traefik, a.notifierSvc,
+		a.asynq, a.notifierSvc,
 	)
 	return e
 }

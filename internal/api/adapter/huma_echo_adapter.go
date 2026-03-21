@@ -138,3 +138,10 @@ func (c *echoV5Context) Version() huma.ProtoVersion {
 	r := c.c.Request()
 	return huma.ProtoVersion{Proto: strconv.Itoa(r.ProtoMajor), ProtoMajor: r.ProtoMinor}
 }
+
+func Unwrap(ctx huma.Context) *echo.Context {
+	if c, ok := ctx.(*echoV5Context); ok {
+		return c.c
+	}
+	return nil
+}

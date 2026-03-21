@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
@@ -61,7 +62,13 @@ func (h *Handler) List(ctx context.Context, input *ListInput) (*ListOutput, erro
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
-	return &ListOutput{Body: list}, nil
+
+	filtered, err := h.access.FilterContainers(ctx, list)
+	if err != nil {
+		return nil, huma401("unauthorized")
+	}
+
+	return &ListOutput{Body: filtered}, nil
 }
 
 func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {
@@ -144,6 +151,13 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 			}
 		}
 	}
+	if details != nil {
+		_ = h.runtime.DisconnectNetwork(ctx, input.ID, "tidefly_internal")
+		if h.CaddyEnabled() {
+			_ = h.caddy.RemoveRoute(ctx, caddysvc.RouteID(details.Name))
+		}
+	}
+
 	deleteErr := h.runtime.DeleteContainer(ctx, input.ID, input.Force)
 	h.log.Audit(
 		ctx, logger.AuditEntry{

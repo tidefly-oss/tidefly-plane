@@ -51,7 +51,7 @@ func (h *Handler) ListServices(_ context.Context, _ *ListServicesInput) (*ListSe
 }
 
 func (h *Handler) DeployService(ctx context.Context, input *DeployServiceInput) (*DeployServiceOutput, error) {
-	if input.Body.Expose != nil && *input.Body.Expose && !h.deploy.TraefikEnabled() {
+	if input.Body.Expose != nil && *input.Body.Expose && !h.deploy.CaddyEnabled() {
 		return nil, huma400("Traefik integration is not enabled on this instance")
 	}
 

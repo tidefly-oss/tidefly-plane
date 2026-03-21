@@ -7,27 +7,14 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
 	"gorm.io/gorm"
+
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
 )
 
-// ContainerAccessDB is the minimal DB interface needed for access checks.
-// Pass the *gorm.DB from the handler constructor.
-
-// CheckContainerAccess RequireContainerAccess returns a 403 for Members who don't own the container's project.
-//
-// Rules:
-//   - Admins → always allowed
-//   - Members → allowed only if the container belongs to one of their projects
-//
-// The check works by looking up the project whose label "tidefly.project_id" matches,
-// then verifying the user is a member of that project.
-//
-// Usage inside a handler (not as route middleware, because we need the container label):
-//
-//	if err := middleware.CheckContainerAccess(c, db, containerLabels); err != nil {
-//	    return err
-//	}
+// CheckContainerAccess checks if the current Echo user may access a container.
+// Admins always pass. Members must be part of the container's project.
+// Signature unchanged.
 func CheckContainerAccess(c *echo.Context, db *gorm.DB, labels map[string]string) error {
 	user := UserFromContext(c)
 	if user == nil {
@@ -42,19 +29,20 @@ func CheckContainerAccess(c *echo.Context, db *gorm.DB, labels map[string]string
 	return nil
 }
 
+// CheckContainerAccessHuma checks container access from a Huma context.
+// Now reads userID from JWT claims instead of authboss.User.
 func CheckContainerAccessHuma(ctx context.Context, db *gorm.DB, labels map[string]string) error {
-	u := UserFromHumaCtx(ctx)
-	if u == nil {
+	claims := UserFromHumaCtx(ctx)
+	if claims == nil {
 		return huma.Error401Unauthorized("unauthorized")
 	}
-	user, ok := u.(*models.User)
-	if !ok {
-		return huma.Error401Unauthorized("unauthorized")
-	}
-	if user.IsAdmin() {
+
+	// Admins pass via role claim — no DB lookup needed
+	if claims.Role == string(models.RoleAdmin) {
 		return nil
 	}
-	if err := checkProjectMembership(db, user.ID, labels); err != nil {
+
+	if err := checkProjectMembership(db, claims.UserID, labels); err != nil {
 		return huma.Error403Forbidden(err.Error())
 	}
 	return nil

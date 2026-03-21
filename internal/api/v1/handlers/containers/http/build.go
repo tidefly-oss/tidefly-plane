@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	traefiksvc "github.com/tidefly-oss/tidefly-backend/internal/services/traefik"
 )
 
 type BuildAndDeployRequest struct {
@@ -45,9 +45,9 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 	if req.Expose && req.Port == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "port is required when expose=true"})
 	}
-	if req.Expose && !h.traefik.Enabled {
+	if req.Expose && !h.CaddyEnabled() {
 		return c.JSON(
-			http.StatusBadRequest, map[string]string{"error": "Traefik integration is not enabled on this instance"},
+			http.StatusBadRequest, map[string]string{"error": "Caddy integration is not enabled on this instance"},
 		)
 	}
 
@@ -84,7 +84,10 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 			ctx, logger.AuditEntry{
 				Action: logger.AuditContainerDeploy, Success: false,
 				Details: fmt.Sprintf(
-					"dockerfile build image failed name=%q project=%s err=%s", req.Name, req.ProjectID, err,
+					"dockerfile build image failed name=%q project=%s err=%s",
+					req.Name,
+					req.ProjectID,
+					err,
 				),
 			},
 		)
@@ -92,9 +95,8 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 		return nil
 	}
 	defer func(buildOutput io.ReadCloser) {
-		err := buildOutput.Close()
-		if err != nil {
-			h.log.Error("failed to close build output", "error", err)
+		if err := buildOutput.Close(); err != nil {
+			h.log.Error("streams", "failed to close build output", err)
 		}
 	}(buildOutput)
 
@@ -139,21 +141,6 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 		"tidefly.project":  req.ProjectID,
 	}
 
-	var publicDomain string
-	if req.Expose {
-		traefikLabels := traefiksvc.LabelsFor(
-			*h.traefik, traefiksvc.ServiceConfig{
-				Name: req.Name, Port: req.Port, CustomDomain: req.CustomDomain,
-			},
-		)
-		traefiksvc.MergeLabels(labels, traefikLabels)
-		if req.CustomDomain != "" {
-			publicDomain = req.CustomDomain
-		} else {
-			publicDomain = traefiksvc.Domain(*h.traefik, req.Name)
-		}
-	}
-
 	spec := runtime.ContainerSpec{
 		Name: req.Name, Image: req.Tag, Env: req.Env,
 		Labels: labels, Restart: req.Restart, Network: project.NetworkName,
@@ -184,12 +171,41 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 		sendEvent("error", fmt.Sprintf(`{"message":%q}`, err.Error()))
 		return nil
 	}
+	if req.Expose {
+		if err := h.runtime.ConnectNetwork(ctx, req.Name, "tidefly_proxy"); err != nil {
+			h.log.Warn("caddy", "failed to connect container to internal network", err)
+		}
+	}
+
+	// Register route in Caddy if expose=true
+	var publicDomain string
+	if req.Expose && h.CaddyEnabled() {
+		domain := req.CustomDomain
+		if domain == "" {
+			domain = caddysvc.Domain(h.caddy.Config(), req.Name)
+		}
+		upstream := fmt.Sprintf("%s:%d", req.Name, req.Port)
+		routeID := caddysvc.RouteID(req.Name)
+		h.log.Info(
+			"caddy",
+			fmt.Sprintf("expose=%v caddy_enabled=%v port=%d", req.Expose, h.CaddyEnabled(), req.Port),
+		)
+		if err := h.caddy.AddHTTPRoute(ctx, routeID, domain, upstream); err != nil {
+			h.log.Error("caddy", "failed to register route", err)
+		} else {
+			publicDomain = domain
+		}
+	}
 
 	h.log.Audit(
 		ctx, logger.AuditEntry{
 			Action: logger.AuditContainerDeploy, ResourceID: stackID, Success: true,
 			Details: fmt.Sprintf(
-				"name=%q image=%q project=%s expose=%v domain=%s", req.Name, req.Tag, req.ProjectID, req.Expose,
+				"name=%q image=%q project=%s expose=%v domain=%s",
+				req.Name,
+				req.Tag,
+				req.ProjectID,
+				req.Expose,
 				publicDomain,
 			),
 		},

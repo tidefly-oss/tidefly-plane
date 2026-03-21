@@ -5,6 +5,10 @@ import (
 	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
+	containerfil "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/containers/filter"
+	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
@@ -13,10 +17,11 @@ import (
 type Handler struct {
 	runtime runtime.Runtime
 	log     *logger.Logger
+	db      *gorm.DB
 }
 
-func New(rt runtime.Runtime, log *logger.Logger) *Handler {
-	return &Handler{runtime: rt, log: log}
+func New(rt runtime.Runtime, log *logger.Logger, db *gorm.DB) *Handler {
+	return &Handler{runtime: rt, log: log, db: db}
 }
 
 type NetworkContainerRef struct {
@@ -48,17 +53,43 @@ type ContainersOutput struct {
 }
 
 func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
+		return nil, huma.Error401Unauthorized("unauthorized")
+	}
+
 	list, err := h.runtime.ListNetworks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list networks: %w", err)
 	}
+
+	// Only show tidefly-managed networks
 	managed := make([]runtime.Network, 0, len(list))
 	for _, n := range list {
 		if n.Labels["tidefly.managed"] == "true" {
 			managed = append(managed, n)
 		}
 	}
-	return &ListOutput{Body: managed}, nil
+
+	// Admins see all managed networks
+	if claims.Role == string(models.RoleAdmin) {
+		return &ListOutput{Body: managed}, nil
+	}
+
+	// Members see only networks belonging to their projects
+	allowed, err := containerfil.AllowedNetworks(h.db, claims.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("check access: %w", err)
+	}
+
+	filtered := make([]runtime.Network, 0, len(managed))
+	for _, n := range managed {
+		if _, ok := allowed[n.Name]; ok {
+			filtered = append(filtered, n)
+		}
+	}
+
+	return &ListOutput{Body: filtered}, nil
 }
 
 func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {

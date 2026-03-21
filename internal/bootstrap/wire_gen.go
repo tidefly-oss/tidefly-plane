@@ -30,19 +30,15 @@ func InitializeApp() (*App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
+	service := ProvideJWTService(config)
 	client, cleanup3, err := ProvideRedis(config)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	authboss, err := ProvideAuthService(config, db, client)
-	if err != nil {
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
+	tokenStore := ProvideTokenStore(client)
+	caddyClient := ProvideCaddyClient(config)
 	loader, err := ProvideTemplateLoader(config)
 	if err != nil {
 		cleanup3()
@@ -50,10 +46,10 @@ func InitializeApp() (*App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	service := ProvideNotificationsService(db)
+	notificationsService := ProvideNotificationsService(db)
 	gitService := ProvideGitService(config)
 	webhookService := ProvideWebhookService(config)
-	server, cleanup4, err := ProvideJobServer(config, runtime, db, logger, service)
+	server, cleanup4, err := ProvideJobServer(config, runtime, db, logger, notificationsService)
 	if err != nil {
 		cleanup3()
 		cleanup2()
@@ -69,7 +65,7 @@ func InitializeApp() (*App, func(), error) {
 		return nil, nil, err
 	}
 	notifierService := ProvideNotifierService(db, logger)
-	app := NewApp(config, logger, runtime, db, authboss, loader, service, gitService, webhookService, server, asynqClient, notifierService)
+	app := NewApp(config, logger, runtime, db, service, tokenStore, caddyClient, loader, notificationsService, gitService, webhookService, server, asynqClient, notifierService)
 	return app, func() {
 		cleanup5()
 		cleanup4()

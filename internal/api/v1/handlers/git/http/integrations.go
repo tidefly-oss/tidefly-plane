@@ -19,10 +19,10 @@ type ListOutput struct {
 
 type CreateInput struct {
 	Body struct {
-		Name     string `json:"name" minLength:"1" maxLength:"255"`
-		Provider string `json:"provider" enum:"github,gitlab,gitea-forgejo,bitbucket"`
+		Name     string `json:"name"               minLength:"1" maxLength:"255"`
+		Provider string `json:"provider"           enum:"github,gitlab,gitea-forgejo,bitbucket"`
 		BaseURL  string `json:"base_url,omitempty"`
-		Token    string `json:"token" minLength:"1"`
+		Token    string `json:"token"              minLength:"1"`
 		Username string `json:"username,omitempty" maxLength:"255"`
 	}
 }
@@ -41,13 +41,17 @@ type DeleteInput struct {
 	ID string `path:"id"`
 }
 
+// currentUser builds a minimal *models.User from JWT claims.
+// UserID and Role are embedded in the token — no DB lookup needed.
 func currentUser(ctx context.Context) *models.User {
-	u := middleware.UserFromHumaCtx(ctx)
-	if u == nil {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
 		return nil
 	}
-	user, _ := u.(*models.User)
-	return user
+	return &models.User{
+		ID:   claims.UserID,
+		Role: models.UserRole(claims.Role),
+	}
 }
 
 func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
@@ -150,5 +154,4 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	return nil, nil
 }
 
-// suppress unused
 var _ = huma.Error403Forbidden

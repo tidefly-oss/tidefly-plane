@@ -12,7 +12,6 @@ func ParseConfig() *Config {
 		port = "8989"
 	}
 
-	// ── Duration parsing ────────────────────────────────────────────────
 	pollInterval, _ := time.ParseDuration(viper.GetString("LOGWATCHER_POLL_INTERVAL"))
 	if pollInterval == 0 {
 		pollInterval = 15 * time.Second
@@ -43,8 +42,7 @@ func ParseConfig() *Config {
 			Password: viper.GetString("REDIS_PASSWORD"),
 		},
 		Auth: AuthConfig{
-			SessionSecret: viper.GetString("SESSION_SECRET"),
-			CookieSecret:  viper.GetString("COOKIE_SECRET"),
+			JWTSecret: viper.GetString("JWT_SECRET"),
 		},
 		SMTP: SMTPConfig{
 			Host:     viper.GetString("SMTP_HOST"),
@@ -93,16 +91,14 @@ func ParseConfig() *Config {
 			HealthCheckCron:           viper.GetString("JOBS_HEALTH_CHECK_CRON"),
 			Concurrency:               viper.GetInt("JOBS_CONCURRENCY"),
 		},
-		Traefik: TraefikConfig{
-			Enabled:          viper.GetBool("TRAEFIK_ENABLED"),
-			BaseDomain:       viper.GetString("TRAEFIK_BASE_DOMAIN"),
-			ACMEEmail:        viper.GetString("TRAEFIK_ACME_EMAIL"),
-			ACMEStaging:      viper.GetBool("TRAEFIK_ACME_STAGING"),
-			Network:          viper.GetString("TRAEFIK_NETWORK"),
-			EntrypointHTTP:   viper.GetString("TRAEFIK_ENTRYPOINT_HTTP"),
-			EntrypointHTTPS:  viper.GetString("TRAEFIK_ENTRYPOINT_HTTPS"),
-			ForceHTTPS:       viper.GetBool("TRAEFIK_FORCE_HTTPS"),
-			DashboardEnabled: viper.GetBool("TRAEFIK_DASHBOARD_ENABLED"),
+		Caddy: CaddyConfig{
+			Enabled:     viper.GetBool("CADDY_ENABLED"),
+			AdminURL:    viper.GetString("CADDY_ADMIN_URL"),
+			BaseDomain:  viper.GetString("CADDY_BASE_DOMAIN"),
+			ACMEEmail:   viper.GetString("CADDY_ACME_EMAIL"),
+			ACMEStaging: viper.GetBool("CADDY_ACME_STAGING"),
+			ForceHTTPS:  viper.GetBool("CADDY_FORCE_HTTPS"),
+			InternalTLS: viper.GetBool("CADDY_INTERNAL_TLS"),
 		},
 	}
 

@@ -44,3 +44,19 @@ func (d *Runtime) CreateNetwork(ctx context.Context, name string) error {
 func (d *Runtime) DeleteNetwork(ctx context.Context, id string) error {
 	return d.client.NetworkRemove(ctx, id)
 }
+
+func (d *Runtime) ConnectNetwork(ctx context.Context, containerID, networkName string) error {
+	err := d.client.NetworkConnect(ctx, networkName, containerID, &dockernetwork.EndpointSettings{})
+	if err != nil {
+		return fmt.Errorf("connect network %q to container %q: %w", networkName, containerID, err)
+	}
+	return nil
+}
+
+func (d *Runtime) DisconnectNetwork(ctx context.Context, containerID, networkName string) error {
+	err := d.client.NetworkDisconnect(ctx, networkName, containerID, true)
+	if err != nil {
+		return fmt.Errorf("disconnect network %q from container %q: %w", networkName, containerID, err)
+	}
+	return nil
+}

@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aarondl/authboss/v3"
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/google/wire"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
+	"github.com/tidefly-oss/tidefly-backend/internal/auth"
 	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/db"
 	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
 	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
 	"github.com/tidefly-oss/tidefly-backend/internal/redis"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/auth"
+	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
 	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
@@ -34,7 +34,9 @@ var ProviderSet = wire.NewSet(
 	ProvideRedis,
 	ProvideAsynqClient,
 	ProvideRuntime,
-	ProvideAuthService,
+	ProvideJWTService,
+	ProvideTokenStore,
+	ProvideCaddyClient,
 	ProvideTemplateLoader,
 	ProvideNotificationsService,
 	ProvideGitService,
@@ -114,9 +116,21 @@ func ProvideRuntime(cfg *config.Config) (runtime.Runtime, error) {
 	}
 }
 
-// ProvideAuthService auth.Setup() gibt *authboss.Authboss zurück — kein eigener Wrapper-Typ.
-func ProvideAuthService(cfg *config.Config, database *gorm.DB, rc *goredis.Client) (*authboss.Authboss, error) {
-	return auth.Setup(cfg, database, rc)
+func ProvideJWTService(cfg *config.Config) *auth.Service {
+	return auth.New(cfg.Auth.JWTSecret)
+}
+
+func ProvideTokenStore(rc *goredis.Client) *auth.TokenStore {
+	return auth.NewTokenStore(rc)
+}
+
+// ProvideCaddyClient creates the Caddy Admin API client.
+// Returns nil if Caddy is disabled — handlers check CaddyEnabled() before use.
+func ProvideCaddyClient(cfg *config.Config) *caddysvc.Client {
+	if !cfg.Caddy.Enabled {
+		return nil
+	}
+	return caddysvc.New(cfg.Caddy)
 }
 
 func ProvideTemplateLoader(cfg *config.Config) (*template.Loader, error) {

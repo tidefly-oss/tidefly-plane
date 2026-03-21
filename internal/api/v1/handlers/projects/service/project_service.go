@@ -16,10 +16,30 @@ func New(db *gorm.DB) *ProjectService {
 	return &ProjectService{db: db}
 }
 
+// List returns all projects — admin only.
 func (s *ProjectService) List() ([]models.Project, error) {
 	var list []models.Project
 	if err := s.db.Order("created_at desc").Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	return list, nil
+}
+
+// ListForUser returns projects visible to a user:
+// - Admins see all projects
+// - Members see only projects they are members of
+func (s *ProjectService) ListForUser(userID string, isAdmin bool) ([]models.Project, error) {
+	if isAdmin {
+		return s.List()
+	}
+
+	var list []models.Project
+	if err := s.db.
+		Joins("JOIN project_members ON project_members.project_id = projects.id").
+		Where("project_members.user_id = ?", userID).
+		Order("projects.created_at desc").
+		Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("list projects for user: %w", err)
 	}
 	return list, nil
 }

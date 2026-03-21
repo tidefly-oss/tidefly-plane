@@ -9,19 +9,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # ── Choose environment ─────────────────────────────
-# ENV_TYPE muss von außen gesetzt werden, z.B.:
-#   ENV_TYPE=development ./scripts/init-env.sh
-#   ENV_TYPE=production  ./scripts/init-env.sh
-ENV_TYPE="${ENV_TYPE:-development}"  # Default fallback: development
+ENV_TYPE="${ENV_TYPE:-development}"
 
 ENV_DIR="$SCRIPT_DIR/deploy/$ENV_TYPE"
 ENV_FILE="$ENV_DIR/.env"
 mkdir -p "$ENV_DIR"
 
+if [ -f "$ENV_FILE" ]; then
+  echo "✓ .env already exists — skipping secret generation"
+  exit 0
+fi
+
 # ── Generate secrets ─────────────────────────────
 APP_SECRET_KEY=$(openssl rand -hex 32)
-SESSION_SECRET=$(openssl rand -base64 48 | tr -d '=/+' | head -c 48)
-COOKIE_SECRET=$(openssl rand -base64 48 | tr -d '=/+' | head -c 48)
+JWT_SECRET=$(openssl rand -hex 32)
 POSTGRES_PASSWORD=$(openssl rand -base64 48 | tr -d '=/+' | head -c 48)
 REDIS_PASSWORD=$(openssl rand -base64 48 | tr -d '=/+' | head -c 48)
 
@@ -31,15 +32,15 @@ if [[ "$ENV_TYPE" == "production" ]]; then
   REDIS_URL="redis://tidefly:$REDIS_PASSWORD@redis:6379/0"
   REDIS_ADDR="redis:6379"
   TEMPLATES_DIR="https://github.com/tidefly-oss/tidefly-templates"
-  TRAEFIK_DASHBOARD_ENABLED="false"
   API_DOCS_ENABLED="false"
+  CADDY_ENABLED="true"
 else
-  DATABASE_URL="postgres://tidefly:$POSTGRES_PASSWORD@127.0.0.1:5432/tidefly?sslmode=disable"
-  REDIS_URL="redis://tidefly:$REDIS_PASSWORD@127.0.0.1:6379/0"
-  REDIS_ADDR="127.0.0.1:6379"
+  DATABASE_URL="postgres://tidefly:$POSTGRES_PASSWORD@127.0.0.1:15432/tidefly?sslmode=disable"
+  REDIS_URL="redis://tidefly:$REDIS_PASSWORD@127.0.0.1:16379/0"
+  REDIS_ADDR="127.0.0.1:16379"
   TEMPLATES_DIR="../tidefly-templates"
-  TRAEFIK_DASHBOARD_ENABLED="true"
   API_DOCS_ENABLED="true"
+  CADDY_ENABLED="true"
 fi
 
 # ── Write clean .env ─────────────────────────────
@@ -59,8 +60,7 @@ REDIS_ADDR=$REDIS_ADDR
 REDIS_USER=tidefly
 REDIS_PASSWORD=$REDIS_PASSWORD
 
-SESSION_SECRET=$SESSION_SECRET
-COOKIE_SECRET=$COOKIE_SECRET
+JWT_SECRET=$JWT_SECRET
 
 RUNTIME_TYPE=docker
 DOCKER_SOCK=/var/run/docker.sock
@@ -75,14 +75,13 @@ SMTP_TLS=tls
 
 TEMPLATES_DIR=$TEMPLATES_DIR
 
-TRAEFIK_ENABLED=true
-TRAEFIK_DASHBOARD_ENABLED=$TRAEFIK_DASHBOARD_ENABLED
-TRAEFIK_BASE_DOMAIN=apps.example.com
-TRAEFIK_ACME_EMAIL=admin@example.com
-TRAEFIK_ACME_STAGING=false
-TRAEFIK_NETWORK=tidefly_internal
-TRAEFIK_FORCE_HTTPS=true
-TRAEFIK_LOG_LEVEL=INFO
+CADDY_ENABLED=$CADDY_ENABLED
+CADDY_ADMIN_URL=http://127.0.0.1:2019
+CADDY_BASE_DOMAIN=apps.example.com
+CADDY_ACME_EMAIL=admin@example.com
+CADDY_ACME_STAGING=false
+CADDY_FORCE_HTTPS=true
+CADDY_INTERNAL_TLS=true
 
 LOG_LEVEL=info
 LOG_DB_LEVEL=warn
@@ -107,11 +106,10 @@ EOF
 REDIS_DIR="$ENV_DIR/redis"
 mkdir -p "$REDIS_DIR"
 
-# Create users.acl with the generated password
 cat > "$REDIS_DIR/users.acl" <<EOF
 user default off
 user tidefly on >$REDIS_PASSWORD ~* &* +@all
 EOF
 
-echo "✅ Clean .env generated for $ENV_TYPE environment with all secrets and URLs!"
+echo "✅ Clean .env generated for $ENV_TYPE environment!"
 echo "✅ Redis ACL file created at $REDIS_DIR/users.acl"

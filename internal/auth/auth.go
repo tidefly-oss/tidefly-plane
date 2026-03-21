@@ -24,7 +24,6 @@ var (
 )
 
 // ── Argon2id params ───────────────────────────────────────────────────────────
-// OWASP recommended minimums for Argon2id (2024)
 
 type argon2Params struct {
 	memory      uint32
@@ -35,7 +34,7 @@ type argon2Params struct {
 }
 
 var defaultArgon2Params = argon2Params{
-	memory:      64 * 1024, // 64 MB
+	memory:      64 * 1024,
 	iterations:  3,
 	parallelism: 2,
 	saltLen:     16,
@@ -67,10 +66,14 @@ func New(signingKey string) *Service {
 	}
 }
 
+// SigningKey returns the raw signing key bytes.
+// Required by echo-jwt middleware config.
+func (s *Service) SigningKey() []byte {
+	return s.signingKey
+}
+
 // ── Password hashing ──────────────────────────────────────────────────────────
 
-// HashPassword hashes a plaintext password using Argon2id.
-// Returns a PHC-formatted string: $argon2id$v=19$m=...,t=...,p=...$salt$hash
 func HashPassword(password string) (string, error) {
 	p := defaultArgon2Params
 
@@ -96,7 +99,6 @@ func HashPassword(password string) (string, error) {
 	return encoded, nil
 }
 
-// VerifyPassword checks a plaintext password against a stored Argon2id hash.
 func VerifyPassword(password, encodedHash string) error {
 	p, salt, hash, err := decodeHash(encodedHash)
 	if err != nil {
@@ -113,11 +115,9 @@ func VerifyPassword(password, encodedHash string) error {
 
 func decodeHash(encoded string) (*argon2Params, []byte, []byte, error) {
 	parts := strings.Split(encoded, "$")
-	// $argon2id$v=19$m=65536,t=3,p=2$salt$hash → 6 parts after split
 	if len(parts) != 6 {
 		return nil, nil, nil, ErrInvalidHash
 	}
-
 	if parts[1] != "argon2id" {
 		return nil, nil, nil, ErrInvalidHash
 	}
@@ -152,7 +152,6 @@ func decodeHash(encoded string) (*argon2Params, []byte, []byte, error) {
 
 // ── JWT ───────────────────────────────────────────────────────────────────────
 
-// GenerateAccessToken creates a signed JWT access token (15min TTL).
 func (s *Service) GenerateAccessToken(userID, email, role string) (string, error) {
 	now := time.Now()
 	claims := Claims{
@@ -166,12 +165,10 @@ func (s *Service) GenerateAccessToken(userID, email, role string) (string, error
 			Issuer:    "tidefly",
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.signingKey)
 }
 
-// ValidateAccessToken validates a JWT and returns its claims.
 func (s *Service) ValidateAccessToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(
 		tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
@@ -196,8 +193,8 @@ func (s *Service) ValidateAccessToken(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
-// GenerateRefreshToken creates a cryptographically random refresh token ID.
-// This is stored in Redis, not a JWT — so it's fully revocable.
+// ── Token generators ──────────────────────────────────────────────────────────
+
 func GenerateRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -206,7 +203,6 @@ func GenerateRefreshToken() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// GenerateWorkerRegistrationToken creates a one-time worker registration token.
 func GenerateWorkerRegistrationToken() (string, error) {
 	id := uuid.New().String()
 	b := make([]byte, 24)
@@ -216,7 +212,6 @@ func GenerateWorkerRegistrationToken() (string, error) {
 	return fmt.Sprintf("tfy_reg_%s_%s", id[:8], base64.URLEncoding.EncodeToString(b)[:16]), nil
 }
 
-// GenerateAPIToken creates a long-lived API token for Enterprise/CLI use.
 func GenerateAPIToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

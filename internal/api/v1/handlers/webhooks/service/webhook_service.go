@@ -20,27 +20,31 @@ func New(db *gorm.DB) *WebhookService {
 }
 
 func (s *WebhookService) CheckProjectAccess(ctx context.Context, projectID string) (*models.User, error) {
-	u := middleware.UserFromHumaCtx(ctx)
-	if u == nil {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-	user, ok := u.(*models.User)
-	if !ok || user == nil {
+
+	// Load full user from DB — needed for return value
+	var user models.User
+	if err := s.db.First(&user, "id = ?", claims.UserID).Error; err != nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
+
 	if user.IsAdmin() {
-		return user, nil
+		return &user, nil
 	}
+
 	var count int64
 	if err := s.db.Table("project_members").
-		Where("project_id = ? AND user_id = ?", projectID, user.ID).
+		Where("project_id = ? AND user_id = ?", projectID, claims.UserID).
 		Count(&count).Error; err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}
 	if count == 0 {
 		return nil, huma.Error403Forbidden("not a member of this project")
 	}
-	return user, nil
+	return &user, nil
 }
 
 func (s *WebhookService) List(ctx context.Context, projectID string) ([]models.Webhook, error) {

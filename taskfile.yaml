@@ -22,13 +22,13 @@ tasks:
     cmds:
       - |
         if [ ! -f {{.DEV_ENV}} ]; then
-          cp deploy/development/.env.example {{.DEV_ENV}}
+          cp ./.env.example {{.DEV_ENV}}
           echo "Created {{.DEV_ENV}}"
         else
           echo "{{.DEV_ENV}} already exists"
         fi
       - bash scripts/init-env.sh
-      - sed -i 's/\r//' {{.DEV_ENV}}
+      - sed -i 's/\r//' {{.DEV_ENV}} || true
       - echo 'Setup done'
 
   setup:prod:
@@ -74,7 +74,7 @@ tasks:
       - sh: test -f {{.DEV_ENV}}
         msg: Run task setup first
     cmds:
-      - "{{.DEV_CMD}} up -d traefik postgres redis mailpit"
+      - "{{.DEV_CMD}} up -d caddy postgres redis mailpit"
       - echo 'Dev stack started'
 
   dev:down:
