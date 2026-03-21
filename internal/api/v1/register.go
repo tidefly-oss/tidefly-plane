@@ -65,7 +65,7 @@ func Register(
 	authhttp.New(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
 
 	// ── All other routes ───────────────────────────────────────────────────────
-	adminhttp.New(db, log, notifier).RegisterRoutes(api, mw, adminMw)
+	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
 	containerhttp.New(rt, deployer, db, log, caddy).RegisterRoutes(api, e, mw, echoSSE, echoInject)
 	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier).RegisterRoutes(api, mw)
 	eventshttp.New(rt).RegisterRoutes(e, echoSSE, echoInject)

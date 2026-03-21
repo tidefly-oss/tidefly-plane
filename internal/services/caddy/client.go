@@ -322,3 +322,7 @@ func (c *Client) routeCount(ctx context.Context) (int, error) {
 	}
 	return len(routes), nil
 }
+
+func (c *Client) SetBaseDomain(domain string) {
+	c.cfg.BaseDomain = domain
+}

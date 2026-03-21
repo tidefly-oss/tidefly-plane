@@ -36,3 +36,4 @@ docs/swagger.yaml
 docs/docs.go
 
 .env
+users.acl
