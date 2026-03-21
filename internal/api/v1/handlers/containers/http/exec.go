@@ -22,7 +22,13 @@ func (h *Handler) Exec(c *echo.Context) error {
 	if err := h.access.CheckContainerAccess(c, details.Labels); err != nil {
 		return err
 	}
-	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+
+	resp, err := echo.UnwrapResponse(c.Response())
+	if err != nil {
+		return err
+	}
+
+	ws, err := upgrader.Upgrade(resp, c.Request(), nil)
 	if err != nil {
 		return err
 	}
