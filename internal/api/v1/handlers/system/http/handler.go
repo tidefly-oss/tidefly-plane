@@ -1,19 +1,17 @@
 package http
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/system/service"
+	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"gorm.io/gorm"
 )
 
 type Handler struct {
 	runtime runtime.Runtime
-	metrics *service.MetricsService
+	log     *applogger.Logger
+	metrics *metrics.Registry
 }
 
-func New(rt runtime.Runtime, db *gorm.DB) *Handler {
-	return &Handler{
-		runtime: rt,
-		metrics: service.New(db),
-	}
+func New(rt runtime.Runtime, log *applogger.Logger, metricsReg *metrics.Registry) *Handler {
+	return &Handler{runtime: rt, log: log, metrics: metricsReg}
 }

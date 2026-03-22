@@ -15,10 +15,8 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		LogRetentionDays          int `json:"log_retention_days"`
 		AuditRetentionDays        int `json:"audit_retention_days"`
 		NotificationRetentionDays int `json:"notification_retention_days"`
-		MetricsRetentionDays      int `json:"metrics_retention_days"`
 	}
 	_ = json.Unmarshal(t.Payload(), &payload)
-
 	if payload.LogRetentionDays <= 0 {
 		payload.LogRetentionDays = 30
 	}
@@ -27,9 +25,6 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 	}
 	if payload.NotificationRetentionDays <= 0 {
 		payload.NotificationRetentionDays = 30
-	}
-	if payload.MetricsRetentionDays <= 0 {
-		payload.MetricsRetentionDays = 30
 	}
 
 	appLogCutoff := time.Now().AddDate(0, 0, -payload.LogRetentionDays)
@@ -56,19 +51,12 @@ func (h *Handler) HandleLogsRetention(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("log retention: delete notifications: %w", notifResult.Error)
 	}
 
-	metricsCutoff := time.Now().AddDate(0, 0, -payload.MetricsRetentionDays)
-	metricsResult := h.db.WithContext(ctx).
-		Where("collected_at < ?", metricsCutoff).
-		Delete(&models.SystemMetric{})
-	if metricsResult.Error != nil {
-		return fmt.Errorf("log retention: delete metrics: %w", metricsResult.Error)
-	}
-
 	h.log.Info(
 		"jobs", fmt.Sprintf(
-			"retention: deleted %d app logs, %d audit logs, %d notifications, %d metrics",
-			result.RowsAffected, auditResult.RowsAffected, notifResult.RowsAffected, metricsResult.RowsAffected,
+			"retention: deleted %d app logs, %d audit logs, %d notifications",
+			result.RowsAffected, auditResult.RowsAffected, notifResult.RowsAffected,
 		),
 	)
+	h.metrics.IncJob(TaskLogsRetention)
 	return nil
 }

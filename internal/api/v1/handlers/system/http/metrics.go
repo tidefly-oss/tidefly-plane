@@ -3,31 +3,15 @@ package http
 import (
 	"context"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 )
 
-type MetricsInput struct {
-	Hours int `query:"hours" minimum:"1" maximum:"168" default:"24"`
-}
+type MetricsInput struct{}
+
 type MetricsOutput struct {
-	Body struct {
-		Metrics []models.SystemMetric `json:"metrics"`
-		Latest  *models.SystemMetric  `json:"latest"`
-	}
+	Body metrics.SystemSnapshot
 }
 
-func (h *Handler) Metrics(ctx context.Context, input *MetricsInput) (*MetricsOutput, error) {
-	if input.Hours <= 0 || input.Hours > 168 {
-		input.Hours = 24
-	}
-	metrics, err := h.metrics.Fetch(ctx, input.Hours)
-	if err != nil {
-		return nil, err
-	}
-	out := &MetricsOutput{}
-	out.Body.Metrics = metrics
-	if len(metrics) > 0 {
-		out.Body.Latest = &metrics[len(metrics)-1]
-	}
-	return out, nil
+func (h *Handler) Metrics(_ context.Context, _ *MetricsInput) (*MetricsOutput, error) {
+	return &MetricsOutput{Body: h.metrics.GetSystem()}, nil
 }

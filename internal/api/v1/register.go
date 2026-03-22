@@ -4,6 +4,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
@@ -49,6 +50,7 @@ func Register(
 	webhookSvc *webhooksvc.Service,
 	asynqClient *asynq.Client,
 	notifier *notifiersvc.Service,
+	metricsReg *metrics.Registry,
 ) {
 	deployer := deploy.New(rt, db)
 
@@ -75,7 +77,9 @@ func Register(
 	networkshttp.New(rt, log, db).RegisterRoutes(api, mw, adminMw)
 	notifhttp.New(notifSvc).RegisterRoutes(api, e, mw, echoSSE, echoInject)
 	projectshttp.New(db, rt, log).RegisterRoutes(api, mw)
-	systemhttp.New(rt, db).RegisterRoutes(api, mw)
+	systemHandler := systemhttp.New(rt, log, metricsReg)
+	systemHandler.RegisterRoutes(api, mw)
+	systemHandler.RegisterSSERoutes(e, echoSSE, echoInject)
 	templateshttp.New(templateLoader).RegisterRoutes(api, mw)
 	volumeshttp.New(rt, deployer, db, log).RegisterRoutes(api, mw, adminMw)
 	webhookshttp.New(db, asynqClient, log, webhookSvc).RegisterRoutes(api, e, mw)

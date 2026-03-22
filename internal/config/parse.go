@@ -16,10 +16,12 @@ func ParseConfig() *Config {
 	if pollInterval == 0 {
 		pollInterval = 15 * time.Second
 	}
+
 	dedupWindow, _ := time.ParseDuration(viper.GetString("LOGWATCHER_DEDUP_WINDOW"))
 	if dedupWindow == 0 {
 		dedupWindow = 2 * time.Minute
 	}
+
 	cleanupOlderThan, _ := time.ParseDuration(viper.GetString("JOBS_CLEANUP_OLDER_THAN"))
 	if cleanupOlderThan == 0 {
 		cleanupOlderThan = 24 * time.Hour
@@ -87,7 +89,6 @@ func ParseConfig() *Config {
 			LogRetentionDays:          viper.GetInt("JOBS_LOG_RETENTION_DAYS"),
 			AuditRetentionDays:        viper.GetInt("JOBS_AUDIT_RETENTION_DAYS"),
 			NotificationRetentionDays: viper.GetInt("JOBS_NOTIFICATION_RETENTION_DAYS"),
-			MetricsRetentionDays:      viper.GetInt("JOBS_METRICS_RETENTION_DAYS"),
 			HealthCheckCron:           viper.GetString("JOBS_HEALTH_CHECK_CRON"),
 			Concurrency:               viper.GetInt("JOBS_CONCURRENCY"),
 		},
@@ -101,6 +102,5 @@ func ParseConfig() *Config {
 			InternalTLS: viper.GetBool("CADDY_INTERNAL_TLS"),
 		},
 	}
-
 	return cfg
 }
