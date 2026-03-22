@@ -3,7 +3,6 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-backend/internal/models"
@@ -23,20 +22,14 @@ func (h *Handler) HandleMetricsCollect(ctx context.Context, _ *asynq.Task) error
 		return fmt.Errorf("metrics: system info: %w", err)
 	}
 
-	metric := models.SystemMetric{
-		CPUPercent:  info.CPUPercent,
-		MemUsedMB:   info.MemUsedMB,
-		MemTotalMB:  info.MemTotalMB,
-		MemPercent:  info.MemPercent,
-		DiskUsedMB:  info.DiskUsedMB,
-		DiskTotalMB: info.DiskTotalMB,
-		DiskPercent: info.DiskPercent,
-		CollectedAt: time.Now(),
-	}
-
-	if err := h.db.WithContext(ctx).Create(&metric).Error; err != nil {
-		return fmt.Errorf("metrics: save: %w", err)
-	}
+	// Update Prometheus gauges — no DB write
+	h.metrics.SetSystem(
+		info.CPUPercent,
+		info.MemUsedMB, info.MemTotalMB, info.MemPercent,
+		info.DiskUsedMB, info.DiskTotalMB, info.DiskPercent,
+	)
+	h.metrics.UpdateRuntime()
+	h.metrics.IncJob(TaskMetricsCollect)
 
 	if h.notifSvc != nil {
 		if info.CPUPercent >= thresholdCPU {

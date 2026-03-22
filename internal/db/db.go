@@ -62,7 +62,6 @@ func AutoMigrate(database *gorm.DB) error {
 		&models.AppLog{},
 		&models.AuditLog{},
 		&models.Notification{},
-		&models.SystemMetric{},
 		// Webhooks
 		&models.Webhook{},
 		&models.WebhookDelivery{},

@@ -11,6 +11,7 @@ import (
 
 	"github.com/tidefly-oss/tidefly-backend/internal/config"
 	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
 )
@@ -36,6 +37,7 @@ type Handler struct {
 	log      *logger.Logger
 	cfg      config.JobsConfig
 	notifSvc *notifications.Service
+	metrics  *metrics.Registry
 }
 
 func NewServer(
@@ -45,6 +47,7 @@ func NewServer(
 	db *gorm.DB,
 	log *logger.Logger,
 	notifySvc *notifications.Service,
+	metricsReg *metrics.Registry,
 ) (*Server, error) {
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     redisCfg.Addr,
@@ -63,6 +66,7 @@ func NewServer(
 			ErrorHandler: asynq.ErrorHandlerFunc(
 				func(ctx context.Context, task *asynq.Task, err error) {
 					log.Error("jobs", fmt.Sprintf("job %s failed", task.Type()), err)
+					metricsReg.IncJobFailed(task.Type(), err)
 				},
 			),
 		},
@@ -70,7 +74,14 @@ func NewServer(
 
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 	client := asynq.NewClient(redisOpt)
-	h := &Handler{rt: rt, db: db, log: log, cfg: jobsCfg, notifSvc: notifySvc}
+	h := &Handler{
+		rt:       rt,
+		db:       db,
+		log:      log,
+		cfg:      jobsCfg,
+		notifSvc: notifySvc,
+		metrics:  metricsReg,
+	}
 
 	return &Server{
 		server:    srv,
@@ -151,7 +162,6 @@ func (s *Server) registerSchedules() error {
 			"log_retention_days":          s.cfg.LogRetentionDays,
 			"audit_retention_days":        s.cfg.AuditRetentionDays,
 			"notification_retention_days": s.cfg.NotificationRetentionDays,
-			"metrics_retention_days":      s.cfg.MetricsRetentionDays,
 		},
 	)
 	if err != nil {
@@ -164,16 +174,16 @@ func (s *Server) registerSchedules() error {
 		return fmt.Errorf("register log retention: %w", err)
 	}
 
-	// ── Metrics Collection ───────────────────────────────────────────────────
+	// ── Metrics Collect ───────────────────────────────────────────────────────
 	metricsTask, err := newTask(TaskMetricsCollect, nil)
 	if err != nil {
 		return err
 	}
 	if _, err := s.scheduler.Register(
-		"@every 1m", metricsTask,
-		asynq.Queue("default"), asynq.MaxRetry(0), asynq.Timeout(30*time.Second),
+		"@every 15s", metricsTask,
+		asynq.Queue("critical"), asynq.MaxRetry(0), asynq.Timeout(10*time.Second),
 	); err != nil {
-		return fmt.Errorf("register metrics: %w", err)
+		return fmt.Errorf("register metrics collect: %w", err)
 	}
 
 	return nil

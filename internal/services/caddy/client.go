@@ -148,25 +148,25 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 						"automatic_https": map[string]any{
 							"disable": !c.cfg.ForceHTTPS,
 						},
+						"logs": map[string]any{
+							"default_logger_name": "tidefly_access",
+						},
 					},
 				},
 			},
 		},
 	}
-	_ = c.delete(ctx, "/config/", nil)
 
-	if err := c.put(ctx, "/config/", serverConfig); err != nil {
+	if err := c.patch(ctx, "/config/", serverConfig); err != nil {
 		return fmt.Errorf("caddy bootstrap: %w", err)
 	}
 
-	// Set up internal TLS if enabled
 	if c.cfg.InternalTLS {
 		if err := c.ConfigureInternalTLS(ctx); err != nil {
 			return fmt.Errorf("caddy internal tls: %w", err)
 		}
 	}
 
-	// Set up ACME if email is configured
 	if c.cfg.ACMEEmail != "" {
 		if err := c.ConfigureTLS(ctx); err != nil {
 			return fmt.Errorf("caddy acme tls: %w", err)

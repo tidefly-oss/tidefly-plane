@@ -14,6 +14,7 @@ type Config struct {
 	LogWatcher LogWatcherConfig
 	Jobs       JobsConfig
 	Caddy      CaddyConfig
+	Prometheus PrometheusConfig
 }
 
 type AppConfig struct {
@@ -93,7 +94,10 @@ type JobsConfig struct {
 	LogRetentionDays          int
 	AuditRetentionDays        int
 	NotificationRetentionDays int
-	MetricsRetentionDays      int
 	HealthCheckCron           string
 	Concurrency               int
+}
+
+type PrometheusConfig struct {
+	URL string
 }

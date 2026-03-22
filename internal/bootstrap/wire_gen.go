@@ -49,7 +49,8 @@ func InitializeApp() (*App, func(), error) {
 	notificationsService := ProvideNotificationsService(db)
 	gitService := ProvideGitService(config)
 	webhookService := ProvideWebhookService(config)
-	server, cleanup4, err := ProvideJobServer(config, runtime, db, logger, notificationsService)
+	registry := ProvideMetricsRegistry()
+	server, cleanup4, err := ProvideJobServer(config, runtime, db, logger, notificationsService, registry)
 	if err != nil {
 		cleanup3()
 		cleanup2()
@@ -65,7 +66,7 @@ func InitializeApp() (*App, func(), error) {
 		return nil, nil, err
 	}
 	notifierService := ProvideNotifierService(db, logger)
-	app := NewApp(config, logger, runtime, db, service, tokenStore, caddyClient, loader, notificationsService, gitService, webhookService, server, asynqClient, notifierService)
+	app := NewApp(config, logger, runtime, db, service, tokenStore, caddyClient, loader, notificationsService, gitService, webhookService, server, asynqClient, notifierService, registry)
 	return app, func() {
 		cleanup5()
 		cleanup4()

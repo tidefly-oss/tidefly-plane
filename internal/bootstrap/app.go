@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
@@ -45,6 +46,7 @@ type App struct {
 	jobServer   *jobs.Server
 	asynq       *asynq.Client
 	notifierSvc *notifiersvc.Service
+	metrics     *metrics.Registry
 }
 
 func NewApp(
@@ -62,6 +64,7 @@ func NewApp(
 	jobServer *jobs.Server,
 	asynqClient *asynq.Client,
 	notifierSvc *notifiersvc.Service,
+	metricsReg *metrics.Registry,
 ) *App {
 	return &App{
 		cfg: cfg, log: log, rt: rt, db: db,
@@ -71,6 +74,7 @@ func NewApp(
 		gitSvc: gitSvc, webhookSvc: webhookSvc,
 		jobServer: jobServer, asynq: asynqClient,
 		notifierSvc: notifierSvc,
+		metrics:     metricsReg,
 	}
 }
 
@@ -163,7 +167,7 @@ func (a *App) buildEcho() *echo.Echo {
 	v1.Register(
 		humaAPI, e, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
-		a.asynq, a.notifierSvc,
+		a.asynq, a.notifierSvc, a.metrics,
 	)
 	return e
 }

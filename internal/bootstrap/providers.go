@@ -15,6 +15,7 @@ import (
 	"github.com/tidefly-oss/tidefly-backend/internal/db"
 	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
 	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
+	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
 	"github.com/tidefly-oss/tidefly-backend/internal/redis"
 	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
@@ -43,6 +44,7 @@ var ProviderSet = wire.NewSet(
 	ProvideWebhookService,
 	ProvideJobServer,
 	ProvideNotifierService,
+	ProvideMetricsRegistry,
 	NewApp,
 )
 
@@ -153,17 +155,22 @@ func ProvideNotifierService(database *gorm.DB, log *applogger.Logger) *notifiers
 	return notifiersvc.New(database, log)
 }
 
+func ProvideMetricsRegistry() *metrics.Registry {
+	return metrics.New()
+}
+
 func ProvideJobServer(
 	cfg *config.Config,
 	rt runtime.Runtime,
 	database *gorm.DB,
 	log *applogger.Logger,
 	notifSvc *notifications.Service,
+	metricsReg *metrics.Registry,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
 		return nil, func() {}, nil
 	}
-	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, database, log, notifSvc)
+	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, database, log, notifSvc, metricsReg)
 	if err != nil {
 		return nil, nil, err
 	}

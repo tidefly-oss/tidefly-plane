@@ -9,92 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-#### Notifications — Slack, Discord & Email
-- External push notifications via Slack Incoming Webhooks, Discord Webhooks, and SMTP email
-- `internal/services/notifier` — new `Service` with `Send()`, `Test()`, `sendSlack()`, `sendDiscord()`, `sendEmail()`
-- Configurable triggers per event: deploy success, container down (ERROR/FATAL from LogWatcher), webhook delivery failure
-- `SystemSettings` model extended with: `notifications_enabled`, `slack_webhook_url`, `discord_webhook_url`, `notify_on_deploy`, `notify_on_container_down`, `notify_on_webhook_fail`
-- `notifications.Service.Publish()` — generic in-app notification for system-level events
-- `notifications.Service.IsNew()` — dedup guard: only fires external push on first occurrence, not on backend restart replay
-- `notifications.Fingerprint()` — exported for use in LogWatcher dedup check
-- Logger extended with `Errorw()` and `Warnw()` — structured key-value logging without requiring an `error` value
-- `POST /api/v1/admin/settings/test/{channel}` — test endpoint for notification channels
+#### Authentication — JWT + Argon2id
+- Replaced Authboss with custom JWT authentication (golang-jwt/jwt/v5)
+- Argon2id password hashing (OWASP 2024 params: 64MB, 3 iterations, 2 threads)
+- HttpOnly refresh token cookie (`tfy_rt`) — XSS-safe, never accessible from JS
+- Access token in memory only — never stored in localStorage or sessionStorage
+- Redis-backed refresh token store with automatic rotation
+- Auto-refresh on 401 with singleton promise — prevents parallel refresh calls
+- `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`, `POST /api/v1/auth/change-password`, `POST /api/v1/auth/logout-all`
+- `RequireAuthSSE` middleware — reads JWT from `Authorization` header or `?token=` query param (required for EventSource and WebSocket)
 
-#### Webhooks — Auto-deploy on Git push
-- Full webhook management: create, list, get, update, delete per project
-- HMAC-SHA256 request signing with per-webhook encrypted secrets (AES-256-GCM)
-- Secret rotation via `POST /api/v1/projects/{pid}/webhooks/{id}/rotate`
-- Delivery history with status, commit, branch, duration, and error details
-- Async webhook dispatch via asynq background jobs (`webhooks` queue)
-- Provider support: GitHub, GitLab, Gitea/Forgejo, Bitbucket, Generic
-- Branch filter — trigger only on specific branches or `*` for all
-- Trigger types: `redeploy` (existing service) and `deploy` (fresh from template)
+#### Caddy Reverse Proxy Integration
+- Replaced Traefik with Caddy — all configuration via Admin API, no Caddyfile needed
+- `internal/services/caddy` — `CaddyClient` with `Bootstrap()`, `AddHTTPRoute()`, `RemoveRoute()`, `ConfigureTLS()`, `ConfigureInternalTLS()`
+- Bootstrap on backend startup: initializes HTTP server config, TLS policies
+- Automatic route registration after container deploy (`expose=true`)
+- Automatic route removal on container delete
+- `tidefly_proxy` Docker network — Caddy connects to deployed containers via dedicated proxy network, isolated from `tidefly_internal` infrastructure
+- `ConnectNetwork` / `DisconnectNetwork` added to Runtime interface (Docker + Podman implementations)
+- `SetBaseDomain()` — live domain update without restart
+- `CADDY_*` environment variables replace all `TRAEFIK_*` variables
+- Custom Caddy image (`ghcr.io/tidefly-oss/tidefly-caddy`) with `caddy-l4` and `caddy-ratelimit` plugins
 
-#### Version Tracking
-- `internal/version/version.go` — `var Version = "0.1.0-alpha"` overridable via ldflags at build time
-- `GET /api/v1/system/info` now returns `tidefly_version` field
-- Build task sets version from `git describe --tags --always --dirty`
+#### Access Control
+- Container list filtered by project membership for non-admin users
+- Network list filtered by allowed project networks
+- Volume list filtered by accessible containers
+- `tidefly.internal: "true"` label hides infrastructure containers from all users
+- Projects list filtered by user membership (`ListForUser`)
 
-#### Traefik Integration
-- Automatic reverse proxy + SSL for deployed services via Let's Encrypt HTTP-Challenge
-- Zero-config HTTPS: user sets a wildcard DNS record once, every deployed service gets a subdomain automatically
-- `TRAEFIK_*` environment variables control the full integration
-- `expose=true` + `port` fields on Dockerfile deploy, Compose deploy, and template deploy requests
-- `done` event on deploy includes `url` field with the public HTTPS URL
-- ACME staging CA support for testing without rate limits
-- HTTP to HTTPS redirect middleware auto-generated when `TRAEFIK_FORCE_HTTPS=true`
-- Custom domain support via `custom_domain` on deploy
-
-#### Audit Logging
-- `AuditC(c, action, resourceID, err, details)` — single-call helper that extracts user_id, ip, user_agent from Echo context
-- New audit actions across containers, deploy, git, networks, projects, volumes, admin, auth
-- Both success and failure paths logged with structured details
-
-#### Request/Response Logging Middleware
-- `middleware.RequestLogger` — production-grade HTTP logging via slog
-- Base fields on every request: method, path, query, status, latency_ms, ip, request_id, response_bytes
-- Extended fields only on 4xx/5xx or slow requests
-- Sensitive field redaction from JSON bodies: password, token, secret, api_key, authorization, csrf_token
-- `wrappedWriter` implements `http.Flusher` so SSE streams work through the middleware
-
-#### Config Validation
-- `config.Validate()` called at startup — hard fail with clear error list if required fields missing
-- Required: `APP_SECRET_KEY` (min 32 chars), `DATABASE_URL`, `SESSION_SECRET`, `COOKIE_SECRET`, `DOCKER_SOCK`
-- Traefik cross-validation: `TRAEFIK_BASE_DOMAIN` required when enabled
-- SMTP cross-validation: warns in production when `SMTP_HOST` is still `localhost`
-
-#### SMTP — User-provided Mail Server
-- `SMTPConfig` expanded with `User`, `Password`, `From`, `TLS` fields
-- In dev: Mailpit defaults (`localhost:1025`, no auth)
-- In prod: user enters their own SMTP credentials (Resend, Postmark, own server)
-
-#### Dev/Prod Compose Split
-- `deploy/dev/docker-compose.yaml` — infra only: Traefik, Postgres, Redis, Mailpit
-- `deploy/prod/docker-compose.yaml` — full stack: Traefik, Postgres, Redis, Backend, Frontend
-- No port binding for Postgres/Redis in prod (internal network only)
+#### Settings — Proxy Domain
+- `caddy_base_domain` field in `SystemSettings` — admin can change Control Plane domain live
+- `PATCH /api/v1/admin/settings` now accepts `caddy_base_domain`
 
 ### Changed
 
-#### HTTP Server
-- Replaced `echo.StartConfig` with raw `net/http.Server` — timeouts set to `0` so SSE and WebSocket streams are not terminated
+#### Proxy
+- `TraefikConfig` replaced with `CaddyConfig` across config, providers, handlers
+- `internal/services/traefik/` removed — replaced by `internal/services/caddy/`
+- Deploy handlers (Dockerfile, Compose, Template) now register Caddy routes instead of setting Docker labels
+- Docker Compose dev: Traefik replaced with tidefly-caddy, non-standard host ports for infra (Postgres: 15432, Redis: 16379, Mailpit: 11025/18025, Caddy: 10080/10443)
+- Docker Compose prod: same Caddy setup, Postgres/Redis no host port binding
 
-#### SSE Streams — Context Fix
-- `events.Stream` and `notifications.Stream` now derive their own `context.WithCancel(context.Background())` instead of using the request context directly
-- Client disconnect detected via goroutine watching `c.Request().Context().Done()`
+#### Config
+- `SESSION_SECRET` and `COOKIE_SECRET` removed — replaced by `JWT_SECRET`
+- `TRAEFIK_*` variables removed — replaced by `CADDY_*` variables
+- Config validation updated: checks `JWT_SECRET`, `CADDY_ADMIN_URL`, `CADDY_BASE_DOMAIN`
 
-#### S3 Storage
-- Removed MinIO-specific integration — replaced with generic S3-compatible endpoint support
-- Works with AWS S3, Cloudflare R2, Backblaze B2, or any S3-compatible provider
-- Configured via `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+#### Admin
+- `SettingsService` now accepts `*caddy.Client` — domain changes propagate live
+- `UpdateSettingsBody` — separate Huma input struct with `omitempty` tags fixes 422 on partial updates
+- Registration Mode removed from Settings UI — admin manages users directly
 
 ### Fixed
-- SSE endpoints no longer disconnect after 30 seconds
-- `POST /auth/login` now correctly sets session cookie
-- `GET /api/v1/auth/me` no longer returns 401 after successful login
-- Images and networks "used by containers" fetch no longer 404
-- Request logger body truncation at 2KB caused HMAC signature mismatch for webhook payloads — increased to 64KB
-- Deploy handler nil pointer dereference on `*bool Expose` field when not provided — added nil check
-- LogWatcher external notifications no longer re-fire on backend restart for already-seen errors — `IsNew()` guard added
+- `helpers.GenerateTempPassword()` migrated from bcrypt to Argon2id — user creation via admin panel now produces login-compatible password hashes
+- SSE/WebSocket endpoints (events, logs, stats, exec, notifications) now authenticate via `?token=` query param — fixes 401 for EventSource and WebSocket connections
+- Container terminal WebSocket upgrade fixed for Echo v5 — uses `echo.UnwrapResponse()` to get hijackable `http.ResponseWriter`
+- Resource limits GET/PATCH now use `api.get`/`api.patch` with Bearer token — fixes 401
+- Dashboard SSR disabled — all auth is client-side, fixes 401 on page refresh
+- Login cookie `Secure: false` in development (HTTP), `SameSite: Lax` for cross-origin Vite proxy
+- Vite proxy configured for same-origin requests — fixes HttpOnly cookie handling in dev
+- `auth.init()` called before rendering dashboard children — fixes race condition causing 401 on data requests
 
 ---
 
@@ -119,15 +95,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git integration: GitHub, GitLab, Gitea/Forgejo, Bitbucket with AES-256-GCM token encryption
 - RBAC: admin and member roles with project-scoped permissions
 - User management
-- Authentication (session-based, bcrypt, Redis session store)
+- Webhook auto-deploy system (GitHub, GitLab, Gitea, Bitbucket, Generic) with HMAC-SHA256
+- External notifications via Slack, Discord, SMTP
+- Audit logging
 
 ---
 
 ## Roadmap
 
 ### Next Up
-- [ ] In-app update button — check GitHub releases, notify and update on the fly
-- [ ] Multi-node worker support — hub-and-worker model over WireGuard VPN
+- [ ] Multi-node worker support — Plane/Worker model with gRPC tunnel and mTLS
+- [ ] Worker Agent binary
+- [ ] In-app update button
 - [ ] S3-compatible backup integration
 - [ ] Custom domain management UI
 
