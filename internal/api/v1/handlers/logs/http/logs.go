@@ -3,8 +3,8 @@ package http
 import (
 	"context"
 
-	logsvc "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/logs/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	logsvc "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/logs/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type ListAppLogsInput struct {

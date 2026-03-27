@@ -1,9 +1,9 @@
 package http
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/git/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	gitsvc "github.com/tidefly-oss/tidefly-backend/internal/services/git"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/git/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	gitsvc "github.com/tidefly-oss/tidefly-plane/internal/services/git"
 	"gorm.io/gorm"
 )
 

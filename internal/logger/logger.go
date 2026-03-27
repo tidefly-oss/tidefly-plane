@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 // AuditAction constants for security-relevant events.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	dockerruntime "github.com/tidefly-oss/tidefly-backend/internal/services/runtime/docker"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	dockerruntime "github.com/tidefly-oss/tidefly-plane/internal/services/runtime/docker"
 )
 
 func (h *Handler) Logs(c *echo.Context) error {

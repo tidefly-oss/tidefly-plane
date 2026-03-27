@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
 )
 
 type Handler struct {

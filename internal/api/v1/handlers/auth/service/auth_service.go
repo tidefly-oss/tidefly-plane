@@ -7,8 +7,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 // ── Errors ────────────────────────────────────────────────────────────────────

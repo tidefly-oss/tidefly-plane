@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"gorm.io/gorm"
 )
 

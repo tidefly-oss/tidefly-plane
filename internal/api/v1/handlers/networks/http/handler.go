@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	containerfil "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/containers/filter"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	containerfil "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/filter"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type Handler struct {

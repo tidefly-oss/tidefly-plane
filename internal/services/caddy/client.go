@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/config"
 )
 
 // Client speaks to the Caddy Admin API.

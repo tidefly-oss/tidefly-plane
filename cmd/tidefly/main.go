@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/bootstrap"
+	"github.com/tidefly-oss/tidefly-plane/internal/bootstrap"
 )
 
 var migrateOnly = flag.Bool("migrate-only", false, "run database migrations and exit")
@@ -29,7 +29,7 @@ func run() error {
 	defer cleanup()
 
 	if *migrateOnly {
-		fmt.Println("✅ Database migrations completed successfully")
+		fmt.Println("Migrations completed successfully.")
 		return nil
 	}
 

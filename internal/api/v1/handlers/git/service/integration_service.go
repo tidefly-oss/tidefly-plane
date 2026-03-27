@@ -6,7 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type IntegrationService struct {

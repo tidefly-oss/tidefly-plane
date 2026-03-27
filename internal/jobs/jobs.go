@@ -9,11 +9,11 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 const (

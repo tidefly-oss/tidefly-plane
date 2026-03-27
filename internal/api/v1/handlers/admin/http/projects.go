@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/mapper"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/mapper"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
 )
 
 type SetProjectMembersInput struct {

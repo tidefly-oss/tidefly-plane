@@ -66,7 +66,17 @@ func InitializeApp() (*App, func(), error) {
 		return nil, nil, err
 	}
 	notifierService := ProvideNotifierService(db, logger)
-	app := NewApp(config, logger, runtime, db, service, tokenStore, caddyClient, loader, notificationsService, gitService, webhookService, server, asynqClient, notifierService, registry)
+	caService, err := ProvideCAService(config, db)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	agentServer := ProvideAgentServer(config, db, caService)
+	app := NewApp(config, logger, runtime, db, service, tokenStore, caddyClient, loader, notificationsService, gitService, webhookService, server, asynqClient, notifierService, registry, caService, agentServer)
 	return app, func() {
 		cleanup5()
 		cleanup4()

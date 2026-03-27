@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	dockercontainer "github.com/docker/docker/api/types/container"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 func (d *Runtime) UpdateResources(

@@ -4,7 +4,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/shared"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/shared"
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, e *echo.Echo, mw huma.Middlewares) {

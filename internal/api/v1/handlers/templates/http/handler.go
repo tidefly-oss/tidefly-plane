@@ -5,7 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
 )
 
 type Handler struct {

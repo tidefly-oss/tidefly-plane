@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/secret"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/secret"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
 )
 
 type Deployer struct {

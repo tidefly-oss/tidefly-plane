@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type BuildAndDeployRequest struct {

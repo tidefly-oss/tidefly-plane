@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 // Runtime returns the underlying container runtime.

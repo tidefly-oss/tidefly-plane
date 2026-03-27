@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/helpers"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/helpers"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type UserService struct {

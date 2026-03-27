@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git/providers"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git/types"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git/providers"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git/types"
 )
 
 type Service struct {

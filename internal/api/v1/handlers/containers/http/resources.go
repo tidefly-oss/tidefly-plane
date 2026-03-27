@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type GetResourcesInput struct {

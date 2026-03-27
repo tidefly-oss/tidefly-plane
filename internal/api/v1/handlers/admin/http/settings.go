@@ -3,9 +3,9 @@ package http
 import (
 	"context"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type GetSettingsInput struct{}

@@ -1,7 +1,7 @@
 package mapper
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type CurrentUserResponse struct {

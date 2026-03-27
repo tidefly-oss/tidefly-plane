@@ -18,10 +18,12 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Env         string
-	Port        string
-	SecretKey   string
-	DocsEnabled bool
+	Env           string
+	Port          string
+	SecretKey     string
+	DocsEnabled   bool
+	EncryptionKey string
+	AgentGRPCPort string
 }
 
 type DatabaseConfig struct {

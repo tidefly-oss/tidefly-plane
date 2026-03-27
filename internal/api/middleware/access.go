@@ -9,7 +9,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 // CheckContainerAccess checks if the current Echo user may access a container.

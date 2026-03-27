@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 // ── Patterns ──────────────────────────────────────────────────────────────────

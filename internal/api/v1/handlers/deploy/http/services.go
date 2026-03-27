@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	deploysvc "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/deploy/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
+	deploysvc "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
 )
 
 type ListServicesInput struct{}

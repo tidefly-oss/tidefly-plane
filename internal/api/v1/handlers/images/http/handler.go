@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/images/helpers"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/images/helpers"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type Handler struct {
