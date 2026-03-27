@@ -3,7 +3,7 @@ package http
 import (
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/shared"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/shared"
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {

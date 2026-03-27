@@ -7,8 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/auth/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/service"
 )
 
 const tokenTypeBearer = "Bearer"

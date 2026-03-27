@@ -9,7 +9,7 @@ import (
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 func (p *Runtime) SystemInfo(ctx context.Context) (runtime.SystemInfo, error) {

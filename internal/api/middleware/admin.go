@@ -7,8 +7,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 // ── Echo helpers ──────────────────────────────────────────────────────────────

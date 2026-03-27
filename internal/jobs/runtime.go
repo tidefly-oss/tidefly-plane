@@ -9,7 +9,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 func (h *Handler) HandleRuntimeCleanup(ctx context.Context, t *asynq.Task) error {

@@ -1,14 +1,14 @@
 package http
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/deploy/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
 	"gorm.io/gorm"
 )
 

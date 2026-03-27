@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

@@ -8,9 +8,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 	"gopkg.in/yaml.v3"
 )
 

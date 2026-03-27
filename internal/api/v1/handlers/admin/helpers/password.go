@@ -2,7 +2,7 @@ package helpers
 
 import (
 	"github.com/google/uuid"
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
 )
 
 func GenerateTempPassword() (plain string, hash string, err error) {

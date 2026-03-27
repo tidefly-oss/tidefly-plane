@@ -8,7 +8,7 @@ import (
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 func (d *Runtime) Type() runtime.RuntimeType { return runtime.RuntimeDocker }

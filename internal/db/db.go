@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -65,5 +65,11 @@ func AutoMigrate(database *gorm.DB) error {
 		// Webhooks
 		&models.Webhook{},
 		&models.WebhookDelivery{},
+		// CA
+		&models.CertificateAuthority{},
+		&models.IssuedCertificate{},
+		&models.WorkerRegistrationToken{},
+		// Worker
+		&models.WorkerNode{},
 	)
 }

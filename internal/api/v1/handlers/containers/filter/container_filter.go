@@ -3,7 +3,7 @@ package filter
 import (
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 func AllowedNetworks(db *gorm.DB, userID string) (map[string]struct{}, error) {

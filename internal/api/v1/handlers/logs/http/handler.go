@@ -1,7 +1,7 @@
 package http
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/logs/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/logs/service"
 	"gorm.io/gorm"
 )
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 const caddyContainerName = "tidefly_caddy"

@@ -6,10 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/webhooks/helpers"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/webhooks/helpers"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 type webhookResponse struct {

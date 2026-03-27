@@ -3,8 +3,8 @@ package http
 import (
 	"context"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/auth/mapper"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/mapper"
 )
 
 type CurrentUserInput struct{}

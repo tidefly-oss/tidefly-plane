@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 func (p *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {

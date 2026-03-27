@@ -7,10 +7,10 @@ import (
 	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	containerfil "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/containers/filter"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	containerfil "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/filter"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type AccessService struct {

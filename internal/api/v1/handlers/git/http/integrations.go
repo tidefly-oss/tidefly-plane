@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/git/mapper"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git/types"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/git/mapper"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git/types"
 )
 
 type ListInput struct{}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hibiken/asynq"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 const TaskMetricsCollect = "metrics:collect"

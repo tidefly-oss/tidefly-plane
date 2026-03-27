@@ -3,7 +3,7 @@ package http
 import (
 	"context"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git/types"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git/types"
 )
 
 type ValidateInput struct {

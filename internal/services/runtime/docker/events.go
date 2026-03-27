@@ -6,7 +6,7 @@ import (
 
 	dockerevents "github.com/docker/docker/api/types/events"
 	dockerfilters "github.com/docker/docker/api/types/filters"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 var relevantActions = map[dockerevents.Action]runtime.ContainerEventType{

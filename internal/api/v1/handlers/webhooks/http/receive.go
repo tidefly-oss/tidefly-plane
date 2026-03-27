@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 func (h *Handler) Receive(c *echo.Context) error {

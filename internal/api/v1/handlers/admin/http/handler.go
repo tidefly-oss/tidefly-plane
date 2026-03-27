@@ -1,10 +1,10 @@
 package http
 
 import (
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
 	"gorm.io/gorm"
 )
 

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type Event struct {

@@ -3,9 +3,9 @@ package service
 import (
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/helpers"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/helpers"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
 	"gorm.io/gorm"
 )
 

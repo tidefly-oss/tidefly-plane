@@ -4,9 +4,9 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/webhooks/service"
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	webhooksvc "github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/webhooks/service"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	webhooksvc "github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 type Handler struct {

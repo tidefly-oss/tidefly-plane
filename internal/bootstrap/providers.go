@@ -10,22 +10,25 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
-	"github.com/tidefly-oss/tidefly-backend/internal/db"
-	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
-	"github.com/tidefly-oss/tidefly-backend/internal/redis"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime/docker"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime/podman"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/crypto"
+	"github.com/tidefly-oss/tidefly-plane/internal/db"
+	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/redis"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime/docker"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime/podman"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 var ProviderSet = wire.NewSet(
@@ -45,6 +48,9 @@ var ProviderSet = wire.NewSet(
 	ProvideJobServer,
 	ProvideNotifierService,
 	ProvideMetricsRegistry,
+	ProvideCAService,
+	ProvideAgentServer,
+	ProvideAgentClient,
 	NewApp,
 )
 
@@ -81,7 +87,7 @@ func ProvideDatabase(cfg *config.Config, log *applogger.Logger) (*gorm.DB, func(
 		return nil, nil, err
 	}
 	log.SetDB(database)
-	return database, func() {}, nil
+	return database, func() { /* gorm has no close */ }, nil
 }
 
 func ProvideRedis(cfg *config.Config) (*goredis.Client, func(), error) {
@@ -168,11 +174,35 @@ func ProvideJobServer(
 	metricsReg *metrics.Registry,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
-		return nil, func() {}, nil
+		return nil, func() { /* has no close */ }, nil
 	}
 	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, database, log, notifSvc, metricsReg)
 	if err != nil {
 		return nil, nil, err
 	}
-	return srv, func() {}, nil
+	return srv, func() { /* has no close */ }, nil
+}
+
+func ProvideCAService(cfg *config.Config, database *gorm.DB) (*ca.Service, error) {
+	encKey, err := crypto.KeyFromBase64(cfg.App.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("ca: invalid encryption key: %w", err)
+	}
+
+	svc := ca.New(database, encKey)
+
+	if err := svc.Init(); err != nil {
+		return nil, fmt.Errorf("ca: init failed: %w", err)
+	}
+
+	return svc, nil
+}
+
+func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service) *agentsvc.Server {
+	port := ":" + cfg.App.AgentGRPCPort
+	return agentsvc.NewServer(db, caService, port)
+}
+
+func ProvideAgentClient(srv *agentsvc.Server) *agentsvc.Client {
+	return agentsvc.NewClient(srv.Registry())
 }

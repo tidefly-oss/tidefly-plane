@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git/types"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git/types"
 )
 
 const defaultGitLabBaseURL = "https://gitlab.com"

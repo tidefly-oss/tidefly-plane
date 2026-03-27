@@ -29,10 +29,12 @@ func ParseConfig() *Config {
 
 	cfg := &Config{
 		App: AppConfig{
-			Env:         viper.GetString("APP_ENV"),
-			Port:        port,
-			SecretKey:   viper.GetString("APP_SECRET_KEY"),
-			DocsEnabled: viper.GetBool("API_DOCS_ENABLED"),
+			Env:           viper.GetString("APP_ENV"),
+			Port:          port,
+			SecretKey:     viper.GetString("APP_SECRET_KEY"),
+			DocsEnabled:   viper.GetBool("API_DOCS_ENABLED"),
+			EncryptionKey: viper.GetString("TIDEFLY_ENCRYPTION_KEY"),
+			AgentGRPCPort: viper.GetString("AGENT_GRPC_PORT"),
 		},
 		Database: DatabaseConfig{
 			URL: viper.GetString("DATABASE_URL"),
@@ -100,6 +102,9 @@ func ParseConfig() *Config {
 			ACMEStaging: viper.GetBool("CADDY_ACME_STAGING"),
 			ForceHTTPS:  viper.GetBool("CADDY_FORCE_HTTPS"),
 			InternalTLS: viper.GetBool("CADDY_INTERNAL_TLS"),
+		},
+		Prometheus: PrometheusConfig{
+			URL: viper.GetString("PROMETHEUS_URL"),
 		},
 	}
 	return cfg

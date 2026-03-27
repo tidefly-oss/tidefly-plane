@@ -9,14 +9,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/logger"
-	"github.com/tidefly-oss/tidefly-backend/internal/models"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 const TaskWebhookDeploy = "webhooks:deploy"

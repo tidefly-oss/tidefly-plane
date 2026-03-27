@@ -10,25 +10,27 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/adapter"
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	v1 "github.com/tidefly-oss/tidefly-backend/internal/api/v1"
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
-	"github.com/tidefly-oss/tidefly-backend/internal/config"
-	"github.com/tidefly-oss/tidefly-backend/internal/jobs"
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/logwatcher"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/adapter"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	v1 "github.com/tidefly-oss/tidefly-plane/internal/api/v1"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/logwatcher"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 type App struct {
@@ -47,6 +49,8 @@ type App struct {
 	asynq       *asynq.Client
 	notifierSvc *notifiersvc.Service
 	metrics     *metrics.Registry
+	caService   *ca.Service
+	agentSrv    *agentsvc.Server
 }
 
 func NewApp(
@@ -65,6 +69,8 @@ func NewApp(
 	asynqClient *asynq.Client,
 	notifierSvc *notifiersvc.Service,
 	metricsReg *metrics.Registry,
+	caService *ca.Service,
+	agentSrv *agentsvc.Server,
 ) *App {
 	return &App{
 		cfg: cfg, log: log, rt: rt, db: db,
@@ -75,6 +81,8 @@ func NewApp(
 		jobServer: jobServer, asynq: asynqClient,
 		notifierSvc: notifierSvc,
 		metrics:     metricsReg,
+		caService:   caService,
+		agentSrv:    agentSrv,
 	}
 }
 
@@ -113,6 +121,14 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 			),
 		)
 	}
+
+	// CA renewal job — checks daily, renews certs expiring within 30 days
+	a.caService.StartRenewalJob(ctx)
+	a.log.Info("app", "CA certificate renewal job started")
+
+	// Agent gRPC server — accepts worker connections via mTLS
+	eg.Go(func() error { return a.agentSrv.Start(ctx) })
+	a.log.Info("app", fmt.Sprintf("agent gRPC server listening on :%s", a.cfg.App.AgentGRPCPort))
 }
 
 func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
@@ -168,6 +184,8 @@ func (a *App) buildEcho() *echo.Echo {
 		humaAPI, e, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
 		a.asynq, a.notifierSvc, a.metrics,
+		a.caService,
 	)
+
 	return e
 }

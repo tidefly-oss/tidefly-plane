@@ -1,6 +1,6 @@
 package mapper
 
-import "github.com/tidefly-oss/tidefly-backend/internal/models"
+import "github.com/tidefly-oss/tidefly-plane/internal/models"
 
 type IntegrationResponse struct {
 	ID         string   `json:"id"`

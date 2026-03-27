@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package agent.v1;
+
+option go_package = "github.com/tidefly-oss/tidefly-backend/internal/api/v1/proto/agent;agentpb";
+
+// ── Agent Service ─────────────────────────────────────────────────────────────
+// The Worker Agent connects to the Plane and establishes a bidirectional stream.
+// The Plane sends Commands, the Worker sends back Events/Responses.
+
+service AgentService {
+  // Connect establishes the persistent bidirectional stream between
+  // a Worker Agent and the Plane. The worker initiates this call.
+  rpc Connect(stream AgentMessage) returns (stream PlaneMessage);
+
+  // Ping is a simple health check used before the full stream is established.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ── Ping ──────────────────────────────────────────────────────────────────────
+
+message PingRequest {
+  string worker_id = 1;
+}
+
+message PingResponse {
+  string plane_version = 1;
+  int64 timestamp = 2; // unix millis
+}
+
+// ── Messages: Worker → Plane ──────────────────────────────────────────────────
+
+message AgentMessage {
+  string message_id = 1; // UUID for correlation
+  string worker_id = 2;
+
+  oneof payload {
+    AgentHello hello = 10;
+    AgentHeartbeat heartbeat = 11;
+    CommandAck command_ack = 12;
+    ContainerListResult container_list = 13;
+    ContainerLogsResult container_logs = 14;
+    MetricsResult metrics = 15;
+    DeployResult deploy_result = 16;
+    ErrorEvent error = 99;
+  }
+}
+
+// Sent once on connect — worker identifies itself and reports capabilities
+message AgentHello {
+  string agent_version = 1;
+  string os = 2;
+  string arch = 3;
+  string runtime_type = 4; // "docker" | "podman"
+  string hostname = 5;
+}
+
+// Sent every 30s to keep the stream alive and report basic status
+message AgentHeartbeat {
+  int64 timestamp = 1; // unix millis
+  int32 container_count = 2;
+  double cpu_percent = 3;
+  double mem_percent = 4;
+}
+
+// Acknowledgement for a plane command
+message CommandAck {
+  string command_id = 1;
+  bool accepted = 2;
+  string reason = 3; // if not accepted
+}
+
+message ContainerListResult {
+  string command_id = 1;
+  repeated Container containers = 2;
+}
+
+message Container {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string status = 4;
+  string state = 5; // running | exited | created ...
+  int64 created = 6; // unix millis
+  map<string, string> labels = 7;
+  repeated PortBinding ports = 8;
+}
+
+message PortBinding {
+  string host_ip = 1;
+  int32 host_port = 2;
+  int32 container_port = 3;
+  string protocol = 4; // tcp | udp
+}
+
+message ContainerLogsResult {
+  string command_id = 1;
+  string container_id = 2;
+  string line = 3;
+  bool is_stderr = 4;
+  int64 timestamp = 5;
+}
+
+message MetricsResult {
+  string command_id = 1;
+  double cpu_percent = 2;
+  double mem_used_mb = 3;
+  double mem_total_mb = 4;
+  double disk_used_gb = 5;
+  double disk_total_gb = 6;
+  double net_rx_mb = 7;
+  double net_tx_mb = 8;
+}
+
+message DeployResult {
+  string command_id = 1;
+  bool success = 2;
+  string container_id = 3;
+  string error = 4;
+}
+
+message ErrorEvent {
+  string command_id = 1; // empty if not related to a command
+  string code = 2;
+  string message = 3;
+}
+
+// ── Messages: Plane → Worker ──────────────────────────────────────────────────
+
+message PlaneMessage {
+  string command_id = 1; // UUID — worker uses this in CommandAck
+  string worker_id = 2;
+
+  oneof payload {
+    CmdListContainers list_containers = 10;
+    CmdStartContainer start_container = 11;
+    CmdStopContainer stop_container = 12;
+    CmdRestartContainer restart_container = 13;
+    CmdRemoveContainer remove_container = 14;
+    CmdStreamLogs stream_logs = 15;
+    CmdDeploy deploy = 16;
+    CmdCollectMetrics collect_metrics = 17;
+    CmdRegisterRoute register_route = 18;
+    CmdRemoveRoute remove_route = 19;
+    PlaneAck ack = 99;
+  }
+}
+
+message CmdListContainers {}
+
+message CmdStartContainer {
+  string container_id = 1;
+}
+
+message CmdStopContainer {
+  string container_id = 1;
+  int32 timeout_sec = 2;
+}
+
+message CmdRestartContainer {
+  string container_id = 1;
+}
+
+message CmdRemoveContainer {
+  string container_id = 1;
+  bool force = 2;
+}
+
+message CmdStreamLogs {
+  string container_id = 1;
+  bool follow = 2;
+  int32 tail_lines = 3;
+}
+
+message CmdDeploy {
+  string project_id = 1;
+  string service_name = 2;
+  string image = 3;
+  repeated string env = 4; // KEY=VALUE
+  repeated PortSpec ports = 5;
+  map<string, string> labels = 6;
+  ResourceLimits limits = 7;
+  repeated VolumeMount volumes = 8;
+  string network = 9;
+}
+
+message PortSpec {
+  int32 container_port = 1;
+  int32 host_port = 2;
+  string protocol = 3;
+}
+
+message ResourceLimits {
+  int64 memory_bytes = 1;
+  double cpu_shares = 2;
+}
+
+message VolumeMount {
+  string source = 1;
+  string target = 2;
+  bool read_only = 3;
+}
+
+message CmdCollectMetrics {}
+
+message CmdRegisterRoute {
+  string upstream = 1; // container:port
+  string domain = 2;
+  bool tls = 3;
+}
+
+message CmdRemoveRoute {
+  string domain = 1;
+}
+
+// Acknowledgement from Plane (e.g. after receiving AgentHello)
+message PlaneAck {
+  bool accepted = 1;
+  string reason = 2;
+}

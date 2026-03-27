@@ -4,35 +4,37 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-backend/internal/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-backend/internal/api/middleware"
-	adminhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/admin/http"
-	authhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/auth/http"
-	containerhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/containers/http"
-	deployhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/deploy/http"
-	eventshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/events/http"
-	githttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/git/http"
-	imageshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/images/http"
-	logshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/logs/http"
-	networkshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/networks/http"
-	notifhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/notifications/http"
-	projectshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/projects/http"
-	systemhttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/system/http"
-	templateshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/templates/http"
-	volumeshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/volumes/http"
-	webhookshttp "github.com/tidefly-oss/tidefly-backend/internal/api/v1/handlers/webhooks/http"
-	"github.com/tidefly-oss/tidefly-backend/internal/auth"
-	applogger "github.com/tidefly-oss/tidefly-backend/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-backend/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/git"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-backend/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-backend/internal/services/template"
-	webhooksvc "github.com/tidefly-oss/tidefly-backend/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
+	adminhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/http"
+	agenthttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/agent/http"
+	authhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/http"
+	containerhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/http"
+	deployhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/http"
+	eventshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/events/http"
+	githttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/git/http"
+	imageshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/images/http"
+	logshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/logs/http"
+	networkshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/networks/http"
+	notifhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/notifications/http"
+	projectshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/projects/http"
+	systemhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/system/http"
+	templateshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/templates/http"
+	volumeshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/volumes/http"
+	webhookshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/webhooks/http"
+	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/ca"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
+	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
+	webhooksvc "github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
 )
 
 func Register(
@@ -51,6 +53,7 @@ func Register(
 	asynqClient *asynq.Client,
 	notifier *notifiersvc.Service,
 	metricsReg *metrics.Registry,
+	caService *ca.Service, // ← NEU
 ) {
 	deployer := deploy.New(rt, db)
 
@@ -65,6 +68,9 @@ func Register(
 
 	// ── Auth ───────────────────────────────────────────────────────────────────
 	authhttp.New(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
+
+	// ── Agent ──────────────────────────────────────────────────────────────────
+	agenthttp.New(db, caService).RegisterRoutes(api, mw, adminMw)
 
 	// ── All other routes ───────────────────────────────────────────────────────
 	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
