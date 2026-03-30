@@ -65,11 +65,14 @@ func AutoMigrate(database *gorm.DB) error {
 		// Webhooks
 		&models.Webhook{},
 		&models.WebhookDelivery{},
+		// Worker
+		&models.WorkerNode{},
 		// CA
 		&models.CertificateAuthority{},
 		&models.IssuedCertificate{},
 		&models.WorkerRegistrationToken{},
-		// Worker
-		&models.WorkerNode{},
+		// Backups
+		&models.BackupConfig{},
+		&models.BackupRecord{},
 	)
 }

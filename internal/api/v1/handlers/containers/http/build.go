@@ -36,7 +36,7 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "dockerfile, name and project_id are required"})
 	}
 	if req.Tag == "" {
-		req.Tag = fmt.Sprintf("localhost/tidefly/%s:latest", req.Name)
+		req.Tag = fmt.Sprintf("localhost/tidefly-plane/%s:latest", req.Name)
 	}
 	req.Tag = qualifyLocalTag(req.Tag)
 	if req.Restart == "" {
@@ -135,10 +135,10 @@ func (h *Handler) BuildAndDeploy(c *echo.Context) error {
 	sendEvent("status", `{"message":"Build complete. Starting container..."}`)
 	stackID := uuid.New().String()
 	labels := map[string]string{
-		"tidefly.managed":  "true",
-		"tidefly.stack_id": stackID,
-		"tidefly.source":   "dockerfile",
-		"tidefly.project":  req.ProjectID,
+		"tidefly-plane.managed":  "true",
+		"tidefly-plane.stack_id": stackID,
+		"tidefly-plane.source":   "dockerfile",
+		"tidefly-plane.project":  req.ProjectID,
 	}
 
 	spec := runtime.ContainerSpec{

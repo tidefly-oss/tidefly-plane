@@ -125,7 +125,7 @@ tasks:
       - sh: test -f {{.DEV_ENV}}
         msg: Run task setup first
     cmds:
-      - go run ./cmd/tidefly --migrate-only
+      - go run ./cmd/tidefly-plane --migrate-only
 
   migrate:prod:
     desc: Run database migrations (prod)
@@ -135,7 +135,7 @@ tasks:
       - sh: test -f {{.PROD_ENV}}
         msg: Run task setup:prod first
     cmds:
-      - go run ./cmd/tidefly --migrate-only
+      - go run ./cmd/tidefly-plane --migrate-only
 
   # ── Production ────────────────────────────────────────────────────────────
 
@@ -181,8 +181,8 @@ tasks:
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
       - wire ./internal/bootstrap/
-      - go build -ldflags="-s -w -X github.com/tidefly-oss/tidefly-backend/internal/version.Version={{.VERSION}}" -o dist/tidefly ./cmd/tidefly
-      - echo 'Binary at dist/tidefly'
+      - go build -ldflags="-s -w -X github.com/tidefly-plane-oss/tidefly-plane-backend/internal/version.Version={{.VERSION}}" -o dist/tidefly-plane ./cmd/tidefly-plane
+      - echo 'Binary at dist/tidefly-plane'
     vars:
       VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-alpha"
@@ -190,7 +190,7 @@ tasks:
   build:docker:
     desc: Build backend Docker image
     cmds:
-      - docker build -t ghcr.io/tidefly-oss/tidefly-backend:latest .
+      - docker build -t ghcr.io/tidefly-plane-oss/tidefly-plane-backend:latest .
 
   # ── Quality ───────────────────────────────────────────────────────────────
 

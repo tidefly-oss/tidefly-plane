@@ -5,12 +5,14 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
 	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
 	adminhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/http"
 	agenthttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/agent/http"
 	authhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/http"
+	backuphttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/backup/http"
 	containerhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/http"
 	deployhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/http"
 	eventshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/events/http"
@@ -27,6 +29,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/ca"
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	backupsvc "github.com/tidefly-oss/tidefly-plane/internal/services/backup"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
@@ -53,7 +56,8 @@ func Register(
 	asynqClient *asynq.Client,
 	notifier *notifiersvc.Service,
 	metricsReg *metrics.Registry,
-	caService *ca.Service, // ← NEU
+	caService *ca.Service,
+	agentClient *agentsvc.Client,
 ) {
 	deployer := deploy.New(rt, db)
 
@@ -70,12 +74,18 @@ func Register(
 	authhttp.New(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
 
 	// ── Agent ──────────────────────────────────────────────────────────────────
-	agenthttp.New(db, caService).RegisterRoutes(api, mw, adminMw)
+	agenthttp.New(db, caService, agentClient).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
+
+	// ── Backup ─────────────────────────────────────────────────────────────────
+	backuphttp.New(backupsvc.New(db)).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
 
 	// ── All other routes ───────────────────────────────────────────────────────
 	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
 	containerhttp.New(rt, deployer, db, log, caddy).RegisterRoutes(api, e, mw, echoSSE, echoInject)
-	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier).RegisterRoutes(api, mw)
+	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier, agentClient).RegisterRoutes(
+		api,
+		mw,
+	)
 	eventshttp.New(rt).RegisterRoutes(e, echoSSE, echoInject)
 	githttp.New(gitSvc, db, log).RegisterRoutes(api, mw)
 	imageshttp.New(rt).RegisterRoutes(api, mw, adminMw)

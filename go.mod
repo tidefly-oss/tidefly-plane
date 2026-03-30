@@ -3,7 +3,7 @@ module github.com/tidefly-oss/tidefly-plane
 go 1.26.1
 
 require (
-	github.com/danielgtaylor/huma/v2 v2.37.2
+	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/go-playground/validator/v10 v10.30.1
@@ -13,6 +13,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
 	github.com/labstack/echo/v5 v5.0.4
+	github.com/minio/minio-go/v7 v7.0.99
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
@@ -23,6 +24,19 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
+)
+
+require (
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/go-ini/ini v1.67.0 // indirect
+	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/crc32 v1.3.0 // indirect
+	github.com/minio/crc64nvme v1.1.1 // indirect
+	github.com/minio/md5-simd v1.1.2 // indirect
+	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/rs/xid v1.6.0 // indirect
+	github.com/tinylib/msgp v1.6.1 // indirect
 )
 
 require (

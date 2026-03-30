@@ -8,15 +8,15 @@ import (
 )
 
 type snapshot struct {
-	cpuPercent  uint64
-	memUsedMB   uint64
-	memTotalMB  uint64
-	memPercent  uint64
-	diskUsedMB  uint64
-	diskTotalMB uint64
-	diskPercent uint64
-	goroutines  uint64
-	uptime      uint64
+	cpuPercent  atomic.Uint64
+	memUsedMB   atomic.Uint64
+	memTotalMB  atomic.Uint64
+	memPercent  atomic.Uint64
+	diskUsedMB  atomic.Uint64
+	diskTotalMB atomic.Uint64
+	diskPercent atomic.Uint64
+	goroutines  atomic.Uint64
+	uptime      atomic.Uint64
 }
 
 type SystemSnapshot struct {
@@ -31,12 +31,13 @@ type SystemSnapshot struct {
 	UptimeSecs  float64 `json:"uptime_seconds"`
 }
 
-func storeFloat(addr *uint64, v float64) {
-	atomic.StoreUint64(addr, *(*uint64)(unsafe.Pointer(&v)))
+func storeFloat(addr *atomic.Uint64, v float64) {
+	addr.Store(*(*uint64)(unsafe.Pointer(&v)))
 }
 
-func loadFloat(addr *uint64) float64 {
-	return *(*float64)(unsafe.Pointer(new(atomic.LoadUint64(addr))))
+func loadFloat(addr *atomic.Uint64) float64 {
+	v := addr.Load()
+	return *(*float64)(unsafe.Pointer(&v))
 }
 
 func (r *Registry) GetSystem() SystemSnapshot {

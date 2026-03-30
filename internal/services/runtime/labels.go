@@ -1,7 +1,7 @@
 package runtime
 
 const (
-	LabelInternal = "tidefly.internal"
-	LabelManaged  = "tidefly.managed"
+	LabelInternal = "tidefly-plane.internal"
+	LabelManaged  = "tidefly-plane.managed"
 	LabelTrue     = "true"
 )

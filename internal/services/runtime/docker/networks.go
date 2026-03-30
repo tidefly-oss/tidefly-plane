@@ -15,7 +15,7 @@ func (d *Runtime) ListNetworks(ctx context.Context) ([]runtime.Network, error) {
 	}
 	result := make([]runtime.Network, 0, len(list))
 	for _, n := range list {
-		if n.Labels["tidefly.internal"] == "true" || n.Labels["tidefly.managed"] != "true" {
+		if n.Labels["tidefly-plane.internal"] == "true" || n.Labels["tidefly-plane.managed"] != "true" {
 			continue
 		}
 		result = append(result, mapNetwork(n))
@@ -35,7 +35,7 @@ func (d *Runtime) CreateNetwork(ctx context.Context, name string) error {
 	_, err := d.client.NetworkCreate(
 		ctx, name, dockernetwork.CreateOptions{
 			Driver: "bridge",
-			Labels: map[string]string{"tidefly.managed": "true"},
+			Labels: map[string]string{"tidefly-plane.managed": "true"},
 		},
 	)
 	return err

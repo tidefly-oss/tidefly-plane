@@ -8,12 +8,12 @@ import (
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
 	huma.Register(
 		api,
-		shared.Op("templates-list", "GET", "/api/v1/services/templates", "List templates", mw...),
+		shared.Op("templates-list", "GET", "/api/v1/services/templates", "List templates", "Templates", mw...),
 		h.ListTemplates,
 	)
 	huma.Register(
 		api,
-		shared.Op("templates-get", "GET", "/api/v1/services/templates/{slug}", "Get template", mw...),
+		shared.Op("templates-get", "GET", "/api/v1/services/templates/{slug}", "Get template", "Templates", mw...),
 		h.GetTemplate,
 	)
 }

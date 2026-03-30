@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package agent.v1;
 
-option go_package = "github.com/tidefly-oss/tidefly-backend/internal/api/v1/proto/agent;agentpb";
+option go_package = "github.com/tidefly-plane-oss/tidefly-plane-plane/internal/api/v1/proto/agent;agentpb";
 
 // ── Agent Service ─────────────────────────────────────────────────────────────
 // The Worker Agent connects to the Plane and establishes a bidirectional stream.

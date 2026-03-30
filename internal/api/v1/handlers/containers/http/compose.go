@@ -78,12 +78,12 @@ func (h *Handler) DeployCompose(ctx context.Context, input *DeployComposeInput) 
 		}
 		containerName := fmt.Sprintf("%s-%s", input.Body.StackName, svcName)
 		labels := map[string]string{
-			"tidefly.managed":    "true",
-			"tidefly.stack_id":   stackID,
-			"tidefly.stack_name": input.Body.StackName,
-			"tidefly.source":     "compose",
-			"tidefly.service":    svcName,
-			"tidefly.project":    input.Body.ProjectID,
+			"tidefly-plane.managed":    "true",
+			"tidefly-plane.stack_id":   stackID,
+			"tidefly-plane.stack_name": input.Body.StackName,
+			"tidefly-plane.source":     "compose",
+			"tidefly-plane.service":    svcName,
+			"tidefly-plane.project":    input.Body.ProjectID,
 		}
 		for k, v := range svc.Labels {
 			labels[k] = v
@@ -205,7 +205,7 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteStackInput) (*st
 	}
 	var deleted []string
 	for _, ct := range all {
-		if ct.Labels["tidefly.stack_id"] != input.StackID {
+		if ct.Labels["tidefly-plane.stack_id"] != input.StackID {
 			continue
 		}
 		// Remove Caddy route before deleting container

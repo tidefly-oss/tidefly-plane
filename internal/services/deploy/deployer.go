@@ -174,7 +174,7 @@ func (d *Deployer) Destroy(ctx context.Context, serviceID uuid.UUID) error {
 	var volumesToRemove []string
 
 	for _, ct := range containers {
-		if ct.Labels["tidefly.service"] != serviceID.String() {
+		if ct.Labels["tidefly-plane.service"] != serviceID.String() {
 			continue
 		}
 

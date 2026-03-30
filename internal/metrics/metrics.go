@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const namespace = "tidefly"
+const namespace = "tidefly-plane"
 
 // Registry wraps a prometheus registry and all custom gauges/counters.
 // Use New() to create — never instantiate directly.
@@ -67,7 +67,7 @@ func New() *Registry {
 				Namespace: namespace,
 				Subsystem: "system",
 				Name:      "cpu_usage_percent",
-				Help:      "Current CPU utilisation in percent (0–100).",
+				Help:      "Current CPU utilization in percent (0–100).",
 			},
 		),
 		memUsedMB: factory.NewGauge(
@@ -91,7 +91,7 @@ func New() *Registry {
 				Namespace: namespace,
 				Subsystem: "system",
 				Name:      "memory_usage_percent",
-				Help:      "Current memory utilisation in percent (0–100).",
+				Help:      "Current memory utilization in percent (0–100).",
 			},
 		),
 		diskUsedMB: factory.NewGauge(
@@ -115,7 +115,7 @@ func New() *Registry {
 				Namespace: namespace,
 				Subsystem: "system",
 				Name:      "disk_usage_percent",
-				Help:      "Current disk utilisation in percent (0–100).",
+				Help:      "Current disk utilization in percent (0–100).",
 			},
 		),
 

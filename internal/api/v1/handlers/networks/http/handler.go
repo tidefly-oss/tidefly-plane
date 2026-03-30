@@ -63,10 +63,10 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 		return nil, fmt.Errorf("list networks: %w", err)
 	}
 
-	// Only show tidefly-managed networks
+	// Only show tidefly-plane-managed networks
 	managed := make([]runtime.Network, 0, len(list))
 	for _, n := range list {
-		if n.Labels["tidefly.managed"] == "true" {
+		if n.Labels["tidefly-plane.managed"] == "true" {
 			managed = append(managed, n)
 		}
 	}

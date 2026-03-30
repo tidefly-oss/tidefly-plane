@@ -133,7 +133,7 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 
 func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
 	addr := ":" + a.cfg.App.Port
-	a.log.Info("app", fmt.Sprintf("starting tidefly on %s (env: %s)", addr, a.cfg.App.Env))
+	a.log.Info("app", fmt.Sprintf("starting tidefly-plane on %s (env: %s)", addr, a.cfg.App.Env))
 	a.log.Info("app", fmt.Sprintf("OpenAPI docs: http://localhost%s/docs", addr))
 
 	srv := &http.Server{
@@ -168,10 +168,27 @@ func (a *App) buildEcho() *echo.Echo {
 		),
 	)
 
-	humaConfig := huma.DefaultConfig("Tidefly API", "0.1.0")
+	humaConfig := huma.DefaultConfig("Tidefly API", "0.0.1-alpha.1")
 	humaConfig.Info.Description = "Container Management Platform"
 	humaConfig.DocsRenderer = huma.DocsRendererScalar
-
+	humaConfig.Tags = []*huma.Tag{
+		{Name: "Admin", Description: "Admin operations"},
+		{Name: "Agent", Description: "Worker agent management"},
+		{Name: "Auth", Description: "Authentication & sessions"},
+		{Name: "Backup", Description: "Backup management"},
+		{Name: "Containers", Description: "Container lifecycle"},
+		{Name: "Deploy", Description: "Deployment management"},
+		{Name: "Git", Description: "Git integrations"},
+		{Name: "Images", Description: "Container images"},
+		{Name: "Logs", Description: "Application & audit logs"},
+		{Name: "Networks", Description: "Docker networks"},
+		{Name: "Notifications", Description: "Notification management"},
+		{Name: "Projects", Description: "Project management"},
+		{Name: "System", Description: "System health & metrics"},
+		{Name: "Templates", Description: "Service templates"},
+		{Name: "Volumes", Description: "Docker volumes"},
+		{Name: "Webhooks", Description: "Webhook configuration"},
+	}
 	if !a.cfg.App.DocsEnabled {
 		humaConfig.DocsPath = ""
 		a.log.Info("app", "API docs disabled via API_DOCS_ENABLED=false")
@@ -185,6 +202,7 @@ func (a *App) buildEcho() *echo.Echo {
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
 		a.asynq, a.notifierSvc, a.metrics,
 		a.caService,
+		agentsvc.NewClient(a.agentSrv.Registry()),
 	)
 
 	return e

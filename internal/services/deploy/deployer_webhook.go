@@ -16,7 +16,7 @@ func (d *Deployer) Runtime() runtime.Runtime {
 
 // Redeploy stops and recreates all containers for a service using the same
 // template + stored fields, but with a fresh image pull.
-// It finds the service by container label tidefly.service=<serviceID>,
+// It finds the service by container label tidefly-plane.service=<serviceID>,
 // then delegates to the existing Destroy + Deploy flow.
 func (d *Deployer) Redeploy(ctx context.Context, serviceID string, req DeployRequest) error {
 	// Find the service record in DB

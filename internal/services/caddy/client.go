@@ -63,7 +63,7 @@ func (c *Client) AddHTTPRoute(ctx context.Context, routeID, host, upstream strin
 		count = 0
 	}
 
-	return c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly/routes/%d", count), route)
+	return c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), route)
 }
 
 // RemoveRoute removes a route by its @id.
@@ -123,7 +123,7 @@ func (c *Client) ConfigureInternalTLS(ctx context.Context) error {
 		"automation": map[string]any{
 			"policies": []map[string]any{
 				{
-					"subjects": []string{"*.tidefly.internal"},
+					"subjects": []string{"*.tidefly-plane.internal"},
 					"issuers": []map[string]any{
 						{"module": "internal"},
 					},
@@ -142,7 +142,7 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 		"apps": map[string]any{
 			"http": map[string]any{
 				"servers": map[string]any{
-					"tidefly": map[string]any{
+					"tidefly-plane": map[string]any{
 						"listen": []string{":80", ":443"},
 						"routes": []any{},
 						"automatic_https": map[string]any{
@@ -180,7 +180,7 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 
 // RouteID generates a stable route ID for a container.
 func RouteID(containerName string) string {
-	return "tidefly-" + sanitizeName(containerName)
+	return "tidefly-plane-" + sanitizeName(containerName)
 }
 
 // Domain generates the public domain for a container.
@@ -230,26 +230,6 @@ func (c *Client) post(ctx context.Context, path string, body any) error {
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("caddy post %s: status %d", path, resp.StatusCode)
 	}
-	return nil
-}
-func (c *Client) delete(ctx context.Context, path string, body any) error {
-	var bodyReader io.Reader
-	if body != nil {
-		data, _ := json.Marshal(body)
-		bodyReader = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.adminURL+path, bodyReader)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 	return nil
 }
 
@@ -304,7 +284,7 @@ func (c *Client) patch(ctx context.Context, path string, body any) error {
 func (c *Client) routeCount(ctx context.Context) (int, error) {
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodGet,
-		c.adminURL+"/config/apps/http/servers/tidefly/routes", nil,
+		c.adminURL+"/config/apps/http/servers/tidefly-plane/routes", nil,
 	)
 	if err != nil {
 		return 0, err

@@ -49,7 +49,7 @@ func CheckContainerAccessHuma(ctx context.Context, db *gorm.DB, labels map[strin
 }
 
 func checkProjectMembership(db *gorm.DB, userID string, labels map[string]string) error {
-	projectID, exists := labels["tidefly.project_id"]
+	projectID, exists := labels["tidefly-plane.project_id"]
 	if !exists || projectID == "" {
 		return fmt.Errorf("access denied: container is not part of any project")
 	}

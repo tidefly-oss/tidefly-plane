@@ -1,37 +1,56 @@
-# =========================
+# =============================================================================
 # Build Stage
-# =========================
-FROM golang:1.26.1-alpine AS builder
+# =============================================================================
+FROM golang:1.26-alpine AS builder
 
-# Arbeitsverzeichnis
 WORKDIR /app
 
-# Abhängigkeiten zuerst (Cache Layer)
-COPY go.mod go.sum ./
-RUN apk add git build-base ca-certificates \
-    && go mod download
+RUN apk add --no-cache git ca-certificates tzdata
 
-# Quellcode kopieren
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
 COPY . .
 
-# Statisches Binary bauen (ohne CGO für kleinere Größe)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tidefly ./cmd/tidefly
+ARG VERSION=v0.0.1-alpha.1
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 
-# =========================
-# Runtime Stage
-# =========================
-FROM alpine:3.18
+RUN mkdir -p /out && CGO_ENABLED=0 \
+    GOOS=linux \
+    go build \
+      -trimpath \
+      -ldflags="-s -w \
+        -X github.com/tidefly-oss/tidefly-plane/internal/version.Version=${VERSION} \
+        -X github.com/tidefly-oss/tidefly-plane/internal/version.Commit=${COMMIT} \
+        -X github.com/tidefly-oss/tidefly-plane/internal/version.BuildDate=${BUILD_DATE}" \
+      -o /out/tidefly-plane \
+      ./cmd/tidefly-plane
+
+# =============================================================================
+# Runtime Stage — scratch
+# =============================================================================
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 WORKDIR /app
 
-# Binary vom Builder kopieren
-COPY --from=builder /app/tidefly .
+COPY --from=builder /out/tidefly-plane .
 
-# HTTPS Zertifikate
-RUN apk add --no-cache ca-certificates
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 
-# Expose Port
-EXPOSE 8181
+LABEL org.opencontainers.image.title="tidefly-plane" \
+      org.opencontainers.image.description="Tidefly Plane — container management backend" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/tidefly-oss/tidefly-plane" \
+      org.opencontainers.image.licenses="AGPL-3.0"
 
-# Start des Binaries
-CMD ["./tidefly"]
+EXPOSE 8181 7443
+
+ENTRYPOINT ["/app/tidefly-plane"]

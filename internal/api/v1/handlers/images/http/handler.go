@@ -47,7 +47,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 	internalImages := map[string]bool{}
 	if containers, err := h.runtime.ListContainers(ctx, true); err == nil {
 		for _, ct := range containers {
-			if ct.Labels["tidefly.internal"] == "true" && ct.Image != "" {
+			if ct.Labels["tidefly-plane.internal"] == "true" && ct.Image != "" {
 				internalImages[ct.Image] = true
 			}
 		}

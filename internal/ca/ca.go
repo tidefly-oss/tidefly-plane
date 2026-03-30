@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/crypto"
@@ -25,22 +26,19 @@ const (
 	caSubject   = "Tidefly Internal CA"
 	caOrg       = "Tidefly"
 	certOrg     = "Tidefly"
-	keyBits     = 4096 // CA key
-	certKeyBits = 2048 // issued cert keys
+	keyBits     = 4096
+	certKeyBits = 2048
 )
 
-// Service manages the Tidefly internal CA.
 type Service struct {
 	db            *gorm.DB
-	encryptionKey []byte // 32-byte AES key from config
+	encryptionKey []byte
 }
 
 func New(db *gorm.DB, encryptionKey []byte) *Service {
 	return &Service{db: db, encryptionKey: encryptionKey}
 }
 
-// Init ensures a CA exists in the database.
-// If none exists, it creates one. Safe to call on every startup.
 func (s *Service) Init() error {
 	var count int64
 	s.db.Model(&models.CertificateAuthority{}).Count(&count)
@@ -50,8 +48,6 @@ func (s *Service) Init() error {
 	return s.createCA()
 }
 
-// GetTLSConfig returns a *tls.Config for the gRPC server that requires
-// and validates worker client certificates signed by our CA.
 func (s *Service) GetTLSConfig() (*tls.Config, error) {
 	caCert, caKey, err := s.loadCA()
 	if err != nil {
@@ -75,35 +71,41 @@ func (s *Service) GetTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// IssueWorkerCert issues a new mTLS client certificate for a worker.
-// ownerID is the worker's UUID. Returns the cert and key as PEM strings.
 func (s *Service) IssueWorkerCert(ownerID string) (*models.IssuedCertificate, string, string, error) {
-	return s.issueCert("worker", ownerID, fmt.Sprintf("tidefly-worker-%s", ownerID))
+	return s.issueCert("worker", ownerID, fmt.Sprintf("tidefly-plane-worker-%s", ownerID), nil, nil)
 }
 
-// IssuePlaneCert issues the plane's own server certificate.
 func (s *Service) IssuePlaneCert(dnsNames []string) (*models.IssuedCertificate, string, string, error) {
-	issued, certPEM, keyPEM, err := s.issueCert("plane", "plane", "tidefly-plane")
-	if err != nil {
-		return nil, "", "", err
+	if len(dnsNames) == 0 {
+		dnsNames = []string{"localhost"}
 	}
-	return issued, certPEM, keyPEM, nil
+	hasLocalhost := false
+	for _, n := range dnsNames {
+		if n == "localhost" {
+			hasLocalhost = true
+			break
+		}
+	}
+	if !hasLocalhost {
+		dnsNames = append(dnsNames, "localhost")
+	}
+	ipAddrs := []net.IP{net.ParseIP("127.0.0.1")}
+	return s.issueCert("plane", "plane", "tidefly-plane-plane", dnsNames, ipAddrs)
 }
 
-// RevokeWorkerCert marks a worker's certificate as revoked.
 func (s *Service) RevokeWorkerCert(workerID string, revokedBy string) error {
 	now := time.Now()
 	return s.db.Model(&models.IssuedCertificate{}).
 		Where("owner_type = ? AND owner_id = ? AND revoked = false", "worker", workerID).
-		Updates(map[string]any{
-			"revoked":    true,
-			"revoked_at": now,
-			"revoked_by": revokedBy,
-		}).Error
+		Updates(
+			map[string]any{
+				"revoked":    true,
+				"revoked_at": now,
+				"revoked_by": revokedBy,
+			},
+		).Error
 }
 
-// RenewExpiring finds all certs expiring within renewBeforeDays and reissues them.
-// Called by the background renewal job.
 func (s *Service) RenewExpiring() error {
 	threshold := time.Now().Add(renewBeforeDays * 24 * time.Hour)
 
@@ -116,26 +118,29 @@ func (s *Service) RenewExpiring() error {
 	}
 
 	for _, old := range expiring {
-		newIssued, _, _, err := s.issueCert(old.OwnerType, old.OwnerID, old.Subject)
+		var dnsNames []string
+		var ipAddrs []net.IP
+		if old.OwnerType == "plane" {
+			dnsNames = []string{"localhost"}
+			ipAddrs = []net.IP{net.ParseIP("127.0.0.1")}
+		}
+		newIssued, _, _, err := s.issueCert(old.OwnerType, old.OwnerID, old.Subject, dnsNames, ipAddrs)
 		if err != nil {
 			return fmt.Errorf("ca: renew cert for %s/%s: %w", old.OwnerType, old.OwnerID, err)
 		}
-
-		// Link old → new
-		if err := s.db.Model(&old).Updates(map[string]any{
-			"renewed_to_id": newIssued.ID,
-		}).Error; err != nil {
+		if err := s.db.Model(&old).Updates(
+			map[string]any{
+				"renewed_to_id": newIssued.ID,
+			},
+		).Error; err != nil {
 			return fmt.Errorf("ca: link renewed cert: %w", err)
 		}
 		newIssued.RenewedFromID = &old.ID
 		s.db.Save(&newIssued)
 	}
-
 	return nil
 }
 
-// GetWorkerCertPEM returns the decrypted cert and key PEM for a worker.
-// Used when the worker reconnects and needs its cert refreshed.
 func (s *Service) GetWorkerCertPEM(workerID string) (certPEM, keyPEM string, err error) {
 	var issued models.IssuedCertificate
 	if err := s.db.Where(
@@ -144,7 +149,6 @@ func (s *Service) GetWorkerCertPEM(workerID string) (certPEM, keyPEM string, err
 	).Order("created_at DESC").First(&issued).Error; err != nil {
 		return "", "", fmt.Errorf("ca: find worker cert: %w", err)
 	}
-
 	certPEM, err = crypto.DecryptString(s.encryptionKey, issued.CertPEM)
 	if err != nil {
 		return "", "", fmt.Errorf("ca: decrypt cert: %w", err)
@@ -156,8 +160,6 @@ func (s *Service) GetWorkerCertPEM(workerID string) (certPEM, keyPEM string, err
 	return certPEM, keyPEM, nil
 }
 
-// GetCACertPEM returns the CA certificate as PEM (public, not encrypted).
-// Sent to workers during registration so they can verify the plane.
 func (s *Service) GetCACertPEM() (string, error) {
 	var ca models.CertificateAuthority
 	if err := s.db.First(&ca).Error; err != nil {
@@ -170,41 +172,31 @@ func (s *Service) GetCACertPEM() (string, error) {
 	return certPEM, nil
 }
 
-// ── private ──────────────────────────────────────────────────────────────────
-
 func (s *Service) createCA() error {
 	key, err := rsa.GenerateKey(rand.Reader, keyBits)
 	if err != nil {
 		return fmt.Errorf("ca: generate key: %w", err)
 	}
-
 	serial, err := randomSerial()
 	if err != nil {
 		return err
 	}
-
 	now := time.Now()
 	template := &x509.Certificate{
-		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName:   caSubject,
-			Organization: []string{caOrg},
-		},
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: caSubject, Organization: []string{caOrg}},
 		NotBefore:             now,
 		NotAfter:              now.AddDate(caValidityYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		return fmt.Errorf("ca: create certificate: %w", err)
 	}
-
 	certPEM := pemEncodeCert(certDER)
 	keyPEM := pemEncodeKey(key)
-
 	encCert, err := crypto.EncryptString(s.encryptionKey, certPEM)
 	if err != nil {
 		return fmt.Errorf("ca: encrypt cert: %w", err)
@@ -213,59 +205,52 @@ func (s *Service) createCA() error {
 	if err != nil {
 		return fmt.Errorf("ca: encrypt key: %w", err)
 	}
-
-	record := &models.CertificateAuthority{
-		CertPEM:   encCert,
-		KeyPEM:    encKey,
-		Subject:   caSubject,
-		NotBefore: template.NotBefore,
-		NotAfter:  template.NotAfter,
-		Serial:    serial.String(),
-	}
-
-	return s.db.Create(record).Error
+	return s.db.Create(
+		&models.CertificateAuthority{
+			CertPEM:   encCert,
+			KeyPEM:    encKey,
+			Subject:   caSubject,
+			NotBefore: template.NotBefore,
+			NotAfter:  template.NotAfter,
+			Serial:    serial.String(),
+		},
+	).Error
 }
 
-func (s *Service) issueCert(ownerType, ownerID, commonName string) (*models.IssuedCertificate, string, string, error) {
+func (s *Service) issueCert(
+	ownerType, ownerID, commonName string,
+	dnsNames []string,
+	ipAddrs []net.IP,
+) (*models.IssuedCertificate, string, string, error) {
 	caCert, caKey, err := s.loadCA()
 	if err != nil {
 		return nil, "", "", err
 	}
-
 	key, err := rsa.GenerateKey(rand.Reader, certKeyBits)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: generate cert key: %w", err)
 	}
-
 	serial, err := randomSerial()
 	if err != nil {
 		return nil, "", "", err
 	}
-
 	now := time.Now()
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName:   commonName,
-			Organization: []string{certOrg},
-		},
-		NotBefore: now,
-		NotAfter:  now.Add(certValidityDays * 24 * time.Hour),
-		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{
-			x509.ExtKeyUsageClientAuth,
-			x509.ExtKeyUsageServerAuth,
-		},
+		Subject:      pkix.Name{CommonName: commonName, Organization: []string{certOrg}},
+		NotBefore:    now,
+		NotAfter:     now.Add(certValidityDays * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		DNSNames:     dnsNames,
+		IPAddresses:  ipAddrs,
 	}
-
 	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: sign certificate: %w", err)
 	}
-
 	certPEM := pemEncodeCert(certDER)
 	keyPEM := pemEncodeKey(key)
-
 	encCert, err := crypto.EncryptString(s.encryptionKey, certPEM)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: encrypt issued cert: %w", err)
@@ -274,7 +259,6 @@ func (s *Service) issueCert(ownerType, ownerID, commonName string) (*models.Issu
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: encrypt issued key: %w", err)
 	}
-
 	issued := &models.IssuedCertificate{
 		OwnerType: ownerType,
 		OwnerID:   ownerID,
@@ -285,11 +269,9 @@ func (s *Service) issueCert(ownerType, ownerID, commonName string) (*models.Issu
 		NotAfter:  template.NotAfter,
 		Serial:    serial.String(),
 	}
-
 	if err := s.db.Create(issued).Error; err != nil {
 		return nil, "", "", fmt.Errorf("ca: save issued cert: %w", err)
 	}
-
 	return issued, certPEM, keyPEM, nil
 }
 
@@ -301,7 +283,6 @@ func (s *Service) loadCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 		}
 		return nil, nil, fmt.Errorf("ca: load CA record: %w", err)
 	}
-
 	certPEM, err := crypto.DecryptString(s.encryptionKey, record.CertPEM)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ca: decrypt CA cert: %w", err)
@@ -310,7 +291,6 @@ func (s *Service) loadCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("ca: decrypt CA key: %w", err)
 	}
-
 	cert, err := parseCertPEM(certPEM)
 	if err != nil {
 		return nil, nil, err
@@ -319,21 +299,15 @@ func (s *Service) loadCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
 	return cert, key, nil
 }
-
-// ── PEM helpers ───────────────────────────────────────────────────────────────
 
 func pemEncodeCert(der []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
 func pemEncodeKey(key *rsa.PrivateKey) string {
-	return string(pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	}))
+	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 }
 
 func parseCertPEM(pemStr string) (*x509.Certificate, error) {

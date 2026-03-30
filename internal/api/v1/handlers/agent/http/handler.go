@@ -2,82 +2,24 @@ package http
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/ca"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db        *gorm.DB
-	caService *ca.Service
+	db          *gorm.DB
+	caService   *ca.Service
+	agentClient *agentsvc.Client
 }
 
-func New(db *gorm.DB, caService *ca.Service) *Handler {
-	return &Handler{db: db, caService: caService}
-}
-
-func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares, adminMw huma.Middlewares) {
-	// Public — no JWT, authenticated via registration token
-	huma.Register(api, huma.Operation{
-		OperationID: "agent-register",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/agent/register",
-		Summary:     "Register a worker agent",
-		Tags:        []string{"Agent"},
-	}, h.Register)
-
-	// mTLS authenticated — worker renews its own cert
-	huma.Register(api, huma.Operation{
-		OperationID: "agent-renew-cert",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/agent/renew",
-		Summary:     "Renew worker mTLS certificate",
-		Tags:        []string{"Agent"},
-		Middlewares: mw,
-	}, h.RenewCert)
-
-	// Admin only
-	huma.Register(api, huma.Operation{
-		OperationID:   "agent-create-token",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/agent/tokens",
-		Summary:       "Create a worker registration token",
-		Tags:          []string{"Agent"},
-		DefaultStatus: http.StatusCreated,
-		Middlewares:   adminMw,
-	}, h.CreateToken)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "agent-list-tokens",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/agent/tokens",
-		Summary:     "List registration tokens",
-		Tags:        []string{"Agent"},
-		Middlewares: adminMw,
-	}, h.ListTokens)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "agent-list-workers",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/agent/workers",
-		Summary:     "List registered worker nodes",
-		Tags:        []string{"Agent"},
-		Middlewares: mw,
-	}, h.ListWorkers)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "agent-revoke-worker",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/agent/workers/{id}",
-		Summary:     "Revoke a worker node",
-		Tags:        []string{"Agent"},
-		Middlewares: adminMw,
-	}, h.RevokeWorker)
+func New(db *gorm.DB, caService *ca.Service, agentClient *agentsvc.Client) *Handler {
+	return &Handler{db: db, caService: caService, agentClient: agentClient}
 }
 
 // ── Register ──────────────────────────────────────────────────────────────────
@@ -105,7 +47,7 @@ type RegisterOutput struct {
 	}
 }
 
-func (h *Handler) Register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
+func (h *Handler) Register(_ context.Context, input *RegisterInput) (*RegisterOutput, error) {
 	var existing models.WorkerNode
 	if err := h.db.Where("id = ?", input.Body.WorkerID).First(&existing).Error; err == nil {
 		return nil, huma.Error409Conflict("worker already registered")
@@ -167,7 +109,7 @@ type RenewCertOutput struct {
 	}
 }
 
-func (h *Handler) RenewCert(ctx context.Context, input *RenewCertInput) (*RenewCertOutput, error) {
+func (h *Handler) RenewCert(_ context.Context, input *RenewCertInput) (*RenewCertOutput, error) {
 	var worker models.WorkerNode
 	if err := h.db.Where("id = ? AND status != ?", input.Body.WorkerID, models.WorkerStatusRevoked).
 		First(&worker).Error; err != nil {
@@ -234,7 +176,7 @@ type ListTokensOutput struct {
 	Body []models.WorkerRegistrationToken
 }
 
-func (h *Handler) ListTokens(ctx context.Context, input *ListTokensInput) (*ListTokensOutput, error) {
+func (h *Handler) ListTokens(ctx context.Context, _ *ListTokensInput) (*ListTokensOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
@@ -256,7 +198,7 @@ type ListWorkersOutput struct {
 	Body []models.WorkerNode
 }
 
-func (h *Handler) ListWorkers(ctx context.Context, input *ListWorkersInput) (*ListWorkersOutput, error) {
+func (h *Handler) ListWorkers(_ context.Context, _ *ListWorkersInput) (*ListWorkersOutput, error) {
 	var workers []models.WorkerNode
 	if err := h.db.Order("created_at DESC").Find(&workers).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to list workers")
@@ -289,4 +231,31 @@ func (h *Handler) RevokeWorker(ctx context.Context, input *RevokeWorkerInput) (*
 	}
 
 	return &RevokeWorkerOutput{}, nil
+}
+
+// ── DeleteWorker ──────────────────────────────────────────────────────────────
+
+type DeleteWorkerInput struct {
+	ID string `path:"id"`
+}
+
+type DeleteWorkerOutput struct{}
+
+func (h *Handler) DeleteWorker(ctx context.Context, input *DeleteWorkerInput) (*DeleteWorkerOutput, error) {
+	claims := middleware.UserFromHumaCtx(ctx)
+	if claims == nil {
+		return nil, huma.Error401Unauthorized("unauthorized")
+	}
+
+	var worker models.WorkerNode
+	if err := h.db.Where("id = ? AND status = ?", input.ID, models.WorkerStatusRevoked).
+		First(&worker).Error; err != nil {
+		return nil, huma.Error404NotFound("worker not found or not revoked")
+	}
+
+	if err := h.db.Delete(&worker).Error; err != nil {
+		return nil, huma.Error500InternalServerError("failed to delete worker")
+	}
+
+	return &DeleteWorkerOutput{}, nil
 }

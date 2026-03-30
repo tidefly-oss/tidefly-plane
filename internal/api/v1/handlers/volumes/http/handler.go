@@ -61,7 +61,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 
 	managed := make([]runtime.Volume, 0, len(list))
 	for _, v := range list {
-		if v.Labels["tidefly.managed"] == "true" {
+		if v.Labels["tidefly-plane.managed"] == "true" {
 			managed = append(managed, v)
 		}
 	}
@@ -85,7 +85,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 
 	allowedVolumes := make(map[string]struct{})
 	for _, ct := range allContainers {
-		if ct.Labels["tidefly.internal"] == "true" {
+		if ct.Labels["tidefly-plane.internal"] == "true" {
 			continue
 		}
 		if !containerfil.ContainerAllowed(ct.Networks, allowed) {

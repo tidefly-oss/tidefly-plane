@@ -196,14 +196,14 @@ func (h *WebhookDeployHandler) deployFresh(
 	return serviceID, nil
 }
 
-// findServiceContainer finds the running container for a service by tidefly.service label.
+// findServiceContainer finds the running container for a service by tidefly-plane.service label.
 func (h *WebhookDeployHandler) findServiceContainer(ctx context.Context, serviceID string) (string, error) {
 	containers, err := h.deployer.Runtime().ListContainers(ctx, true)
 	if err != nil {
 		return "", fmt.Errorf("list containers: %w", err)
 	}
 	for _, ct := range containers {
-		if ct.Labels["tidefly.service"] == serviceID {
+		if ct.Labels["tidefly-plane.service"] == serviceID {
 			return ct.ID, nil
 		}
 	}

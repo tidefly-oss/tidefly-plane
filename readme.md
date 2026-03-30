@@ -36,7 +36,7 @@ Tidefly is an open-source alternative to Portainer, Coolify, and Dokploy. This r
 
 ```bash
 git clone https://github.com/tidefly-oss/tidefly-backend
-cd tidefly-backend
+cd tidefly-plane-backend
 
 task setup       # creates deploy/dev/.env and generates secrets
 task dev:up      # starts Postgres, Redis, Traefik, Mailpit
