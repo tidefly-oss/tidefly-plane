@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| latest  | ✅         |
+| latest  | ✅        |
 
 During the alpha/beta phase, only the latest release receives security fixes.
 
@@ -12,7 +12,7 @@ During the alpha/beta phase, only the latest release receives security fixes.
 
 **Please do NOT report security vulnerabilities via GitHub Issues.**
 
-Report vulnerabilities responsibly via [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-backend/security/advisories/new).
+Report vulnerabilities via [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-plane/security/advisories/new).
 
 Include:
 - Description of the vulnerability
@@ -29,27 +29,26 @@ Include:
 
 ## Security Best Practices for Deployment
 
-- Never expose the Tidefly backend directly to the public internet without authentication
+- Never expose Tidefly directly to the public internet without TLS
 - Use strong, unique values for `APP_SECRET_KEY` (minimum 32 characters)
-- Keep Docker/Podman socket access restricted — only Tidefly's backend process should have access
+- Keep Docker socket access restricted — only Tidefly's backend process should have access
 - Rotate secrets regularly via `task rotate-secrets`
-- Enable TLS/HTTPS in production (Traefik integration built-in)
-- Review and apply principle of least privilege for all service accounts
+- Enable HTTPS in production — Caddy with Let's Encrypt is built-in
+- Review audit logs regularly via `GET /api/v1/logs/audit`
 
 ## Scope
 
 **In scope:**
-
 - Authentication and authorization bypasses
 - SQL injection, XSS, CSRF
 - Remote code execution
 - Privilege escalation
 - Sensitive data exposure
-- Docker/Podman socket abuse / container escape vectors
-- Webhook signature bypass
+- Docker socket abuse / container escape vectors
+- Webhook HMAC signature bypass
+- mTLS / gRPC tunnel bypass between Plane and Agent
 
 **Out of scope:**
-
 - Vulnerabilities in self-hosted infrastructure (your own servers)
 - Social engineering attacks
 - Denial of service without demonstrated impact

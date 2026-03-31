@@ -1,103 +1,147 @@
-# Tidefly Backend
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tidefly-oss/.github/main/assets/tidefly_logo.png" width="320" alt="Tidefly" />
+</p>
 
-> Self-hosted container management platform — Docker & Podman, no cloud required.
+<p align="center">
+  <strong>Go backend powering the Tidefly API, deployment engine, and worker management.</strong>
+</p>
 
-Tidefly is an open-source alternative to Portainer, Coolify, and Dokploy. This repository contains the Go backend that powers the Tidefly API, background jobs, and deployment engine.
+<p align="center">
+  <a href="https://github.com/tidefly-oss/tidefly-plane/releases"><img src="https://img.shields.io/github/v/release/tidefly-oss/tidefly-plane?include_prereleases&label=version&color=7c3aed" alt="Version" /></a>
+  <a href="https://github.com/tidefly-oss/tidefly-plane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-06b6d4" alt="License" /></a>
+  <a href="https://github.com/tidefly-oss/tidefly-plane/actions"><img src="https://img.shields.io/github/actions/workflow/status/tidefly-oss/tidefly-plane/ci.yaml?branch=main&label=CI" alt="CI" /></a>
+</p>
 
-## Stack
+---
 
-- **Go** + Echo v5
-- **PostgreSQL** — primary database
-- **Redis** — sessions, background jobs (asynq)
-- **Traefik** — automatic reverse proxy + SSL
-- **Wire** — compile-time dependency injection
+## Table of Contents
 
-## Repositories
+- [Deployment](#deployment)
+    - [Production](#production)
+    - [Development](#development)
+- [Configuration](#configuration)
+- [Tasks](#tasks)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
-| Repo                                                                  | Description                            |
-|-----------------------------------------------------------------------|----------------------------------------|
-| [tidefly-backend](https://github.com/tidefly-oss/tidefly-backend)     | This repo — Go API + deployment engine |
-| [tidefly-ui](https://github.com/tidefly-oss/tidefly-ui)               | SvelteKit frontend                     |
-| [tidefly-tui](https://github.com/tidefly-oss/tidefly-tui)             | Bubble Tea setup wizard                |
-| [tidefly-templates](https://github.com/tidefly-oss/tidefly-templates) | Service deploy templates               |
-| [tidefly-docs](https://github.com/tidefly-oss/tidefly-docs)           | Documentation                          |
+---
 
-## Getting Started
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) or [Podman](https://podman.io/getting-started/installation)
-- [Task](https://taskfile.dev) — `go install github.com/go-task/task/v3/cmd/task@latest`
-- [Go 1.23+](https://go.dev/dl/)
-- [Air](https://github.com/air-verse/air) — `go install github.com/air-verse/air@latest`
-- [Wire](https://github.com/google/wire) — `go install github.com/google/wire/cmd/wire@latest`
-
-### Setup
-
-```bash
-git clone https://github.com/tidefly-oss/tidefly-backend
-cd tidefly-plane-backend
-
-task setup       # creates deploy/dev/.env and generates secrets
-task dev:up      # starts Postgres, Redis, Traefik, Mailpit
-task dev         # starts backend with hot reload (Air)
-```
-
-Backend available at `http://localhost:8080`.
+## Deployment
 
 ### Production
 
+The recommended way to install Tidefly is via the TUI setup wizard:
 ```bash
-task setup:prod
-task prod:up
+curl -fsSL https://get.tidefly.sh | bash
 ```
 
-See [`deploy/prod/`](deploy/prod/) for compose config and environment variables.
+The wizard guides you through server setup, generates secrets, and starts all services automatically.
+
+### Development
+
+#### Prerequisites
+
+- Go 1.26+
+- Docker
+- [Task](https://taskfile.dev) — `go install github.com/go-task/task/v3/cmd/task@latest`
+- [Wire](https://github.com/google/wire) — `go install github.com/google/wire/cmd/wire@latest`
+- [Air](https://github.com/air-verse/air) — `go install github.com/air-verse/air@latest`
+
+#### Setup
+```bash
+git clone https://github.com/tidefly-oss/tidefly-plane
+cd tidefly-plane
+task setup      # generates deploy/development/.env with secrets
+task dev:up     # starts Postgres, Redis, Caddy
+task dev        # starts backend with hot reload
+```
+
+Backend available at `http://localhost:8181`.
+
+---
+
+## Configuration
+
+All configuration is done via environment variables. Run `task setup` to generate a `.env` with secure defaults.
+
+See [`deploy/development/.env.example`](deploy/development/.env.example) for all available options.
+
+---
 
 ## Tasks
+```
+task setup              Generate dev .env and secrets
+task dev                Start backend with hot reload
+task dev:up             Start dev infra (Postgres, Redis, Caddy)
+task dev:down           Stop dev infra
+task dev:reset          Stop dev infra and delete all volumes
+task migrate            Run database migrations (dev)
+task wire               Regenerate Wire DI bindings
+task build              Build production binary
+task build:docker       Build Docker image
+task lint               Run golangci-lint
+task test               Run all tests
+task tidy               go mod tidy
+task prod:up            Start production stack
+task prod:down          Stop production stack
+task prod:update        Pull latest images and recreate containers
+```
 
-```
-task setup            Create dev .env and generate secrets
-task dev              Start backend with hot reload
-task dev:up           Start dev infra (Postgres, Redis, Traefik, Mailpit)
-task dev:down         Stop dev infra
-task migrate          Run database migrations (dev)
-task wire             Regenerate Wire DI bindings
-task build            Build production binary
-task build:docker     Build Docker image
-task test             Run all tests
-task lint             Run golangci-lint
-task tidy             go mod tidy
-```
+---
 
 ## Project Structure
-
 ```
-cmd/tidefly/          entry point
+cmd/tidefly-plane/        entry point
 internal/
-  api/              route registration
-  bootstrap/        Wire DI providers
-  config/           environment config + validation
-  handlers/         HTTP handlers
-  middleware/        Echo middleware
-  models/           GORM models
-  services/         business logic
-  version/          build version info
+  api/
+    v1/                   route registration per domain
+    v1/proto/agent/       gRPC protobuf + generated code
+    adapter/              Echo v5 ↔ Huma adapter
+    middleware/           Echo & Huma middleware
+    shared/               shared helpers
+  bootstrap/              Wire DI providers + wire_gen.go
+  ca/                     internal mTLS certificate authority
+  config/                 environment config + validation
+  jobs/                   asynq background jobs
+  metrics/                Prometheus registry
+  models/                 GORM models
+  services/
+    agent/                gRPC server + worker registry
+    caddy/                Caddy Admin API client
+    git/                  Git integration
+    logwatcher/           container log streaming
+    notifications/        notification service
+    runtime/              Docker/Podman abstraction
+    template/             service template loader
+    webhook/              webhook delivery
+  version/                build version info (set via ldflags)
 deploy/
-  dev/              local dev compose + .env
-  prod/             production compose + .env
-scripts/            helper scripts
-templates/          service deploy templates
+  development/            docker-compose + .env for local dev
+  production/             Dockerfile + docker-compose + .env
+scripts/
+  gen-proto.sh            regenerate protobuf bindings
+  init-env.sh             generate .env with random secrets
 ```
+
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](contributing.md) for setup instructions and guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and guidelines.
+
+---
 
 ## Security
 
-Please do **not** open public issues for security vulnerabilities — use [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-backend/security/advisories/new) instead.
+Please do **not** open public issues for security vulnerabilities.
+Use [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-plane/security/advisories/new) instead.
 
-## License
+---
 
-[AGPLv3](LICENSE)
+<div align="center">
+
+Built with ❤️ · [AGPLv3](https://github.com/tidefly-oss/tidefly-plane/blob/main/LICENSE) · [Report a vulnerability](https://github.com/tidefly-oss/tidefly-plane/security/advisories/new)
+
+</div>
