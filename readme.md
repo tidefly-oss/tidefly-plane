@@ -24,7 +24,6 @@
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [Security](#security)
-- [License](#license)
 
 ---
 
@@ -66,7 +65,7 @@ Backend available at `http://localhost:8181`.
 
 All configuration is done via environment variables. Run `task setup` to generate a `.env` with secure defaults.
 
-See [`deploy/development/.env.example`](deploy/development/.env.example) for all available options.
+See [`.env.example`](.env.example) for all available options.
 
 ---
 
@@ -129,7 +128,7 @@ scripts/
 
 ## Contributing
 
-See [CONTRIBUTING.md](contributing.md) for setup instructions, code style, and guidelines.
+See [contributing.md](contributing.md) for setup instructions, code style, and guidelines.
 
 ---
 
