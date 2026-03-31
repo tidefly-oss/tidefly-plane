@@ -68,7 +68,7 @@ jobs:
           APP_SECRET_KEY: test-secret-key-for-ci-only-32chars
         run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           flags: backend
           fail_ci_if_error: false
