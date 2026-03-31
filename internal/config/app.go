@@ -9,5 +9,4 @@ func setAppDefaults() {
 	viper.SetDefault("API_DOCS_ENABLED", false)
 	viper.SetDefault("TIDEFLY_ENCRYPTION_KEY", "")
 	viper.SetDefault("AGENT_GRPC_PORT", 7443)
-
 }

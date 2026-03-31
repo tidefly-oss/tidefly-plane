@@ -9,7 +9,7 @@ import (
 )
 
 // ListAllContainers returns every container on the host, including those
-// marked tidefly.internal. Used for port-conflict detection.
+// marked tidefly-plane.internal. Used for port-conflict detection.
 func (p *Runtime) ListAllContainers(ctx context.Context) ([]runtime.Container, error) {
 	var raw []struct {
 		ID    *string  `json:"Id"`

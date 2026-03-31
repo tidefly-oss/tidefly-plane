@@ -162,7 +162,7 @@ func (s *Service) GenerateAccessToken(userID, email, role string) (string, error
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTokenTTL)),
-			Issuer:    "tidefly",
+			Issuer:    "tidefly-plane",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

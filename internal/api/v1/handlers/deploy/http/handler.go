@@ -3,6 +3,7 @@ package http
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/service"
 	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
@@ -29,9 +30,10 @@ func New(
 	rt runtime.Runtime,
 	notifSvc *notifications.Service,
 	notifierSvc *notifiersvc.Service,
+	agentClient *agentsvc.Client,
 ) *Handler {
 	return &Handler{
-		deploy:      service.NewDeployService(db, deployer, loader, caddy, rt),
+		deploy:      service.NewDeployService(db, deployer, loader, caddy, rt, agentClient),
 		credentials: service.NewCredentialsService(db),
 		notifSvc:    notifSvc,
 		notifierSvc: notifierSvc,

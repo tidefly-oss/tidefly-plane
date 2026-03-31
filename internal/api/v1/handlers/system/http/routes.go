@@ -7,19 +7,27 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
-	huma.Register(api, shared.Op("system-health", "GET", "/api/v1/system/health", "Health check", mw...), h.Health)
-	huma.Register(api, shared.Op("system-info", "GET", "/api/v1/system/info", "Runtime info", mw...), h.Info)
 	huma.Register(
 		api,
-		shared.Op("system-overview", "GET", "/api/v1/system/overview", "Dashboard overview", mw...),
+		shared.Op("system-health", "GET", "/api/v1/system/health", "Health check", "System", mw...),
+		h.Health,
+	)
+	huma.Register(api, shared.Op("system-info", "GET", "/api/v1/system/info", "Runtime info", "System", mw...), h.Info)
+	huma.Register(
+		api,
+		shared.Op("system-overview", "GET", "/api/v1/system/overview", "Dashboard overview", "System", mw...),
 		h.Overview,
 	)
 	huma.Register(
 		api,
-		shared.Op("system-metrics", "GET", "/api/v1/system/metrics", "Current system metrics", mw...),
+		shared.Op("system-metrics", "GET", "/api/v1/system/metrics", "Current system metrics", "System", mw...),
 		h.Metrics,
 	)
-	huma.Register(api, shared.Op("system-ports", "GET", "/api/v1/system/ports", "Used host ports", mw...), h.UsedPorts)
+	huma.Register(
+		api,
+		shared.Op("system-ports", "GET", "/api/v1/system/ports", "Used host ports", "System", mw...),
+		h.UsedPorts,
+	)
 }
 
 func (h *Handler) RegisterSSERoutes(e *echo.Echo, echoSSE echo.MiddlewareFunc, echoInject echo.MiddlewareFunc) {

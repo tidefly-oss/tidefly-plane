@@ -6,15 +6,22 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares, adminMw huma.Middlewares) {
-	huma.Register(api, shared.Op("volumes-list", "GET", "/api/v1/volumes", "List volumes", mw...), h.List)
+	huma.Register(api, shared.Op("volumes-list", "GET", "/api/v1/volumes", "List volumes", "Volumes", mw...), h.List)
 	huma.Register(
 		api,
-		shared.Op("volumes-containers", "GET", "/api/v1/volumes/{id}/containers", "Containers using volume", mw...),
+		shared.Op(
+			"volumes-containers",
+			"GET",
+			"/api/v1/volumes/{id}/containers",
+			"Containers using volume",
+			"Volumes",
+			mw...,
+		),
 		h.Containers,
 	)
 	huma.Register(
 		api,
-		shared.Op("volumes-delete", "DELETE", "/api/v1/volumes/{id}", "Delete volume", adminMw...),
+		shared.Op("volumes-delete", "DELETE", "/api/v1/volumes/{id}", "Delete volume", "Volumes", adminMw...),
 		h.Delete,
 	)
 }

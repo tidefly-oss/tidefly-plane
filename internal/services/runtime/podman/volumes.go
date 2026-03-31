@@ -57,7 +57,7 @@ func (p *Runtime) CreateVolume(ctx context.Context, name string) error {
 	body := map[string]any{
 		"Name":           name,
 		"Driver":         "local",
-		"Label":          map[string]string{"tidefly.managed": "true"},
+		"Label":          map[string]string{"tidefly-plane.managed": "true"},
 		"IgnoreIfExists": true,
 	}
 	_, _, err := p.c.postExpect(ctx, "/libpod/volumes/create", nil, body, 201)

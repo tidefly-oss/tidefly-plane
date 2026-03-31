@@ -78,16 +78,16 @@ func ProvideDatabase(cfg *config.Config, log *applogger.Logger) (*gorm.DB, func(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := db.AutoMigrate(database); err != nil {
+		return nil, nil, err
+	}
 	database = database.Session(
 		&gorm.Session{
 			Logger: applogger.NewGORMLogger(cfg.IsDevelopment(), cfg.Logger.SlowQueryMS),
 		},
 	)
-	if err := db.AutoMigrate(database); err != nil {
-		return nil, nil, err
-	}
 	log.SetDB(database)
-	return database, func() { /* gorm has no close */ }, nil
+	return database, func() {}, nil
 }
 
 func ProvideRedis(cfg *config.Config) (*goredis.Client, func(), error) {

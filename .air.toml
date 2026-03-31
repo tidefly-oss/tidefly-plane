@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-pre_cmd = []
+pre_cmd = ["set -a && source deploy/development/.env && set +a"]
 cmd = "go build -gcflags='all=-N -l' -o ./tmp/main ./cmd/tidefly"
 entrypoint = "./tmp/main"
 include_ext = ["go"]

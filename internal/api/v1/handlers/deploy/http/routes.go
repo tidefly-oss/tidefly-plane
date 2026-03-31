@@ -6,11 +6,19 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
-	huma.Register(api, shared.Op("deploy-list", "GET", "/api/v1/deploy", "List services", mw...), h.ListServices)
-	huma.Register(api, shared.Op("deploy-create", "POST", "/api/v1/deploy", "Deploy service", mw...), h.DeployService)
 	huma.Register(
 		api,
-		shared.Op("deploy-delete", "DELETE", "/api/v1/deploy/{id}", "Delete service", mw...),
+		shared.Op("deploy-list", "GET", "/api/v1/deploy", "List services", "Deploy", mw...),
+		h.ListServices,
+	)
+	huma.Register(
+		api,
+		shared.Op("deploy-create", "POST", "/api/v1/deploy", "Deploy service", "Deploy", mw...),
+		h.DeployService,
+	)
+	huma.Register(
+		api,
+		shared.Op("deploy-delete", "DELETE", "/api/v1/deploy/{id}", "Delete service", "Deploy", mw...),
 		h.DeleteService,
 	)
 	huma.Register(
@@ -20,6 +28,7 @@ func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
 			"POST",
 			"/api/v1/deploy/{id}/credentials/shown",
 			"Mark credentials shown",
+			"Deployments",
 			mw...,
 		),
 		h.MarkCredentialsShown,

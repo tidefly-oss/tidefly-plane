@@ -6,31 +6,39 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
-	huma.Register(api, shared.Op("git-list", "GET", "/api/v1/git/integrations", "List integrations", mw...), h.List)
 	huma.Register(
 		api,
-		shared.Op("git-create", "POST", "/api/v1/git/integrations", "Create integration", mw...),
+		shared.Op("git-list", "GET", "/api/v1/git/integrations", "List integrations", "Git", mw...),
+		h.List,
+	)
+	huma.Register(
+		api,
+		shared.Op("git-create", "POST", "/api/v1/git/integrations", "Create integration", "Git", mw...),
 		h.Create,
 	)
-	huma.Register(api, shared.Op("git-get", "GET", "/api/v1/git/integrations/{id}", "Get integration", mw...), h.Get)
 	huma.Register(
 		api,
-		shared.Op("git-delete", "DELETE", "/api/v1/git/integrations/{id}", "Delete integration", mw...),
+		shared.Op("git-get", "GET", "/api/v1/git/integrations/{id}", "Get integration", "Git", mw...),
+		h.Get,
+	)
+	huma.Register(
+		api,
+		shared.Op("git-delete", "DELETE", "/api/v1/git/integrations/{id}", "Delete integration", "Git", mw...),
 		h.Delete,
 	)
 	huma.Register(
 		api,
-		shared.Op("git-validate", "POST", "/api/v1/git/integrations/{id}/validate", "Validate token", mw...),
+		shared.Op("git-validate", "POST", "/api/v1/git/integrations/{id}/validate", "Validate token", "Git", mw...),
 		h.Validate,
 	)
 	huma.Register(
 		api,
-		shared.Op("git-repos", "GET", "/api/v1/git/integrations/{id}/repositories", "List repositories", mw...),
+		shared.Op("git-repos", "GET", "/api/v1/git/integrations/{id}/repositories", "List repositories", "Git", mw...),
 		h.ListRepositories,
 	)
 	huma.Register(
 		api,
-		shared.Op("git-shares", "PUT", "/api/v1/git/integrations/{id}/shares", "Set shares", mw...),
+		shared.Op("git-shares", "PUT", "/api/v1/git/integrations/{id}/shares", "Set shares", "Git", mw...),
 		h.SetShares,
 	)
 	huma.Register(
@@ -40,6 +48,7 @@ func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
 			"GET",
 			"/api/v1/git/integrations/{id}/repositories/{owner}/{repo}/branches",
 			"List branches",
+			"Git",
 			mw...,
 		),
 		h.ListBranches,

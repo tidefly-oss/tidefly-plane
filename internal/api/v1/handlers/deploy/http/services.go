@@ -24,8 +24,10 @@ type DeployServiceInput struct {
 		Fields       map[string]string `json:"fields,omitempty"`
 		Expose       *bool             `json:"expose,omitempty"`
 		CustomDomain string            `json:"custom_domain,omitempty"`
+		WorkerID     string            `json:"worker_id,omitempty" maxLength:"64"`
 	}
 }
+
 type DeployServiceOutput struct {
 	Body struct {
 		Service     *models.Service              `json:"service"`
@@ -52,7 +54,7 @@ func (h *Handler) ListServices(_ context.Context, _ *ListServicesInput) (*ListSe
 
 func (h *Handler) DeployService(ctx context.Context, input *DeployServiceInput) (*DeployServiceOutput, error) {
 	if input.Body.Expose != nil && *input.Body.Expose && !h.deploy.CaddyEnabled() {
-		return nil, huma400("Traefik integration is not enabled on this instance")
+		return nil, huma400("Caddy integration is not enabled on this instance")
 	}
 
 	result, err := h.deploy.Deploy(
@@ -63,32 +65,52 @@ func (h *Handler) DeployService(ctx context.Context, input *DeployServiceInput) 
 			Fields:       input.Body.Fields,
 			Expose:       input.Body.Expose,
 			CustomDomain: input.Body.CustomDomain,
+			WorkerID:     input.Body.WorkerID,
 		},
 	)
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditContainerDeploy,
-			ResourceID: input.Body.ProjectID,
-			Success:    err == nil,
-			Details: fmt.Sprintf(
-				"template=%s project=%s version=%s expose=%v url=%s",
-				input.Body.TemplateSlug, input.Body.ProjectID,
-				input.Body.Version, input.Body.Expose, result.PublicURL,
-			),
-		},
-	)
+
 	if err != nil {
+		h.log.Audit(
+			ctx, logger.AuditEntry{
+				Action:     logger.AuditContainerDeploy,
+				ResourceID: input.Body.ProjectID,
+				Success:    false,
+				Details: fmt.Sprintf(
+					"template=%s project=%s version=%s expose=%v worker=%s error=%s",
+					input.Body.TemplateSlug, input.Body.ProjectID,
+					input.Body.Version, input.Body.Expose,
+					input.Body.WorkerID, err.Error(),
+				),
+			},
+		)
 		if err.Error() == "template not found" {
 			return nil, huma404("template not found")
 		}
 		return nil, err
 	}
 
+	h.log.Audit(
+		ctx, logger.AuditEntry{
+			Action:     logger.AuditContainerDeploy,
+			ResourceID: input.Body.ProjectID,
+			Success:    true,
+			Details: fmt.Sprintf(
+				"template=%s project=%s version=%s expose=%v worker=%s url=%s",
+				input.Body.TemplateSlug, input.Body.ProjectID,
+				input.Body.Version, input.Body.Expose,
+				input.Body.WorkerID, result.PublicURL,
+			),
+		},
+	)
+
 	h.notifierSvc.Send(
 		ctx, notifiersvc.Event{
-			Title:   "Service deployed: " + input.Body.TemplateSlug,
-			Message: fmt.Sprintf("template=%s project=%s", input.Body.TemplateSlug, input.Body.ProjectID),
-			Level:   "info",
+			Title: "Service deployed: " + input.Body.TemplateSlug,
+			Message: fmt.Sprintf(
+				"template=%s project=%s worker=%s",
+				input.Body.TemplateSlug, input.Body.ProjectID, input.Body.WorkerID,
+			),
+			Level: "info",
 		},
 	)
 
@@ -110,9 +132,6 @@ func (h *Handler) DeleteService(ctx context.Context, input *DeleteServiceInput) 
 		},
 	)
 	if err != nil {
-		if err.Error() == "invalid service id: "+err.Error() {
-			return nil, huma400("invalid service id")
-		}
 		return nil, err
 	}
 	return nil, nil
@@ -120,9 +139,6 @@ func (h *Handler) DeleteService(ctx context.Context, input *DeleteServiceInput) 
 
 func (h *Handler) MarkCredentialsShown(_ context.Context, input *MarkCredentialsShownInput) (*struct{}, error) {
 	if err := h.credentials.MarkShown(input.ID); err != nil {
-		if err.Error() == "invalid service id: "+err.Error() {
-			return nil, huma400("invalid service id")
-		}
 		return nil, err
 	}
 	return nil, nil

@@ -18,16 +18,16 @@ const (
 
 // Service represents a deployed template instance.
 type Service struct {
-	ID           uuid.UUID     `gorm:"type:uuid;primaryKey"         json:"id"`
-	Name         string        `gorm:"not null"                     json:"name"`
-	TemplateSlug string        `gorm:"not null"                     json:"template_slug"`
-	Version      string        `gorm:"not null"                     json:"version"`
-	Status       ServiceStatus `gorm:"not null;default:'deploying'" json:"status"`
-	ProjectID    string        `gorm:"not null;index"               json:"project_id"`
-	CreatedAt    time.Time     `                                    json:"created_at"`
-	UpdatedAt    time.Time     `                                    json:"updated_at"`
-
-	Credentials []ServiceCredential `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"credentials,omitempty"`
+	ID           uuid.UUID           `gorm:"type:uuid;primaryKey"         json:"id"`
+	Name         string              `gorm:"not null"                     json:"name"`
+	TemplateSlug string              `gorm:"not null"                     json:"template_slug"`
+	Version      string              `gorm:"not null"                     json:"version"`
+	Status       ServiceStatus       `gorm:"not null;default:'deploying'" json:"status"`
+	ProjectID    string              `gorm:"not null;index"               json:"project_id"`
+	WorkerID     string              `gorm:"type:varchar(64);default:''"  json:"worker_id,omitempty"`
+	CreatedAt    time.Time           `                                     json:"created_at"`
+	UpdatedAt    time.Time           `                                     json:"updated_at"`
+	Credentials  []ServiceCredential `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"credentials,omitempty"`
 }
 
 func (s *Service) BeforeCreate(tx *gorm.DB) error {

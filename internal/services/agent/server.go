@@ -51,7 +51,7 @@ func NewServer(db *gorm.DB, caService *ca.Service, port string) *Server {
 }
 
 // Start builds the mTLS gRPC server and starts listening.
-// Blocks until ctx is cancelled.
+// Blocks until ctx is canceled.
 func (s *Server) Start(ctx context.Context) error {
 	tlsCfg, err := s.buildTLSConfig()
 	if err != nil {
@@ -67,7 +67,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	agentpb.RegisterAgentServiceServer(s.grpcSrv, s)
 
-	lis, err := net.Listen("tcp", s.port)
+	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.port)
 	if err != nil {
 		return fmt.Errorf("agent server: listen %s: %w", s.port, err)
 	}
@@ -95,7 +95,6 @@ func (s *Server) Registry() *Registry {
 // ── AgentService implementation ───────────────────────────────────────────────
 
 func (s *Server) Ping(_ context.Context, req *agentpb.PingRequest) (*agentpb.PingResponse, error) {
-	// Verify worker exists and is not revoked
 	var worker models.WorkerNode
 	if err := s.db.Where("id = ? AND status != ?", req.WorkerId, models.WorkerStatusRevoked).
 		First(&worker).Error; err != nil {
@@ -109,20 +108,17 @@ func (s *Server) Ping(_ context.Context, req *agentpb.PingRequest) (*agentpb.Pin
 }
 
 func (s *Server) Connect(stream agentpb.AgentService_ConnectServer) error {
-	// Extract worker ID from mTLS cert CommonName
 	workerID, err := workerIDFromContext(stream.Context())
 	if err != nil {
 		return status.Error(codes.Unauthenticated, "could not identify worker from certificate")
 	}
 
-	// Load worker from DB
 	var worker models.WorkerNode
 	if err := s.db.Where("id = ? AND status != ?", workerID, models.WorkerStatusRevoked).
 		First(&worker).Error; err != nil {
 		return status.Error(codes.Unauthenticated, "worker not found or revoked")
 	}
 
-	// Extract peer IP
 	peerIP := ""
 	if p, ok := peer.FromContext(stream.Context()); ok {
 		if addr, ok := p.Addr.(*net.TCPAddr); ok {
@@ -130,18 +126,15 @@ func (s *Server) Connect(stream agentpb.AgentService_ConnectServer) error {
 		}
 	}
 
-	// Register in memory registry
 	conn := s.registry.Register(workerID, stream)
 	defer s.registry.Unregister(workerID)
 
 	slog.Info("agent server: worker connected", "worker_id", workerID, "ip", peerIP)
 
-	// Wait for AgentHello as first message
 	if err := s.handleHello(stream, &worker, peerIP); err != nil {
 		return err
 	}
 
-	// Main receive loop
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -181,34 +174,49 @@ func (s *Server) handleHello(stream agentpb.AgentService_ConnectServer, worker *
 		return status.Error(codes.InvalidArgument, "expected AgentHello as first message")
 	}
 
-	// Update worker record
 	worker.MarkConnected(ip, hello.Hello.AgentVersion)
 	worker.OS = hello.Hello.Os
 	worker.Arch = hello.Hello.Arch
 	worker.RuntimeType = hello.Hello.RuntimeType
 	s.db.Save(worker)
 
-	// Send PlaneAck
-	return stream.Send(&agentpb.PlaneMessage{
-		CommandId: "hello-ack",
-		WorkerId:  worker.ID,
-		Payload: &agentpb.PlaneMessage_Ack{
-			Ack: &agentpb.PlaneAck{Accepted: true},
+	return stream.Send(
+		&agentpb.PlaneMessage{
+			CommandId: "hello-ack",
+			WorkerId:  worker.ID,
+			Payload: &agentpb.PlaneMessage_Ack{
+				Ack: &agentpb.PlaneAck{Accepted: true},
+			},
 		},
-	})
+	)
 }
 
-func (s *Server) handleMessage(_ context.Context, worker *models.WorkerNode, msg *agentpb.AgentMessage, conn *WorkerConn) {
+func (s *Server) handleMessage(
+	_ context.Context,
+	worker *models.WorkerNode,
+	msg *agentpb.AgentMessage,
+	conn *WorkerConn,
+) {
 	switch p := msg.Payload.(type) {
-
 	case *agentpb.AgentMessage_Heartbeat:
-		now := time.Now()
-		worker.LastSeenAt = &now
-		s.db.Model(worker).Update("last_seen_at", now)
-		slog.Debug("agent server: heartbeat",
+		hb := p.Heartbeat
+		worker.UpdateHeartbeat(hb.CpuPercent, hb.MemPercent, hb.ContainerCount)
+		if err := s.db.Model(worker).Updates(
+			map[string]any{
+				"last_seen_at":    worker.LastSeenAt,
+				"cpu_percent":     worker.CPUPercent,
+				"mem_percent":     worker.MemPercent,
+				"container_count": worker.ContainerCount,
+			},
+		).Error; err != nil {
+			slog.Warn("agent server: heartbeat update failed", "worker_id", worker.ID, "error", err)
+		}
+		slog.Debug(
+			"agent server: heartbeat",
 			"worker_id", worker.ID,
-			"containers", p.Heartbeat.ContainerCount,
-			"cpu", p.Heartbeat.CpuPercent,
+			"containers", hb.ContainerCount,
+			"cpu", hb.CpuPercent,
+			"mem", hb.MemPercent,
 		)
 
 	case *agentpb.AgentMessage_CommandAck:
@@ -227,7 +235,8 @@ func (s *Server) handleMessage(_ context.Context, worker *models.WorkerNode, msg
 		conn.resolveResult(p.DeployResult.CommandId, p.DeployResult)
 
 	case *agentpb.AgentMessage_Error:
-		slog.Error("agent server: worker error",
+		slog.Error(
+			"agent server: worker error",
 			"worker_id", worker.ID,
 			"code", p.Error.Code,
 			"message", p.Error.Message,
@@ -286,9 +295,8 @@ func workerIDFromContext(ctx context.Context) (string, error) {
 	if len(tlsInfo.State.PeerCertificates) == 0 {
 		return "", fmt.Errorf("no client certificate")
 	}
-	// Worker cert CN is "tidefly-worker-<uuid>"
 	cn := tlsInfo.State.PeerCertificates[0].Subject.CommonName
-	const prefix = "tidefly-worker-"
+	const prefix = "tidefly-plane-worker-"
 	if len(cn) <= len(prefix) {
 		return "", fmt.Errorf("invalid cert CN: %s", cn)
 	}

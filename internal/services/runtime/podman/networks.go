@@ -19,7 +19,7 @@ func (p *Runtime) ListNetworks(ctx context.Context) ([]runtime.Network, error) {
 
 	result := make([]runtime.Network, 0, len(raw))
 	for _, n := range raw {
-		if n.Labels["tidefly.internal"] == "true" || n.Labels["tidefly.managed"] != "true" {
+		if n.Labels["tidefly-plane.internal"] == "true" || n.Labels["tidefly-plane.managed"] != "true" {
 			continue
 		}
 		result = append(result, mapPodmanNetwork(n))
@@ -44,7 +44,7 @@ func (p *Runtime) CreateNetwork(ctx context.Context, name string) error {
 		"Name":       name,
 		"Driver":     "bridge",
 		"DNSEnabled": true,
-		"Labels":     map[string]string{"tidefly.managed": "true"},
+		"Labels":     map[string]string{"tidefly-plane.managed": "true"},
 	}
 	code, _, err := p.c.post(ctx, "/libpod/networks/create", nil, body)
 	if err != nil {

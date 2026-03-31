@@ -30,18 +30,20 @@ func cmdID() string { return uuid.New().String() }
 
 // ── Container commands ────────────────────────────────────────────────────────
 
-func (c *Client) ListContainers(ctx context.Context, workerID string) ([]*agentpb.Container, error) {
+func (c *Client) ListContainers(_ context.Context, workerID string) ([]*agentpb.Container, error) {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return nil, err
 	}
 
 	id := cmdID()
-	result, err := conn.Send(&agentpb.PlaneMessage{
-		CommandId: id,
-		WorkerId:  workerID,
-		Payload:   &agentpb.PlaneMessage_ListContainers{ListContainers: &agentpb.CmdListContainers{}},
-	})
+	result, err := conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: id,
+			WorkerId:  workerID,
+			Payload:   &agentpb.PlaneMessage_ListContainers{ListContainers: &agentpb.CmdListContainers{}},
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -53,69 +55,77 @@ func (c *Client) ListContainers(ctx context.Context, workerID string) ([]*agentp
 	return res.Containers, nil
 }
 
-func (c *Client) StartContainer(ctx context.Context, workerID, containerID string) error {
+func (c *Client) StartContainer(_ context.Context, workerID, containerID string) error {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return err
 	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_StartContainer{
-			StartContainer: &agentpb.CmdStartContainer{ContainerId: containerID},
-		},
-	})
-	return err
-}
-
-func (c *Client) StopContainer(ctx context.Context, workerID, containerID string, timeoutSec int32) error {
-	conn, err := c.conn(workerID)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_StopContainer{
-			StopContainer: &agentpb.CmdStopContainer{
-				ContainerId: containerID,
-				TimeoutSec:  timeoutSec,
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_StartContainer{
+				StartContainer: &agentpb.CmdStartContainer{ContainerId: containerID},
 			},
 		},
-	})
+	)
 	return err
 }
 
-func (c *Client) RestartContainer(ctx context.Context, workerID, containerID string) error {
+func (c *Client) StopContainer(_ context.Context, workerID, containerID string, timeoutSec int32) error {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return err
 	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_RestartContainer{
-			RestartContainer: &agentpb.CmdRestartContainer{ContainerId: containerID},
-		},
-	})
-	return err
-}
-
-func (c *Client) RemoveContainer(ctx context.Context, workerID, containerID string, force bool) error {
-	conn, err := c.conn(workerID)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_RemoveContainer{
-			RemoveContainer: &agentpb.CmdRemoveContainer{
-				ContainerId: containerID,
-				Force:       force,
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_StopContainer{
+				StopContainer: &agentpb.CmdStopContainer{
+					ContainerId: containerID,
+					TimeoutSec:  timeoutSec,
+				},
 			},
 		},
-	})
+	)
+	return err
+}
+
+func (c *Client) RestartContainer(_ context.Context, workerID, containerID string) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_RestartContainer{
+				RestartContainer: &agentpb.CmdRestartContainer{ContainerId: containerID},
+			},
+		},
+	)
+	return err
+}
+
+func (c *Client) RemoveContainer(_ context.Context, workerID, containerID string, force bool) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_RemoveContainer{
+				RemoveContainer: &agentpb.CmdRemoveContainer{
+					ContainerId: containerID,
+					Force:       force,
+				},
+			},
+		},
+	)
 	return err
 }
 
@@ -133,30 +143,32 @@ type DeployRequest struct {
 	Network     string
 }
 
-func (c *Client) Deploy(ctx context.Context, workerID string, req DeployRequest) (*agentpb.DeployResult, error) {
+func (c *Client) Deploy(_ context.Context, workerID string, req DeployRequest) (*agentpb.DeployResult, error) {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return nil, err
 	}
 
 	id := cmdID()
-	result, err := conn.Send(&agentpb.PlaneMessage{
-		CommandId: id,
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_Deploy{
-			Deploy: &agentpb.CmdDeploy{
-				ProjectId:   req.ProjectID,
-				ServiceName: req.ServiceName,
-				Image:       req.Image,
-				Env:         req.Env,
-				Ports:       req.Ports,
-				Labels:      req.Labels,
-				Limits:      req.Limits,
-				Volumes:     req.Volumes,
-				Network:     req.Network,
+	result, err := conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: id,
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_Deploy{
+				Deploy: &agentpb.CmdDeploy{
+					ProjectId:   req.ProjectID,
+					ServiceName: req.ServiceName,
+					Image:       req.Image,
+					Env:         req.Env,
+					Ports:       req.Ports,
+					Labels:      req.Labels,
+					Limits:      req.Limits,
+					Volumes:     req.Volumes,
+					Network:     req.Network,
+				},
 			},
 		},
-	})
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -173,18 +185,20 @@ func (c *Client) Deploy(ctx context.Context, workerID string, req DeployRequest)
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
 
-func (c *Client) CollectMetrics(ctx context.Context, workerID string) (*agentpb.MetricsResult, error) {
+func (c *Client) CollectMetrics(_ context.Context, workerID string) (*agentpb.MetricsResult, error) {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return nil, err
 	}
 
 	id := cmdID()
-	result, err := conn.Send(&agentpb.PlaneMessage{
-		CommandId: id,
-		WorkerId:  workerID,
-		Payload:   &agentpb.PlaneMessage_CollectMetrics{CollectMetrics: &agentpb.CmdCollectMetrics{}},
-	})
+	result, err := conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: id,
+			WorkerId:  workerID,
+			Payload:   &agentpb.PlaneMessage_CollectMetrics{CollectMetrics: &agentpb.CmdCollectMetrics{}},
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +212,12 @@ func (c *Client) CollectMetrics(ctx context.Context, workerID string) (*agentpb.
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
 
-func (c *Client) StreamLogs(ctx context.Context, workerID, containerID string, follow bool, tailLines int32) (<-chan *agentpb.ContainerLogsResult, error) {
+func (c *Client) StreamLogs(
+	ctx context.Context,
+	workerID, containerID string,
+	follow bool,
+	tailLines int32,
+) (<-chan *agentpb.ContainerLogsResult, error) {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return nil, err
@@ -207,22 +226,24 @@ func (c *Client) StreamLogs(ctx context.Context, workerID, containerID string, f
 	id := cmdID()
 	ch := conn.StreamLogs(id)
 
-	if err := conn.SendNoWait(&agentpb.PlaneMessage{
-		CommandId: id,
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_StreamLogs{
-			StreamLogs: &agentpb.CmdStreamLogs{
-				ContainerId: containerID,
-				Follow:      follow,
-				TailLines:   tailLines,
+	if err := conn.SendNoWait(
+		&agentpb.PlaneMessage{
+			CommandId: id,
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_StreamLogs{
+				StreamLogs: &agentpb.CmdStreamLogs{
+					ContainerId: containerID,
+					Follow:      follow,
+					TailLines:   tailLines,
+				},
 			},
 		},
-	}); err != nil {
+	); err != nil {
 		conn.CloseLogStream(id)
 		return nil, err
 	}
 
-	// Auto-close log stream when context is cancelled
+	// Auto-close log stream when context is canceled
 	go func() {
 		<-ctx.Done()
 		conn.CloseLogStream(id)
@@ -233,37 +254,41 @@ func (c *Client) StreamLogs(ctx context.Context, workerID, containerID string, f
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-func (c *Client) RegisterRoute(ctx context.Context, workerID, upstream, domain string, tls bool) error {
+func (c *Client) RegisterRoute(_ context.Context, workerID, upstream, domain string, tls bool) error {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return err
 	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_RegisterRoute{
-			RegisterRoute: &agentpb.CmdRegisterRoute{
-				Upstream: upstream,
-				Domain:   domain,
-				Tls:      tls,
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_RegisterRoute{
+				RegisterRoute: &agentpb.CmdRegisterRoute{
+					Upstream: upstream,
+					Domain:   domain,
+					Tls:      tls,
+				},
 			},
 		},
-	})
+	)
 	return err
 }
 
-func (c *Client) RemoveRoute(ctx context.Context, workerID, domain string) error {
+func (c *Client) RemoveRoute(_ context.Context, workerID, domain string) error {
 	conn, err := c.conn(workerID)
 	if err != nil {
 		return err
 	}
-	_, err = conn.Send(&agentpb.PlaneMessage{
-		CommandId: cmdID(),
-		WorkerId:  workerID,
-		Payload: &agentpb.PlaneMessage_RemoveRoute{
-			RemoveRoute: &agentpb.CmdRemoveRoute{Domain: domain},
+	_, err = conn.Send(
+		&agentpb.PlaneMessage{
+			CommandId: cmdID(),
+			WorkerId:  workerID,
+			Payload: &agentpb.PlaneMessage_RemoveRoute{
+				RemoveRoute: &agentpb.CmdRemoveRoute{Domain: domain},
+			},
 		},
-	})
+	)
 	return err
 }
 

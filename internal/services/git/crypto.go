@@ -94,6 +94,6 @@ func DecryptSecret(encrypted, appKey string) (string, error) {
 // deriveKey derives a 32-byte AES key from the app secret using Argon2id.
 func deriveKey(appKey string) []byte {
 	// Fixed salt for key derivation (not for password hashing)
-	salt := []byte("tidefly-git-key-v1")
+	salt := []byte("tidefly-plane-git-key-v1")
 	return argon2.IDKey([]byte(appKey), salt, 1, 64*1024, 4, 32)
 }

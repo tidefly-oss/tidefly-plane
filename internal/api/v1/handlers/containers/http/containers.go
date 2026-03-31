@@ -133,7 +133,7 @@ func (h *Handler) Restart(ctx context.Context, input *RestartInput) (*RestartOut
 func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
 	details, err := h.runtime.GetContainer(ctx, input.ID)
 	if err == nil {
-		if serviceIDStr, ok := details.Labels["tidefly.service"]; ok {
+		if serviceIDStr, ok := details.Labels["tidefly-plane.service"]; ok {
 			if serviceID, parseErr := uuid.Parse(serviceIDStr); parseErr == nil {
 				destroyErr := h.deployer.Destroy(ctx, serviceID)
 				h.log.Audit(
@@ -141,7 +141,7 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 						Action:     logger.AuditContainerDelete,
 						ResourceID: input.ID,
 						Success:    destroyErr == nil,
-						Details:    fmt.Sprintf("tidefly service %s force=%v", serviceIDStr, input.Force),
+						Details:    fmt.Sprintf("tidefly-plane service %s force=%v", serviceIDStr, input.Force),
 					},
 				)
 				if destroyErr != nil {
