@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tidefly-oss/.github/main/assets/tidefly_logo.png" width="320" alt="Tidefly" />
+  <img src="https://raw.githubusercontent.com/tidefly-oss/.github/main/assets/tidefly_mascot.svg" width="320" alt="Tidefly" />
 </p>
 
 <p align="center">
@@ -129,7 +129,7 @@ scripts/
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and guidelines.
+See [CONTRIBUTING.md](contributing.md) for setup instructions, code style, and guidelines.
 
 ---
 
