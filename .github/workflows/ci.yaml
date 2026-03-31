@@ -95,4 +95,4 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-        run: go build -ldflags "-s -w" -o /dev/null ./cmd/tidefly-plane-plane
+        run: go build -ldflags "-s -w" -o /dev/null ./cmd/tidefly-plane
