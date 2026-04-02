@@ -137,10 +137,12 @@ See [contributing.md](contributing.md) for setup instructions, code style, and g
 Please do **not** open public issues for security vulnerabilities.
 Use [GitHub Private Security Advisories](https://github.com/tidefly-oss/tidefly-plane/security/advisories/new) instead.
 
+## License
+
+AGPLv3 — see [LICENSE](LICENSE)
+
 ---
 
 <div align="center">
-
-Built with ❤️ · [AGPLv3](https://github.com/tidefly-oss/tidefly-plane/blob/main/LICENSE) · [Report a vulnerability](https://github.com/tidefly-oss/tidefly-plane/security/advisories/new)
-
+  <sub>Built with ❤️ by <a href="https://github.com/dbuettgen">@dbuettgen</a> · Part of the <a href="https://github.com/tidefly-oss">tidefly-oss</a> project</sub>
 </div>

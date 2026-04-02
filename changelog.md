@@ -97,3 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-alpha.1...HEAD
 [0.0.1-alpha.1]: https://github.com/tidefly-oss/tidefly-plane/releases/tag/v0.0.1-alpha.1
+
+
+<div align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/dbuettgen">@dbuettgen</a> · Part of the <a href="https://github.com/tidefly-oss">tidefly-oss</a> project</sub>
+</div>
