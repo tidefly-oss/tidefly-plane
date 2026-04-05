@@ -47,7 +47,7 @@ services:
   # Backend
   # -----------------------------
   backend:
-    image: ghcr.io/tidefly-oss/tidefly-backend:latest
+    image: ghcr.io/tidefly-oss/tidefly-plane:latest
     container_name: tidefly_backend
     labels:
       tidefly.internal: "true"

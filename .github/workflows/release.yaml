@@ -145,7 +145,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Tidefly Backend ${{ github.ref_name }}
+          name: Tidefly Plane ${{ github.ref_name }}
           body: |
             ## What's Changed
 
@@ -154,7 +154,7 @@ jobs:
             ## Docker
 
             ```bash
-            docker pull ghcr.io/tidefly-oss/tidefly-backend:${{ github.ref_name }}
+            docker pull ghcr.io/tidefly-oss/tidefly-plane:${{ github.ref_name }}
             ```
 
             ## Checksums
