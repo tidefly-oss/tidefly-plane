@@ -33,7 +33,7 @@
 
 The recommended way to install Tidefly is via the TUI setup wizard:
 ```bash
-curl -fsSL https://get.tidefly.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tidefly-oss/tidefly-tui/main/scripts/install.sh | bash
 ```
 
 The wizard guides you through server setup, generates secrets, and starts all services automatically.
