@@ -7,17 +7,29 @@ WORKDIR /app
 
 RUN apk add --no-cache git ca-certificates tzdata
 
+# Dependencies mit Go module cache (bleibt zwischen Builds gecacht)
 COPY go.mod go.sum ./
-RUN go mod download && go mod verify
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    go mod download && go mod verify
 
+# Wire installieren (gecacht via GOPATH cache)
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    go install github.com/google/wire/cmd/wire@latest
+
+# Source kopieren
 COPY . .
 
+# Wire Bindings generieren + Binary bauen
 ARG VERSION=v0.0.1-alpha.1
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-RUN mkdir -p /out && CGO_ENABLED=0 \
-    GOOS=linux \
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    wire ./internal/bootstrap/ && \
+    mkdir -p /out && \
+    CGO_ENABLED=0 GOOS=linux \
     go build \
       -trimpath \
       -ldflags="-s -w \

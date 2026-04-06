@@ -2218,7 +2218,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason2\x84\x01\n" +
 	"\fAgentService\x12=\n" +
 	"\aConnect\x12\x16.agent.v1.AgentMessage\x1a\x16.agent.v1.PlaneMessage(\x010\x01\x125\n" +
-	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponseBJZHgithub.com/tidefly-plane-oss/tidefly-plane-plane/internal/api/v1/proto/agent;agentpbb\x06proto3"
+	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponseBJZHgithub.com/tidefly-oss/tidefly-plane/internal/api/v1/proto/agent;agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
