@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| latest  | ✅        |
+| latest  | ✅         |
 
 During the alpha/beta phase, only the latest release receives security fixes.
 
@@ -52,3 +52,8 @@ Include:
 - Vulnerabilities in self-hosted infrastructure (your own servers)
 - Social engineering attacks
 - Denial of service without demonstrated impact
+
+---
+<div align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/dbuettgen">@dbuettgen</a> · Part of the <a href="https://github.com/tidefly-oss">tidefly-oss</a> project</sub>
+</div>
