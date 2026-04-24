@@ -3,9 +3,7 @@ networks:
     driver: bridge
     labels:
       tidefly.internal: "true"
-    ipam:
-      config:
-        - subnet: 172.30.0.0/24
+      external: true
   tidefly_proxy:
     external: true
 
@@ -97,7 +95,11 @@ services:
     networks:
       - tidefly_internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tidefly-plane} -d ${POSTGRES_DB:-tidefly-plane}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-tidefly-plane} -d ${POSTGRES_DB:-tidefly-plane}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -121,7 +123,16 @@ services:
     networks:
       - tidefly_internal
     healthcheck:
-      test: ["CMD", "redis-cli", "--user", "tidefly-plane", "--pass", "${REDIS_PASSWORD}", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--user",
+          "tidefly-plane",
+          "--pass",
+          "${REDIS_PASSWORD}",
+          "ping",
+        ]
       interval: 5s
       timeout: 3s
       retries: 5
