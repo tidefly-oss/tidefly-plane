@@ -17,7 +17,7 @@ set -euo pipefail
 # =============================================================================
 TIDEFLY_VERSION="${TIDEFLY_VERSION:-latest}"
 TIDEFLY_DIR="${TIDEFLY_DIR:-/opt/tidefly-plane}"
-TIDEFLY_REPO="ghcr.io/tidefly-oss"
+TIDEFLY_REPO="tidefly"
 COMPOSE_FILE="$TIDEFLY_DIR/docker-compose.yaml"
 ENV_FILE="$TIDEFLY_DIR/.env"
 REDIS_DIR="$TIDEFLY_DIR/redis"
@@ -26,7 +26,7 @@ REDIS_DIR="$TIDEFLY_DIR/redis"
 OPT_NO_START="${OPT_NO_START:-false}"
 OPT_SKIP_EXISTING="${OPT_SKIP_EXISTING:-false}"
 OPT_WITH_UI="${OPT_WITH_UI:-false}"
-OPT_NON_INTERACTIVE="${OPT_NON_INTERACTIVE:-false}"  # TUI setzt das auf true
+OPT_NON_INTERACTIVE="${OPT_NON_INTERACTIVE:-false}"
 
 # =============================================================================
 # Farben / Output
@@ -50,17 +50,16 @@ log_step()    { echo -e "\n${BOLD}── $* ${RESET}"; }
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --version)    TIDEFLY_VERSION="$2"; shift 2 ;;
-      --dir)        TIDEFLY_DIR="$2"; shift 2 ;;
-      --no-start)   OPT_NO_START=true; shift ;;
-      --with-ui)    OPT_WITH_UI=true; shift ;;
+      --version)         TIDEFLY_VERSION="$2"; shift 2 ;;
+      --dir)             TIDEFLY_DIR="$2"; shift 2 ;;
+      --no-start)        OPT_NO_START=true; shift ;;
+      --with-ui)         OPT_WITH_UI=true; shift ;;
       --non-interactive) OPT_NON_INTERACTIVE=true; shift ;;
       --skip-existing)   OPT_SKIP_EXISTING=true; shift ;;
-      --help|-h)    usage; exit 0 ;;
+      --help|-h)         usage; exit 0 ;;
       *) log_error "Unbekanntes Argument: $1"; usage; exit 1 ;;
     esac
   done
-  # Pfade nach dir-Änderung aktualisieren
   COMPOSE_FILE="$TIDEFLY_DIR/docker-compose.yaml"
   ENV_FILE="$TIDEFLY_DIR/.env"
   REDIS_DIR="$TIDEFLY_DIR/redis"
@@ -71,9 +70,9 @@ usage() {
 Usage: install.sh [OPTIONS]
 
   --version <tag>       Image-Version (default: latest)
-  --dir <path>          Installationsverzeichnis (default: /opt/tidefly)
+  --dir <path>          Installationsverzeichnis (default: /opt/tidefly-plane)
   --no-start            Nur konfigurieren, nicht starten
-  --with-ui             Dashboard UI Container mitstarfen (profile: dashboard)
+  --with-ui             Dashboard UI Container mitstarten (profile: dashboard)
   --non-interactive     Kein Stdin (für TUI/CI)
   --skip-existing       Existierende .env nicht überschreiben
   -h, --help            Diese Hilfe
@@ -102,7 +101,6 @@ check_deps() {
     exit 2
   fi
 
-  # Docker läuft?
   if ! docker info &>/dev/null 2>&1; then
     log_error "Docker Daemon ist nicht erreichbar. Ist Docker gestartet?"
     exit 2
@@ -118,7 +116,6 @@ setup_dir() {
   log_step "Verzeichnis vorbereiten: $TIDEFLY_DIR"
   mkdir -p "$TIDEFLY_DIR" "$REDIS_DIR"
 
-  # Sicherstellen dass die Verzeichnisse nur root gehören
   if [[ $EUID -eq 0 ]]; then
     chmod 750 "$TIDEFLY_DIR"
   fi
@@ -148,7 +145,6 @@ generate_env() {
     fi
   fi
 
-  # Secrets generieren
   local app_secret jwt_secret enc_key pg_pass redis_pass
   app_secret=$(openssl rand -hex 32)
   jwt_secret=$(openssl rand -hex 32)
@@ -237,7 +233,6 @@ EOF
 
   chmod 600 "$ENV_FILE"
 
-  # Redis ACL
   cat > "$REDIS_DIR/users.acl" <<EOF
 user default off
 user tidefly on >${redis_pass} ~* &* +@all
@@ -248,7 +243,7 @@ EOF
 }
 
 # =============================================================================
-# Redis config schreiben (falls nicht vorhanden)
+# Redis config schreiben
 # =============================================================================
 setup_redis_conf() {
   local conf="$REDIS_DIR/redis.conf"
@@ -276,7 +271,6 @@ EOF
 write_compose() {
   log_step "docker-compose.yaml schreiben"
 
-  # Version in Image-Tags eintragen
   local img_tag="$TIDEFLY_VERSION"
 
   cat > "$COMPOSE_FILE" <<EOF
@@ -302,7 +296,7 @@ volumes:
 services:
   # ── Caddy ──────────────────────────────────────────────────────────
   caddy:
-    image: ghcr.io/tidefly-oss/tidefly-caddy:${img_tag}
+    image: ${TIDEFLY_REPO}/tidefly-caddy:${img_tag}
     container_name: tidefly_caddy
     labels:
       tidefly.internal: "true"
@@ -327,7 +321,7 @@ services:
 
   # ── Backend ────────────────────────────────────────────────────────
   backend:
-    image: ghcr.io/tidefly-oss/tidefly-plane:${img_tag}
+    image: ${TIDEFLY_REPO}/tidefly-plane:${img_tag}
     container_name: tidefly_backend
     labels:
       tidefly.internal: "true"
@@ -349,7 +343,7 @@ services:
 
   # ── UI (optional) ─────────────────────────────────────────────────
   ui:
-    image: ghcr.io/tidefly-oss/tidefly-ui:${img_tag}
+    image: ${TIDEFLY_REPO}/tidefly-ui:${img_tag}
     container_name: tidefly_ui
     labels:
       tidefly.internal: "true"
@@ -410,7 +404,7 @@ EOF
 }
 
 # =============================================================================
-# tidefly_proxy Netzwerk anlegen (falls nicht vorhanden)
+# tidefly_proxy Netzwerk anlegen
 # =============================================================================
 ensure_proxy_network() {
   if ! docker network inspect tidefly_proxy &>/dev/null 2>&1; then
@@ -432,14 +426,14 @@ pull_images() {
   log_step "Docker Images pullen (Version: $TIDEFLY_VERSION)"
 
   local images=(
-    "ghcr.io/tidefly-oss/tidefly-plane:${TIDEFLY_VERSION}"
-    "ghcr.io/tidefly-oss/tidefly-caddy:${TIDEFLY_VERSION}"
+    "${TIDEFLY_REPO}/tidefly-plane:${TIDEFLY_VERSION}"
+    "${TIDEFLY_REPO}/tidefly-caddy:${TIDEFLY_VERSION}"
     "postgres:17-alpine"
     "redis:8-alpine"
   )
 
   if [[ "$OPT_WITH_UI" == "true" ]]; then
-    images+=("ghcr.io/tidefly-oss/tidefly-ui:${TIDEFLY_VERSION}")
+    images+=("${TIDEFLY_REPO}/tidefly-ui:${TIDEFLY_VERSION}")
   fi
 
   for img in "${images[@]}"; do
@@ -469,7 +463,7 @@ start_services() {
 }
 
 # =============================================================================
-# Health Check — warten bis Backend antwortet
+# Health Check
 # =============================================================================
 wait_for_backend() {
   log_step "Warte auf Backend..."

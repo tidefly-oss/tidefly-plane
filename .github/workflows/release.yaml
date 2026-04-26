@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   validate-tag:
@@ -57,7 +56,10 @@ jobs:
           CGO_ENABLED: 0
         run: |
           go build \
-            -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/version.Version=${{ github.ref_name }} -X github.com/tidefly-oss/tidefly-plane/internal/version.Commit=${{ github.sha }} -X github.com/tidefly-oss/tidefly-plane/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -ldflags="-s -w \
+              -X github.com/tidefly-oss/tidefly-plane/internal/version.Version=${{ github.ref_name }} \
+              -X github.com/tidefly-oss/tidefly-plane/internal/version.Commit=${{ github.sha }} \
+              -X github.com/tidefly-oss/tidefly-plane/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o dist/tidefly-plane-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/tidefly-plane
 
@@ -74,15 +76,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -94,16 +92,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/tidefly-oss/tidefly-plane
-            tidefly/tidefly-plane
+          images: tidefly/tidefly-plane
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/production/Dockerfile
@@ -150,11 +146,34 @@ jobs:
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Write release notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## What's Changed
+
+          ${{ steps.changelog.outputs.notes }}
+
+          ## Docker
+
+          ```bash
+          docker pull tidefly/tidefly-plane:${{ github.ref_name }}
+          ```
+
+          ## Platforms
+
+          `linux/amd64` · `linux/arm64`
+
+          ## Checksums
+
+          See `checksums.txt` in the release assets.
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: Tidefly Plane ${{ github.ref_name }}
-          body: |
-            ## What's Changed
-
-            ${{ steps.changelog.outputs.notes }}
+          body_path: release_notes.md
+          files: dist/*
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+          generate_release_notes: false
