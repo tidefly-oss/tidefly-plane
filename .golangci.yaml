@@ -1,5 +1,4 @@
 version: "2"
-
 linters:
   enable:
     - errcheck
@@ -17,6 +16,8 @@ linters:
     errcheck:
       check-type-assertions: false
       check-blank: false
+    goconst:
+      min-occurrences: 5
     gocyclo:
       min-complexity: 40
     misspell:
@@ -38,12 +39,13 @@ linters:
       - path: ".*podman.*"
         linters:
           - bodyclose
-
+      - linters:
+          - goconst
+        text: "string `(message|error|status|true|localhost|Tty)` has"
 formatters:
   enable:
     - gofmt
     - goimports
-
 run:
   timeout: 5m
   modules-download-mode: readonly

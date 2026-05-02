@@ -9,7 +9,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const namespace = "tidefly-plane"
+const (
+	namespace           = "tidefly-plane"
+	subsystemSystem     = "system"
+	subsystemContainers = "containers"
+	subsystemHTTP       = "http"
+)
 
 // Registry wraps a prometheus registry and all custom gauges/counters.
 // Use New() to create — never instantiate directly.
@@ -65,7 +70,7 @@ func New() *Registry {
 		cpuPercent: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "cpu_usage_percent",
 				Help:      "Current CPU utilization in percent (0–100).",
 			},
@@ -73,7 +78,7 @@ func New() *Registry {
 		memUsedMB: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "memory_used_megabytes",
 				Help:      "Currently used RAM in megabytes.",
 			},
@@ -81,7 +86,7 @@ func New() *Registry {
 		memTotalMB: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "memory_total_megabytes",
 				Help:      "Total installed RAM in megabytes.",
 			},
@@ -89,7 +94,7 @@ func New() *Registry {
 		memPercent: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "memory_usage_percent",
 				Help:      "Current memory utilization in percent (0–100).",
 			},
@@ -97,7 +102,7 @@ func New() *Registry {
 		diskUsedMB: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "disk_used_megabytes",
 				Help:      "Used disk space on the root partition in megabytes.",
 			},
@@ -105,7 +110,7 @@ func New() *Registry {
 		diskTotalMB: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "disk_total_megabytes",
 				Help:      "Total disk capacity of the root partition in megabytes.",
 			},
@@ -113,7 +118,7 @@ func New() *Registry {
 		diskPercent: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "system",
+				Subsystem: subsystemSystem,
 				Name:      "disk_usage_percent",
 				Help:      "Current disk utilization in percent (0–100).",
 			},
@@ -141,7 +146,7 @@ func New() *Registry {
 		ContainersTotal: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "containers",
+				Subsystem: subsystemContainers,
 				Name:      "total",
 				Help:      "Total number of managed containers.",
 			},
@@ -149,7 +154,7 @@ func New() *Registry {
 		ContainersRunning: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "containers",
+				Subsystem: subsystemContainers,
 				Name:      "running",
 				Help:      "Number of currently running managed containers.",
 			},
@@ -157,7 +162,7 @@ func New() *Registry {
 		ContainersStopped: factory.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Subsystem: "containers",
+				Subsystem: subsystemContainers,
 				Name:      "stopped",
 				Help:      "Number of stopped managed containers.",
 			},
@@ -167,7 +172,7 @@ func New() *Registry {
 		HTTPRequestsTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
-				Subsystem: "http",
+				Subsystem: subsystemHTTP,
 				Name:      "requests_total",
 				Help:      "Total number of HTTP requests by method, route and status code.",
 			}, []string{"method", "route", "status"},
@@ -176,7 +181,7 @@ func New() *Registry {
 		HTTPRequestDuration: factory.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Namespace: namespace,
-				Subsystem: "http",
+				Subsystem: subsystemHTTP,
 				Name:      "request_duration_seconds",
 				Help:      "HTTP request latency distribution.",
 				Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
@@ -186,7 +191,7 @@ func New() *Registry {
 		HTTPResponseSize: factory.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Namespace: namespace,
-				Subsystem: "http",
+				Subsystem: subsystemHTTP,
 				Name:      "response_size_bytes",
 				Help:      "HTTP response size distribution in bytes.",
 				Buckets:   prometheus.ExponentialBuckets(100, 10, 6),

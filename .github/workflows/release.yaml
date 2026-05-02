@@ -127,6 +127,7 @@ jobs:
         with:
           path: dist/
           merge-multiple: true
+          pattern: tidefly-plane-*
 
       - name: Generate checksums
         run: |
