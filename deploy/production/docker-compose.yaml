@@ -91,7 +91,7 @@ services:
     env_file:
       - ./.env
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     networks:
       - tidefly_internal
     healthcheck:
