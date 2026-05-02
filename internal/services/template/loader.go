@@ -1,7 +1,11 @@
 package template
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +21,10 @@ type Loader struct {
 	templates map[string]*Template // keyed by slug
 }
 
-func NewLoader(dir string) (*Loader, error) {
+func NewLoader(dir, repoURL string) (*Loader, error) {
+	if err := syncTemplates(dir, repoURL); err != nil {
+		return nil, fmt.Errorf("sync templates: %w", err)
+	}
 	l := &Loader{
 		dir:       dir,
 		templates: make(map[string]*Template),
@@ -26,6 +33,74 @@ func NewLoader(dir string) (*Loader, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+func syncTemplates(dir, repoURL string) error {
+	if _, err := os.Stat(dir); err == nil {
+		// bereits vorhanden — skip
+		return nil
+	}
+
+	if repoURL == "" {
+		return fmt.Errorf("TEMPLATES_DIR %q does not exist and TEMPLATES_REPO is not set", dir)
+	}
+
+	zipURL := strings.TrimSuffix(repoURL, ".git") + "/archive/refs/heads/main.zip"
+
+	resp, err := http.Get(zipURL)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read zip: %w", err)
+	}
+
+	return unzipTemplates(body, dir)
+}
+
+func unzipTemplates(data []byte, dest string) error {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	for _, f := range r.File {
+		// GitHub packt alles in "repo-main/" — ersten Ordner strippen
+		parts := strings.SplitN(f.Name, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			continue
+		}
+		target := filepath.Join(dest, parts[1])
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(target, 0o750)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		rc.Close()
+		out.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Load (re)reads all YAML files from the template directory.

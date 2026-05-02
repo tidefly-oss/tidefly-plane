@@ -19,7 +19,8 @@ if [[ "$ENV_TYPE" == "production" ]]; then
   DATABASE_URL="postgres://tidefly:$POSTGRES_PASSWORD@postgres:5432/tidefly?sslmode=disable"
   REDIS_URL="redis://tidefly:$REDIS_PASSWORD@redis:6379/0"
   REDIS_ADDR="redis:6379"
-  TEMPLATES_DIR="https://github.com/tidefly-oss/tidefly-templates"
+  TEMPLATES_DIR="/etc/tidefly-plane/templates"
+  TEMPLATES_REPO="https://github.com/tidefly-oss/tidefly-templates"
   API_DOCS_ENABLED="false"
   CADDY_ENABLED="true"
 else
@@ -27,6 +28,7 @@ else
   REDIS_URL="redis://tidefly:$REDIS_PASSWORD@127.0.0.1:16379/0"
   REDIS_ADDR="127.0.0.1:16379"
   TEMPLATES_DIR="../tidefly-templates"
+  TEMPLATES_REPO="https://github.com/tidefly-oss/tidefly-templates"
   API_DOCS_ENABLED="true"
   CADDY_ENABLED="true"
 fi
@@ -56,6 +58,7 @@ SMTP_PASSWORD=
 SMTP_FROM=noreply@example.com
 SMTP_TLS=tls
 TEMPLATES_DIR=$TEMPLATES_DIR
+TEMPLATES_REPO=$TEMPLATES_REPO
 CADDY_ENABLED=$CADDY_ENABLED
 CADDY_ADMIN_URL=http://127.0.0.1:2019
 CADDY_BASE_DOMAIN=apps.example.com

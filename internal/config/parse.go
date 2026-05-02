@@ -66,7 +66,8 @@ func ParseConfig() *Config {
 			),
 		},
 		Templates: TemplatesConfig{
-			Dir: viper.GetString("TEMPLATES_DIR"),
+			Dir:     viper.GetString("TEMPLATES_DIR"),
+			RepoURL: viper.GetString("TEMPLATES_REPO"),
 		},
 		Logger: LoggerConfig{
 			Level:       viper.GetString("LOG_LEVEL"),

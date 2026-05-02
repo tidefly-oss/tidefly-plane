@@ -142,7 +142,7 @@ func ProvideCaddyClient(cfg *config.Config) *caddysvc.Client {
 }
 
 func ProvideTemplateLoader(cfg *config.Config) (*template.Loader, error) {
-	return template.NewLoader(cfg.Templates.Dir)
+	return template.NewLoader(cfg.Templates.Dir, cfg.Templates.RepoURL)
 }
 
 func ProvideNotificationsService(database *gorm.DB) *notifications.Service {

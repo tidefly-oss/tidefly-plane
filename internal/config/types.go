@@ -56,11 +56,10 @@ type RuntimeConfig struct {
 }
 
 type TemplatesConfig struct {
-	Dir string
+	Dir     string
+	RepoURL string
 }
 
-// CaddyConfig controls Caddy reverse proxy integration.
-// All configuration is applied via the Caddy Admin API — no Caddyfile needed.
 type CaddyConfig struct {
 	Enabled     bool
 	AdminURL    string
