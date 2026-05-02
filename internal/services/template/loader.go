@@ -3,6 +3,7 @@ package template
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -37,7 +39,6 @@ func NewLoader(dir, repoURL string) (*Loader, error) {
 
 func syncTemplates(dir, repoURL string) error {
 	if _, err := os.Stat(dir); err == nil {
-		// bereits vorhanden — skip
 		return nil
 	}
 
@@ -47,11 +48,23 @@ func syncTemplates(dir, repoURL string) error {
 
 	zipURL := strings.TrimSuffix(repoURL, ".git") + "/archive/refs/heads/main.zip"
 
-	resp, err := http.Get(zipURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, zipURL, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
@@ -71,14 +84,15 @@ func unzipTemplates(data []byte, dest string) error {
 		return err
 	}
 	for _, f := range r.File {
-		// GitHub packt alles in "repo-main/" — ersten Ordner strippen
 		parts := strings.SplitN(f.Name, "/", 2)
 		if len(parts) < 2 || parts[1] == "" {
 			continue
 		}
 		target := filepath.Join(dest, parts[1])
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(target, 0o750)
+			if err := os.MkdirAll(target, 0o750); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
@@ -90,12 +104,16 @@ func unzipTemplates(data []byte, dest string) error {
 		}
 		out, err := os.Create(target)
 		if err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		_, err = io.Copy(out, rc)
-		rc.Close()
-		out.Close()
+		if closeErr := rc.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if closeErr := out.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return err
 		}
