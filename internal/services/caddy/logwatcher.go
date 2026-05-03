@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -190,4 +191,27 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf)
+}
+
+func (c *Client) RegisterDashboard(ctx context.Context) error {
+	if !c.cfg.Enabled || c.cfg.BaseDomain == "" {
+		return nil
+	}
+	// Dashboard UI → dashboard.base_domain
+	if err := c.AddHTTPRoute(ctx,
+		"tidefly-plane-dashboard",
+		"dashboard."+c.cfg.BaseDomain,
+		"tidefly_ui:3000",
+	); err != nil {
+		return fmt.Errorf("dashboard route: %w", err)
+	}
+	// API → tidefly.base_domain
+	if err := c.AddHTTPRoute(ctx,
+		"tidefly-plane-api",
+		"tidefly."+c.cfg.BaseDomain,
+		"tidefly_backend:8181",
+	); err != nil {
+		return fmt.Errorf("api route: %w", err)
+	}
+	return nil
 }

@@ -96,6 +96,12 @@ func (a *App) Run(ctx context.Context) error {
 		} else {
 			a.log.Info("app", "caddy bootstrapped successfully")
 		}
+		if err := a.caddy.RegisterDashboard(ctx); err != nil {
+			a.log.Warn("app", "dashboard route registration failed", err)
+		} else {
+			a.log.Info("app", fmt.Sprintf("dashboard: https://dashboard.%s", a.cfg.Caddy.BaseDomain))
+			a.log.Info("app", fmt.Sprintf("api: https://tidefly.%s", a.cfg.Caddy.BaseDomain))
+		}
 	}
 
 	a.startBackgroundServices(eg, ctx)
