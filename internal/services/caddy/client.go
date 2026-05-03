@@ -306,3 +306,60 @@ func (c *Client) routeCount(ctx context.Context) (int, error) {
 func (c *Client) SetBaseDomain(domain string) {
 	c.cfg.BaseDomain = domain
 }
+
+func (c *Client) RegisterDashboard(ctx context.Context) error {
+	if !c.cfg.Enabled || c.cfg.BaseDomain == "" {
+		return nil
+	}
+
+	host := "dashboard." + c.cfg.BaseDomain
+
+	// API Route zuerst — /api/* → Backend
+	apiRoute := map[string]any{
+		"@id": "tidefly-plane-dashboard-api",
+		"match": []map[string]any{
+			{
+				"host": []string{host},
+				"path": []string{"/api/*"},
+			},
+		},
+		"handle": []map[string]any{
+			{
+				"handler":   "reverse_proxy",
+				"upstreams": []map[string]string{{"dial": "tidefly_backend:8181"}},
+			},
+		},
+		"terminal": true,
+	}
+
+	// UI Route — /* → UI
+	uiRoute := map[string]any{
+		"@id": "tidefly-plane-dashboard",
+		"match": []map[string]any{
+			{"host": []string{host}},
+		},
+		"handle": []map[string]any{
+			{
+				"handler":   "reverse_proxy",
+				"upstreams": []map[string]string{{"dial": "tidefly_ui:3000"}},
+			},
+		},
+		"terminal": true,
+	}
+
+	if err := c.patch(ctx, "/id/tidefly-plane-dashboard-api", apiRoute); err != nil {
+		count, _ := c.routeCount(ctx)
+		if err := c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), apiRoute); err != nil {
+			return fmt.Errorf("dashboard api route: %w", err)
+		}
+	}
+
+	if err := c.patch(ctx, "/id/tidefly-plane-dashboard", uiRoute); err != nil {
+		count, _ := c.routeCount(ctx)
+		if err := c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), uiRoute); err != nil {
+			return fmt.Errorf("dashboard ui route: %w", err)
+		}
+	}
+
+	return nil
+}
