@@ -23,6 +23,7 @@ var ignoredMessages = []string{
 	"EOF",
 	"i/o timeout",
 	"use of closed network connection",
+	"aborting with incomplete response",
 }
 
 // AuditAction constants for security-relevant events.

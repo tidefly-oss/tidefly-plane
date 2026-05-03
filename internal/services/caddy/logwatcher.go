@@ -156,6 +156,12 @@ func parseLine(line string) (CaddyLogEntry, bool) {
 		strings.Contains(raw.Request.Headers.UserAgent[0], "Wget") {
 		return CaddyLogEntry{}, false
 	}
+
+	// Filter SSE disconnect noise
+	if strings.Contains(raw.Msg, "aborting with incomplete response") ||
+		strings.Contains(raw.Error, "context canceled") {
+		return CaddyLogEntry{}, false
+	}
 	ua := ""
 	if len(raw.Request.Headers.UserAgent) > 0 {
 		ua = raw.Request.Headers.UserAgent[0]

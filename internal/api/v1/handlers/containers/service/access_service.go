@@ -36,7 +36,7 @@ func (s *AccessService) FilterContainers(ctx context.Context, list []runtime.Con
 
 	visible := make([]runtime.Container, 0, len(list))
 	for _, c := range list {
-		if c.Labels["tidefly-plane.internal"] == "true" {
+		if c.Labels["tidefly.internal"] == "true" {
 			continue
 		}
 		visible = append(visible, c)
