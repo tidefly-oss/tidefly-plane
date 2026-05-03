@@ -22,6 +22,7 @@ import (
 	networkshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/networks/http"
 	notifhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/notifications/http"
 	projectshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/projects/http"
+	setuphttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/setup/http"
 	systemhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/system/http"
 	templateshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/templates/http"
 	volumeshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/volumes/http"
@@ -61,6 +62,9 @@ func Register(
 ) {
 	deployer := deploy.New(rt, db)
 
+	// ── Setup (no auth — only works when no users exist) ──────────────────────
+	setuphttp.New(db).RegisterRoutes(api)
+
 	// ── Middleware ─────────────────────────────────────────────────────────────
 	requireAuth := middleware.RequireAuthHuma(api, jwtSvc)
 	requireAdmin := middleware.RequireAdminHuma(api)
@@ -82,10 +86,7 @@ func Register(
 	// ── All other routes ───────────────────────────────────────────────────────
 	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
 	containerhttp.New(rt, deployer, db, log, caddy).RegisterRoutes(api, e, mw, echoSSE, echoInject)
-	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier, agentClient).RegisterRoutes(
-		api,
-		mw,
-	)
+	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier, agentClient).RegisterRoutes(api, mw)
 	eventshttp.New(rt).RegisterRoutes(e, echoSSE, echoInject)
 	githttp.New(gitSvc, db, log).RegisterRoutes(api, mw)
 	imageshttp.New(rt).RegisterRoutes(api, mw, adminMw)
