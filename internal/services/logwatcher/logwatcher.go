@@ -60,6 +60,12 @@ var noisePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^(see also|counter to|this is usually|the suggested|discussion around|format which|major-version|postgresql itself|see https?://)`),
 	regexp.MustCompile(`(?i)^/var/lib/postgresql`),
 	regexp.MustCompile(`(?i)^(allowing usage|boundary issues|upgrading the underlying)`),
+	// SSE disconnect noise
+	regexp.MustCompile(`(?i)aborting with incomplete response`),
+	regexp.MustCompile(`(?i)context canceled`),
+	regexp.MustCompile(`(?i)context deadline exceeded`),
+	regexp.MustCompile(`(?i)connection reset by peer`),
+	regexp.MustCompile(`(?i)broken pipe`),
 }
 
 var stripTimestampRe = regexp.MustCompile(
@@ -99,13 +105,14 @@ func New(
 	notifierSvc *notifiersvc.Service,
 ) *Watcher {
 	return &Watcher{
-		rt:       rt,
-		log:      log,
-		cfg:      cfg,
-		notifSvc: notifSvc, notifierSvc: notifierSvc,
-		watching: make(map[string]context.CancelFunc),
-		scanned:  make(map[string]struct{}),
-		dedup:    make(map[string]time.Time),
+		rt:          rt,
+		log:         log,
+		cfg:         cfg,
+		notifSvc:    notifSvc,
+		notifierSvc: notifierSvc,
+		watching:    make(map[string]context.CancelFunc),
+		scanned:     make(map[string]struct{}),
+		dedup:       make(map[string]time.Time),
 	}
 }
 
@@ -153,6 +160,11 @@ func (w *Watcher) reconcile(ctx context.Context) {
 	}
 
 	for _, c := range containers {
+		// Interne Tidefly-Container nicht watchen
+		if c.Labels["tidefly.internal"] == "true" {
+			continue
+		}
+
 		switch c.Status {
 		case runtime.StatusRunning:
 			if _, watching := w.watching[c.ID]; watching {
@@ -415,7 +427,6 @@ func (w *Watcher) isDuplicate(key string) bool {
 	return false
 }
 
-// levelToSeverity konvertiert den LogWatcher-Level-String in den Notification-Severity-Typ.
 func levelToSeverity(level string) models.NotificationSeverity {
 	switch strings.ToUpper(level) {
 	case "FATAL":
