@@ -7,9 +7,9 @@ import "time"
 type AppLog struct {
 	ID          uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Level       string    `gorm:"size:10;index"            json:"level"`
-	Message     string    `gorm:"size:1000"                json:"message"`
+	Message     string    `gorm:"type:text"                json:"message"`
 	Component   string    `gorm:"size:100;index"           json:"component"`
-	Error       string    `gorm:"size:2000"                json:"error"`
+	Error       string    `gorm:"type:text"                json:"error"`
 	ContainerID string    `gorm:"size:64;index"            json:"container_id"`
 	CreatedAt   time.Time `gorm:"index"                    json:"created_at"`
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -13,6 +14,16 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
+
+var ignoredMessages = []string{
+	"context canceled",
+	"context deadline exceeded",
+	"connection reset by peer",
+	"broken pipe",
+	"EOF",
+	"i/o timeout",
+	"use of closed network connection",
+}
 
 // AuditAction constants for security-relevant events.
 type AuditAction string
@@ -203,16 +214,19 @@ func (l *Logger) writeAppLog(level, component, msg, errStr, containerID string) 
 	if l.db == nil {
 		return
 	}
+	for _, ignore := range ignoredMessages {
+		if strings.Contains(msg, ignore) || strings.Contains(errStr, ignore) {
+			return
+		}
+	}
 	go func() {
-		l.db.Create(
-			&models.AppLog{
-				Level:       level,
-				Component:   component,
-				Message:     msg,
-				Error:       errStr,
-				ContainerID: containerID,
-			},
-		)
+		l.db.Create(&models.AppLog{
+			Level:       level,
+			Component:   component,
+			Message:     msg,
+			Error:       errStr,
+			ContainerID: containerID,
+		})
 	}()
 }
 
