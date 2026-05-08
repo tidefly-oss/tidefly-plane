@@ -2,10 +2,11 @@
 # Build Stage
 # =============================================================================
 FROM golang:1.26-alpine AS builder
-
 WORKDIR /app
-
 RUN apk add --no-cache git ca-certificates tzdata
+
+# Templates clonen
+RUN git clone --depth=1 https://github.com/tidefly-oss/tidefly-templates /templates
 
 # Dependencies mit Go module cache (bleibt zwischen Builds gecacht)
 COPY go.mod go.sum ./
@@ -24,7 +25,6 @@ COPY . .
 ARG VERSION=v0.0.1-alpha.1
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
-
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     wire ./internal/bootstrap/ && \
@@ -40,23 +40,20 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
       ./cmd/tidefly-plane
 
 # =============================================================================
-# Runtime Stage — scratch
+# Runtime Stage - scratch
 # =============================================================================
 FROM scratch
-
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-
+COPY --from=builder /templates /home/tidefly/templates
 WORKDIR /app
-
 COPY --from=builder /out/tidefly-plane .
 
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
-
 LABEL org.opencontainers.image.title="tidefly-plane" \
-      org.opencontainers.image.description="Tidefly Plane — container management backend" \
+      org.opencontainers.image.description="Tidefly Plane - container management backend" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
@@ -64,5 +61,4 @@ LABEL org.opencontainers.image.title="tidefly-plane" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 EXPOSE 8181 7443
-
 ENTRYPOINT ["/app/tidefly-plane"]

@@ -68,3 +68,14 @@ func isInternalImage(tags []string, internal map[string]bool) bool {
 	}
 	return false
 }
+
+func (d *Runtime) InspectImage(ctx context.Context, tag string) (*runtime.ImageInspect, error) {
+	inspect, err := d.client.ImageInspect(ctx, tag)
+	if err != nil {
+		return nil, fmt.Errorf("docker inspect image %q: %w", tag, err)
+	}
+	return &runtime.ImageInspect{
+		Cmd:        inspect.Config.Cmd,
+		Entrypoint: inspect.Config.Entrypoint,
+	}, nil
+}

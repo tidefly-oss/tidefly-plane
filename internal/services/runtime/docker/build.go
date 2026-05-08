@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/docker/docker/api/types/build"
@@ -47,5 +48,23 @@ func (d *Runtime) BuildImage(ctx context.Context, tag string, dockerfile string)
 		return io.NopCloser(bytes.NewReader(nil)), nil
 	}
 
+	return resp.Body, nil
+}
+
+func (d *Runtime) BuildImageFromContext(ctx context.Context, tag string, dockerfilePath string, buildCtx *bytes.Buffer) (io.ReadCloser, error) {
+	resp, err := d.client.ImageBuild(
+		ctx, buildCtx, build.ImageBuildOptions{
+			Tags:        []string{tag},
+			Dockerfile:  dockerfilePath,
+			Remove:      true,
+			ForceRemove: true,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("docker build image from context: %w", err)
+	}
+	if resp.Body == nil {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
 	return resp.Body, nil
 }

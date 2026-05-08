@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -104,6 +105,11 @@ type Image struct {
 	Created time.Time `json:"created"`
 }
 
+type ImageInspect struct {
+	Cmd        []string
+	Entrypoint []string
+}
+
 type Volume struct {
 	Name      string            `json:"name"`
 	Driver    string            `json:"driver"`
@@ -175,6 +181,8 @@ type Runtime interface {
 	ContainerLogs(ctx context.Context, id string, opts LogOptions) (io.ReadCloser, error)
 	ContainerStats(ctx context.Context, id string) (io.ReadCloser, error)
 	BuildImage(ctx context.Context, tag string, dockerfile string) (io.ReadCloser, error)
+	BuildImageFromContext(ctx context.Context, tag string, dockerfilePath string, context *bytes.Buffer) (io.ReadCloser, error)
+	InspectImage(ctx context.Context, tag string) (*ImageInspect, error)
 
 	GetResources(ctx context.Context, containerID string) (*ResourceConfig, error)
 	UpdateResources(ctx context.Context, containerID string, cfg ResourceConfig) (*UpdateResult, error)

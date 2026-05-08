@@ -132,3 +132,25 @@ func podmanHasRealTag(tags []string) bool {
 	}
 	return false
 }
+
+func (p *Runtime) InspectImage(ctx context.Context, tag string) (*runtime.ImageInspect, error) {
+	var raw struct {
+		Config *struct {
+			Cmd        []string `json:"Cmd"`
+			Entrypoint []string `json:"Entrypoint"`
+		} `json:"Config"`
+	}
+	code, err := p.c.getJSON(ctx, "/libpod/images/"+escPath(tag)+"/json", nil, &raw)
+	if err != nil {
+		return nil, fmt.Errorf("podman inspect image %q: %w", tag, err)
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("podman inspect image %q: status %d", tag, code)
+	}
+	result := &runtime.ImageInspect{}
+	if raw.Config != nil {
+		result.Cmd = raw.Config.Cmd
+		result.Entrypoint = raw.Config.Entrypoint
+	}
+	return result, nil
+}

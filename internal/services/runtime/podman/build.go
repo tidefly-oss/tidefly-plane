@@ -57,6 +57,25 @@ func (p *Runtime) BuildImage(ctx context.Context, tag string, dockerfile string)
 	return resp.Body, nil
 }
 
+func (p *Runtime) BuildImageFromContext(ctx context.Context, tag string, dockerfilePath string, buildCtx *bytes.Buffer) (io.ReadCloser, error) {
+	q := url.Values{}
+	q.Set("dockerfile", dockerfilePath)
+	q.Set("t", tag)
+	q.Set("rm", "true")
+	q.Set("forcerm", "true")
+	resp, err := p.c.postRaw(
+		ctx,
+		"/libpod/build",
+		q,
+		"application/x-tar",
+		bytes.NewReader(buildCtx.Bytes()),
+	) //nolint:bodyclose
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
 func qualifyDockerfileFroms(dockerfile string) string {
 	lines := strings.Split(dockerfile, "\n")
 	for i, line := range lines {
