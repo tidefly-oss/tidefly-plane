@@ -1,13 +1,5 @@
 version: "3"
 
-vars:
-  DEV_COMPOSE: deploy/development/docker-compose.yaml
-  PROD_COMPOSE: deploy/production/docker-compose.yaml
-  DEV_ENV: deploy/development/.env
-  PROD_ENV: deploy/production/.env
-  DEV_CMD: "docker compose -f {{.DEV_COMPOSE}} --env-file {{.DEV_ENV}}"
-  PROD_CMD: "docker compose -f {{.PROD_COMPOSE}} --env-file {{.PROD_ENV}}"
-
 tasks:
   default:
     desc: Show all available tasks
@@ -15,203 +7,14 @@ tasks:
     cmds:
       - task --list
 
-  # ── Setup ────────────────────────────────────────────────────────────────
-
-  setup:
-    desc: Create dev .env and generate secrets
-    cmds:
-      - |
-        if [ ! -f {{.DEV_ENV}} ]; then
-          cp ./.env.example {{.DEV_ENV}}
-          echo "Created {{.DEV_ENV}}"
-        else
-          echo "{{.DEV_ENV}} already exists"
-        fi
-      - bash scripts/init-env.sh
-      - sed -i 's/\r//' {{.DEV_ENV}} || true
-      - echo 'Setup done'
-
-  setup:prod:
-    desc: Create prod .env and generate secrets
-    cmds:
-      - mkdir -p deploy/production
-      - |
-        if [ ! -f {{.PROD_ENV}} ]; then
-          cp deploy/development/.env.example {{.PROD_ENV}}
-          echo "Created {{.PROD_ENV}}"
-        else
-          echo "{{.PROD_ENV}} already exists"
-        fi
-      - bash scripts/init-env.sh
-      - sed -i 's/\r//' {{.PROD_ENV}}
-
-  rotate-secrets:
-    desc: Rotate all secrets in dev .env
-    cmds:
-      - bash scripts/init-env.sh
-      - sed -i 's/\r//' {{.DEV_ENV}}
-
-  rotate-secrets:prod:
-    desc: Rotate all secrets in prod .env
-    cmds:
-      - bash scripts/init-env.sh
-      - sed -i 's/\r//' {{.PROD_ENV}}
-
   # ── Code Generation ───────────────────────────────────────────────────────
 
   wire:
-    desc: Regenerate Wire DI bindings (internal/bootstrap/wire_gen.go)
+    desc: Regenerate Wire DI bindings (internal/platform/bootstrap/wire_gen.go)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
       - wire ./internal/platform/bootstrap/
       - echo 'wire_gen.go updated'
-
-  # ── Dev ───────────────────────────────────────────────────────────────────
-
-  dev:up:
-    desc: Start dev infra (Postgres, Redis, Traefik, Mailpit)
-    preconditions:
-      - sh: test -f {{.DEV_ENV}}
-        msg: Run task setup first
-    cmds:
-      - "{{.DEV_CMD}} up -d caddy postgres redis mailpit"
-      - echo 'Dev stack started'
-
-  dev:down:
-    desc: Stop dev infra
-    cmds:
-      - "{{.DEV_CMD}} down"
-
-  dev:reset:
-    desc: Stop dev infra and delete all volumes
-    prompt: Delete all volumes? This will destroy all data!
-    cmds:
-      - "{{.DEV_CMD}} down -v"
-
-  dev:logs:
-    desc: Follow dev logs
-    cmds:
-      - "{{.DEV_CMD}} logs -f"
-
-  dev:ps:
-    desc: Show dev service status
-    cmds:
-      - "{{.DEV_CMD}} ps"
-
-  dev:restart:
-    desc: Restart a single service (SERVICE=postgres)
-    cmds:
-      - "{{.DEV_CMD}} restart {{.SERVICE}}"
-
-  dev:
-    desc: Start backend with Air hot reload (runs wire first)
-    dotenv:
-      - "{{.DEV_ENV}}"
-    preconditions:
-      - sh: test -f {{.DEV_ENV}}
-        msg: Run task setup first
-    cmds:
-      - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
-      - air
-
-  # ── Migrations ────────────────────────────────────────────────────────────
-
-  migrate:
-    desc: Run database migrations (dev)
-    dotenv:
-      - "{{.DEV_ENV}}"
-    preconditions:
-      - sh: test -f {{.DEV_ENV}}
-        msg: Run task setup first
-    cmds:
-      - go run ./cmd/tidefly-plane --migrate-only
-
-  migrate:prod:
-    desc: Run database migrations (prod)
-    dotenv:
-      - "{{.PROD_ENV}}"
-    preconditions:
-      - sh: test -f {{.PROD_ENV}}
-        msg: Run task setup:prod first
-    cmds:
-      - go run ./cmd/tidefly-plane --migrate-only
-
-  # ── Production ────────────────────────────────────────────────────────────
-
-  prod:up:
-    desc: Start production stack
-    preconditions:
-      - sh: test -f {{.PROD_ENV}}
-        msg: Run task setup:prod first
-    cmds:
-      - "{{.PROD_CMD}} up -d"
-
-  prod:down:
-    desc: Stop production stack
-    cmds:
-      - "{{.PROD_CMD}} down"
-
-  prod:logs:
-    desc: Follow production logs
-    cmds:
-      - "{{.PROD_CMD}} logs -f"
-
-  prod:ps:
-    desc: Show production service status
-    cmds:
-      - "{{.PROD_CMD}} ps"
-
-  prod:pull:
-    desc: Pull latest images
-    cmds:
-      - "{{.PROD_CMD}} pull"
-
-  prod:update:
-    desc: Pull latest images and recreate containers
-    cmds:
-      - "{{.PROD_CMD}} pull"
-      - "{{.PROD_CMD}} up -d --remove-orphans"
-      - echo 'Update done'
-
-  # ── Build ─────────────────────────────────────────────────────────────────
-
-  build:
-    desc: Build production binary (runs wire first)
-    cmds:
-      - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
-      - go build
-        -trimpath
-        -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version={{.VERSION}}"
-        -o dist/tidefly-plane
-        ./cmd/tidefly-plane
-      - echo 'Binary at dist/tidefly-plane'
-    vars:
-      VERSION:
-        sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
-
-  build:docker:
-    desc: Build Docker image (from repo root)
-    cmds:
-      - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
-      - docker buildx build
-        --platform linux/amd64,linux/arm64
-        --build-arg VERSION={{.VERSION}}
-        --build-arg COMMIT={{.COMMIT}}
-        --build-arg BUILD_DATE={{.BUILD_DATE}}
-        -t ghcr.io/tidefly-oss/tidefly-plane:{{.VERSION}}
-        -f deploy/production/Dockerfile
-        .
-      - echo 'Image built ghcr.io/tidefly-oss/tidefly-plane:{{.VERSION}}'
-    vars:
-      VERSION:
-        sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
-      COMMIT:
-        sh: git rev-parse --short HEAD
-      BUILD_DATE:
-        sh: date -u +%Y-%m-%dT%H:%M:%SZ
 
   # ── Quality ───────────────────────────────────────────────────────────────
 
@@ -236,3 +39,41 @@ tasks:
     cmds:
       - go mod tidy
       - echo 'go.mod cleaned up'
+
+  # ── Build ─────────────────────────────────────────────────────────────────
+
+  build:
+    desc: Build production binary (runs wire first)
+    cmds:
+      - which wire || go install github.com/google/wire/cmd/wire@latest
+      - wire ./internal/platform/bootstrap/
+      - go build
+        -trimpath
+        -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version={{.VERSION}}"
+        -o dist/tidefly-plane
+        ./cmd/tidefly-plane
+      - echo 'Binary at dist/tidefly-plane'
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+
+  build:docker:
+    desc: Build Docker image
+    cmds:
+      - which wire || go install github.com/google/wire/cmd/wire@latest
+      - wire ./internal/platform/bootstrap/
+      - docker buildx build
+        --platform linux/amd64,linux/arm64
+        --build-arg VERSION={{.VERSION}}
+        --build-arg COMMIT={{.COMMIT}}
+        --build-arg BUILD_DATE={{.BUILD_DATE}}
+        -t tidefly/tidefly-plane:{{.VERSION}}
+        .
+      - echo 'Image built tidefly/tidefly-plane:{{.VERSION}}'
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+      COMMIT:
+        sh: git rev-parse --short HEAD
+      BUILD_DATE:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
