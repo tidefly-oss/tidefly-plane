@@ -2,11 +2,11 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/git"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 

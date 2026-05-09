@@ -5,10 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type ListInput struct {

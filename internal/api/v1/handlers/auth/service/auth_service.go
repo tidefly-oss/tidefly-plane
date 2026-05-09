@@ -7,11 +7,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/repository"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
-
-// ── Errors ────────────────────────────────────────────────────────────────────
 
 var (
 	ErrUserNotFound       = errors.New("user not found")
@@ -20,14 +19,10 @@ var (
 	ErrAccountInactive    = errors.New("account is inactive")
 )
 
-// ── TokenPair ─────────────────────────────────────────────────────────────────
-
 type TokenPair struct {
 	AccessToken  string
 	RefreshToken string
 }
-
-// ── RegisterInput / LoginInput ────────────────────────────────────────────────
 
 type RegisterInput struct {
 	Name     string
@@ -40,60 +35,45 @@ type LoginInput struct {
 	Password string
 }
 
-// ── AuthService ───────────────────────────────────────────────────────────────
-
 type AuthService struct {
-	db         *gorm.DB
+	repo       *repository.UserRepository
 	jwt        *auth.Service
 	tokenStore *auth.TokenStore
 }
 
 func New(db *gorm.DB, jwtSvc *auth.Service, tokenStore *auth.TokenStore) *AuthService {
-	return &AuthService{db: db, jwt: jwtSvc, tokenStore: tokenStore}
+	return &AuthService{
+		repo:       repository.NewUserRepository(db),
+		jwt:        jwtSvc,
+		tokenStore: tokenStore,
+	}
 }
-
-// ── GetFreshUser ──────────────────────────────────────────────────────────────
-// Unchanged signature — still preloads ProjectMembers.
 
 func (s *AuthService) GetFreshUser(id string) (models.User, error) {
-	var u models.User
-	if err := s.db.Preload("ProjectMembers").First(&u, "id = ?", id).Error; err != nil {
+	u, err := s.repo.FindByIDWithProjects(id)
+	if err != nil {
 		return models.User{}, fmt.Errorf("user not found: %w", err)
 	}
-	return u, nil
+	return *u, nil
 }
-
-// ── ChangePassword ────────────────────────────────────────────────────────────
-// Replaces authboss hasher with Argon2id from internal/auth.
 
 func (s *AuthService) ChangePassword(user *models.User, currentPassword, newPassword string) error {
 	if err := auth.VerifyPassword(currentPassword, user.Password); err != nil {
 		return fmt.Errorf("wrong_current_password")
 	}
-
 	hash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash_failed")
 	}
-
-	if err := s.db.Exec(
-		"UPDATE users SET password = ?, force_password_change = false WHERE id = ?",
-		hash, user.ID,
-	).Error; err != nil {
-		return fmt.Errorf("update password: %w", err)
-	}
-	return nil
+	return s.repo.UpdatePassword(user, hash, false)
 }
 
-// ── Register ──────────────────────────────────────────────────────────────────
-
 func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*models.User, *TokenPair, error) {
-	var existing models.User
-	err := s.db.Where("email = ?", input.Email).First(&existing).Error
-	if err == nil {
+	existing, err := s.repo.FindByEmail(input.Email)
+	if existing != nil {
 		return nil, nil, ErrEmailTaken
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil, fmt.Errorf("db lookup: %w", err)
 	}
 
@@ -102,9 +82,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 		return nil, nil, fmt.Errorf("hashing password: %w", err)
 	}
 
-	// First user ever → admin
-	var count int64
-	s.db.Model(&models.User{}).Count(&count)
+	count, err := s.repo.Count()
+	if err != nil {
+		return nil, nil, err
+	}
 	role := models.RoleMember
 	if count == 0 {
 		role = models.RoleAdmin
@@ -117,8 +98,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 		Role:     role,
 		Active:   true,
 	}
-	if err := s.db.Create(user).Error; err != nil {
-		return nil, nil, fmt.Errorf("creating user: %w", err)
+	if err := s.repo.Create(user); err != nil {
+		return nil, nil, err
 	}
 
 	tokens, err := s.issueTokens(ctx, user)
@@ -128,13 +109,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 	return user, tokens, nil
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
-
 func (s *AuthService) Login(ctx context.Context, input LoginInput) (*models.User, *TokenPair, error) {
-	var user models.User
-	if err := s.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	user, err := s.repo.FindByEmail(input.Email)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Timing-attack prevention: always run Argon2id even when user doesn't exist
 			_ = auth.VerifyPassword(
 				input.Password,
 				"$argon2id$v=19$m=65536,t=3,p=2$dGlkZWZseWR1bW15c2FsdA$dGlkZWZseWR1bW15aGFzaDEyMzQ1Njc4OTAxMjM0NTY",
@@ -152,14 +130,12 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*models.User
 		return nil, nil, ErrInvalidCredentials
 	}
 
-	tokens, err := s.issueTokens(ctx, &user)
+	tokens, err := s.issueTokens(ctx, user)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &user, tokens, nil
+	return user, tokens, nil
 }
-
-// ── Refresh ───────────────────────────────────────────────────────────────────
 
 func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
 	userID, err := s.tokenStore.ValidateRefreshToken(ctx, refreshToken)
@@ -167,8 +143,8 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 		return nil, auth.ErrInvalidToken
 	}
 
-	var user models.User
-	if err := s.db.First(&user, "id = ?", userID).Error; err != nil {
+	user, err := s.repo.FindByID(userID)
+	if err != nil {
 		return nil, ErrUserNotFound
 	}
 	if !user.Active {
@@ -176,12 +152,9 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 		return nil, ErrAccountInactive
 	}
 
-	// Rotate — revoke old, issue new
 	_ = s.tokenStore.RevokeRefreshToken(ctx, refreshToken)
-	return s.issueTokens(ctx, &user)
+	return s.issueTokens(ctx, user)
 }
-
-// ── Logout ────────────────────────────────────────────────────────────────────
 
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.tokenStore.RevokeRefreshToken(ctx, refreshToken)
@@ -190,8 +163,6 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 func (s *AuthService) LogoutAll(ctx context.Context, userID string) error {
 	return s.tokenStore.RevokeAllUserTokens(ctx, userID)
 }
-
-// ── internal ──────────────────────────────────────────────────────────────────
 
 func (s *AuthService) issueTokens(ctx context.Context, user *models.User) (*TokenPair, error) {
 	accessToken, err := s.jwt.GenerateAccessToken(user.ID, user.Email, string(user.Role))

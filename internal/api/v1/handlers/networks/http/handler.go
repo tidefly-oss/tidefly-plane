@@ -6,22 +6,25 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
-	containerfil "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/filter"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/repository"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
-
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type Handler struct {
 	runtime runtime.Runtime
 	log     *logger.Logger
-	db      *gorm.DB
+	filter  *repository.FilterRepository
 }
 
 func New(rt runtime.Runtime, log *logger.Logger, db *gorm.DB) *Handler {
-	return &Handler{runtime: rt, log: log, db: db}
+	return &Handler{
+		runtime: rt,
+		log:     log,
+		filter:  repository.NewFilterRepository(db),
+	}
 }
 
 type NetworkContainerRef struct {
@@ -77,7 +80,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 	}
 
 	// Members see only networks belonging to their projects
-	allowed, err := containerfil.AllowedNetworks(h.db, claims.UserID)
+	allowed, err := h.filter.AllowedNetworks(claims.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}

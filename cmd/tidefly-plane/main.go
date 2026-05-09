@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/bootstrap"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/bootstrap"
 )
 
 var migrateOnly = flag.Bool("migrate-only", false, "run database migrations and exit")
@@ -16,7 +16,7 @@ var migrateOnly = flag.Bool("migrate-only", false, "run database migrations and 
 func main() {
 	flag.Parse()
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
 }

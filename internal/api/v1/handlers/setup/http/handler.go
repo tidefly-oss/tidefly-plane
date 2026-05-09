@@ -2,15 +2,12 @@ package http
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
-	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +35,6 @@ type SetupAdminOutput struct {
 }
 
 func (h *Handler) SetupAdmin(ctx context.Context, input *SetupAdminInput) (*SetupAdminOutput, error) {
-	// Only callable if no users exist yet
 	var count int64
 	if err := h.db.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to check users")
@@ -47,7 +43,7 @@ func (h *Handler) SetupAdmin(ctx context.Context, input *SetupAdminInput) (*Setu
 		return nil, huma.NewError(http.StatusConflict, "setup already completed")
 	}
 
-	hash, err := hashPassword(input.Body.Password)
+	hash, err := auth.HashPassword(input.Body.Password)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to hash password")
 	}
@@ -69,18 +65,4 @@ func (h *Handler) SetupAdmin(ctx context.Context, input *SetupAdminInput) (*Setu
 	out := &SetupAdminOutput{}
 	out.Body.Message = "admin user created successfully"
 	return out, nil
-}
-
-func hashPassword(password string) (string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("generating salt: %w", err)
-	}
-	hash := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
-	return fmt.Sprintf(
-		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, 64*1024, 3, 2,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(hash),
-	), nil
 }

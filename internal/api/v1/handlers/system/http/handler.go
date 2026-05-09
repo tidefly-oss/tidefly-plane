@@ -1,9 +1,9 @@
 package http
 
 import (
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
 type Handler struct {

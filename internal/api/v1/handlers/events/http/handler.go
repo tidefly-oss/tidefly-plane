@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
 
 type Handler struct {

@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
+	backupsvc "github.com/tidefly-oss/tidefly-plane/internal/domain/backup"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	backupsvc "github.com/tidefly-oss/tidefly-plane/internal/services/backup"
 )
 
 type Handler struct {

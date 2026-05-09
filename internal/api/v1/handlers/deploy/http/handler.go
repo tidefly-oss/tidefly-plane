@@ -2,22 +2,21 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/template"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	deploy      *service.DeployService
 	credentials *service.CredentialsService
-	notifSvc    *notifications.Service
-	notifierSvc *notifiersvc.Service
+	notifSvc    *notification.Service
+	notifierSvc *notification.Notifier
 	log         *logger.Logger
 }
 
@@ -28,8 +27,8 @@ func New(
 	log *logger.Logger,
 	caddy *caddysvc.Client,
 	rt runtime.Runtime,
-	notifSvc *notifications.Service,
-	notifierSvc *notifiersvc.Service,
+	notifSvc *notification.Service,
+	notifierSvc *notification.Notifier,
 	agentClient *agentsvc.Client,
 ) *Handler {
 	return &Handler{

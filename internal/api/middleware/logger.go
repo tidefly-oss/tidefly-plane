@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type RequestLoggerOptions struct {

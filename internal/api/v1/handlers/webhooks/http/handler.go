@@ -2,11 +2,11 @@ package http
 
 import (
 	"github.com/hibiken/asynq"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/webhooks/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	webhooksvc "github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
+	webhooksvc "github.com/tidefly-oss/tidefly-plane/internal/domain/webhook"
 )
 
 type Handler struct {

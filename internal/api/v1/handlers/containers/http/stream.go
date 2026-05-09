@@ -10,9 +10,8 @@ import (
 	"strconv"
 
 	"github.com/labstack/echo/v5"
-
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
-	dockerruntime "github.com/tidefly-oss/tidefly-plane/internal/services/runtime/docker"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	dockerruntime "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime/docker"
 )
 
 func (h *Handler) Logs(c *echo.Context) error {

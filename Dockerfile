@@ -33,9 +33,9 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     go build \
       -trimpath \
       -ldflags="-s -w \
-        -X github.com/tidefly-oss/tidefly-plane/internal/version.Version=${VERSION} \
-        -X github.com/tidefly-oss/tidefly-plane/internal/version.Commit=${COMMIT} \
-        -X github.com/tidefly-oss/tidefly-plane/internal/version.BuildDate=${BUILD_DATE}" \
+        -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version=${VERSION} \
+        -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Commit=${COMMIT} \
+        -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.BuildDate=${BUILD_DATE}" \
       -o /out/tidefly-plane \
       ./cmd/tidefly-plane
 

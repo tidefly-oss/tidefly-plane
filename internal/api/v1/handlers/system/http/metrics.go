@@ -3,7 +3,7 @@ package http
 import (
 	"context"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
 type MetricsInput struct{}

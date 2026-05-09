@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type BuildAndDeployRequest struct {

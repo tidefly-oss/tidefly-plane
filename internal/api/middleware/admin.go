@@ -7,7 +7,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 

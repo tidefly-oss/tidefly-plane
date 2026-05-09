@@ -2,20 +2,20 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	users    *service.UserService
 	settings *service.SettingsService
-	notifier *notifiersvc.Service
+	notifier *notification.Notifier
 	log      *logger.Logger
 }
 
-func New(db *gorm.DB, log *logger.Logger, notifier *notifiersvc.Service, caddy *caddysvc.Client) *Handler {
+func New(db *gorm.DB, log *logger.Logger, notifier *notification.Notifier, caddy *caddysvc.Client) *Handler {
 	return &Handler{
 		users:    service.NewUserService(db),
 		settings: service.NewSettingsService(db, caddy),

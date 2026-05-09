@@ -8,26 +8,23 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
-	containerfil "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/filter"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/repository"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
 )
 
 type AccessService struct {
-	db *gorm.DB
+	repo *repository.FilterRepository
 }
 
 func NewAccessService(db *gorm.DB) *AccessService {
-	return &AccessService{db: db}
+	return &AccessService{repo: repository.NewFilterRepository(db)}
 }
 
 func (s *AccessService) CheckContainerAccess(c *echo.Context, labels map[string]string) error {
-	return middleware.CheckContainerAccess(c, s.db, labels)
+	return middleware.CheckContainerAccess(c, s.repo.DB(), labels)
 }
 
-// FilterContainers removes internal containers and applies project-based access control.
-// Admins see all non-internal containers.
-// Members see only containers belonging to their projects.
 func (s *AccessService) FilterContainers(ctx context.Context, list []runtime.Container) ([]runtime.Container, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
@@ -46,15 +43,18 @@ func (s *AccessService) FilterContainers(ctx context.Context, list []runtime.Con
 		return visible, nil
 	}
 
-	allowed, err := containerfil.AllowedNetworks(s.db, claims.UserID)
+	allowed, err := s.repo.AllowedNetworks(claims.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}
 
 	filtered := make([]runtime.Container, 0, len(visible))
 	for _, c := range visible {
-		if containerfil.ContainerAllowed(c.Networks, allowed) {
-			filtered = append(filtered, c)
+		for _, n := range c.Networks {
+			if _, ok := allowed[n]; ok {
+				filtered = append(filtered, c)
+				break
+			}
 		}
 	}
 

@@ -4,8 +4,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-plane/internal/metrics"
-	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
@@ -27,18 +25,19 @@ import (
 	templateshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/templates/http"
 	volumeshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/volumes/http"
 	webhookshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/webhooks/http"
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
-	"github.com/tidefly-oss/tidefly-plane/internal/ca"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/logger"
-	backupsvc "github.com/tidefly-oss/tidefly-plane/internal/services/backup"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/git"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
-	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
-	webhooksvc "github.com/tidefly-oss/tidefly-plane/internal/services/webhook"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/backup"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/git"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/template"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/webhook"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
 func Register(
@@ -51,21 +50,19 @@ func Register(
 	db *gorm.DB,
 	log *applogger.Logger,
 	templateLoader *template.Loader,
-	notifSvc *notifications.Service,
+	notifSvc *notification.Service,
 	gitSvc *git.Service,
-	webhookSvc *webhooksvc.Service,
+	webhookSvc *webhook.Service,
 	asynqClient *asynq.Client,
-	notifier *notifiersvc.Service,
+	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
 	caService *ca.Service,
 	agentClient *agentsvc.Client,
 ) {
 	deployer := deploy.New(rt, db)
 
-	// ── Setup (no auth — only works when no users exist) ──────────────────────
 	setuphttp.New(db).RegisterRoutes(api)
 
-	// ── Middleware ─────────────────────────────────────────────────────────────
 	requireAuth := middleware.RequireAuthHuma(api, jwtSvc)
 	requireAdmin := middleware.RequireAdminHuma(api)
 	echoInject := middleware.InjectUser(db)
@@ -74,16 +71,9 @@ func Register(
 	mw := huma.Middlewares{requireAuth}
 	adminMw := huma.Middlewares{requireAuth, requireAdmin}
 
-	// ── Auth ───────────────────────────────────────────────────────────────────
 	authhttp.New(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
-
-	// ── Agent ──────────────────────────────────────────────────────────────────
 	agenthttp.New(db, caService, agentClient).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
-
-	// ── Backup ─────────────────────────────────────────────────────────────────
-	backuphttp.New(backupsvc.New(db)).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
-
-	// ── All other routes ───────────────────────────────────────────────────────
+	backuphttp.New(backup.New(db)).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
 	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
 	containerhttp.New(rt, deployer, db, log, caddy, gitSvc).RegisterRoutes(api, e, mw, echoSSE, echoInject)
 	deployhttp.New(db, deployer, templateLoader, log, caddy, rt, notifSvc, notifier, agentClient).RegisterRoutes(api, mw)

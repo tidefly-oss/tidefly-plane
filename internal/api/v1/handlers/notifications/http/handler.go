@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/notifications"
 )
 
 type Handler struct {
-	svc *notifications.Service
+	svc *notification.Service
 }
 
-func New(svc *notifications.Service) *Handler {
+func New(svc *notification.Service) *Handler {
 	return &Handler{svc: svc}
 }
 

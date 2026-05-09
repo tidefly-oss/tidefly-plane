@@ -26,14 +26,12 @@ type CertificateAuthority struct {
 	Serial    string    `gorm:"type:varchar(64);not null" json:"serial"`
 }
 
-func (CertificateAuthority) TableName() string { return "certificate_authorities" }
+func (ca *CertificateAuthority) TableName() string { return "certificate_authorities" }
 
 // IsExpiringSoon returns true if the CA expires within the given duration.
 func (ca *CertificateAuthority) IsExpiringSoon(within time.Duration) bool {
 	return time.Until(ca.NotAfter) < within
 }
-
-// ---
 
 // IssuedCertificate tracks every cert the CA has signed.
 // Used for revocation, renewal tracking and audit.
@@ -67,7 +65,7 @@ type IssuedCertificate struct {
 	RenewedToID   *uint `gorm:"index" json:"renewed_to_id,omitempty"`
 }
 
-func (IssuedCertificate) TableName() string { return "issued_certificates" }
+func (c *IssuedCertificate) TableName() string { return "issued_certificates" }
 
 func (c *IssuedCertificate) IsExpiringSoon(within time.Duration) bool {
 	return !c.Revoked && time.Until(c.NotAfter) < within
@@ -103,7 +101,7 @@ type WorkerRegistrationToken struct {
 	CreatedByUserID string `gorm:"type:varchar(64);not null" json:"created_by_user_id"`
 }
 
-func (WorkerRegistrationToken) TableName() string { return "worker_registration_tokens" }
+func (t *WorkerRegistrationToken) TableName() string { return "worker_registration_tokens" }
 
 func (t *WorkerRegistrationToken) IsValid() bool {
 	return !t.Used && time.Now().Before(t.ExpiresAt)

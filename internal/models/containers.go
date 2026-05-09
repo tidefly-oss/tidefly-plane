@@ -12,7 +12,7 @@ type ServiceStatus string
 const (
 	ServiceStatusDeploying ServiceStatus = "deploying"
 	ServiceStatusRunning   ServiceStatus = "running"
-	ServiceStatusStopped   ServiceStatus = "stopped"
+	ServiceStatusStopped   ServiceStatus = "stopped" //nolint:unused
 	ServiceStatusFailed    ServiceStatus = "failed"
 )
 
@@ -30,7 +30,7 @@ type Service struct {
 	Credentials  []ServiceCredential `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"credentials,omitempty"`
 }
 
-func (s *Service) BeforeCreate(tx *gorm.DB) error {
+func (s *Service) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == uuid.Nil {
 		s.ID = uuid.New()
 	}
@@ -49,7 +49,7 @@ type ServiceCredential struct {
 	CreatedAt        time.Time  `                                json:"created_at"`
 }
 
-func (c *ServiceCredential) BeforeCreate(tx *gorm.DB) error {
+func (c *ServiceCredential) BeforeCreate(_ *gorm.DB) error {
 	if c.ID == uuid.Nil {
 		c.ID = uuid.New()
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/images/helpers"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
 
 type Handler struct {

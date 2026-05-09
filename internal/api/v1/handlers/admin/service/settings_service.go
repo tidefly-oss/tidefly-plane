@@ -3,10 +3,12 @@ package service
 import (
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/helpers"
-	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
 	"gorm.io/gorm"
+
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/helpers"
+	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/repository"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 type SettingsUpdateInput struct {
@@ -30,25 +32,26 @@ type SettingsUpdateInput struct {
 }
 
 type SettingsService struct {
-	db    *gorm.DB
+	repo  *repository.SettingsRepository
 	caddy *caddysvc.Client
 }
 
 func NewSettingsService(db *gorm.DB, caddy *caddysvc.Client) *SettingsService {
-	return &SettingsService{db: db, caddy: caddy}
+	return &SettingsService{
+		repo:  repository.NewSettingsRepository(db),
+		caddy: caddy,
+	}
 }
 
 func (s *SettingsService) Get() (models.SystemSettings, error) {
-	var settings models.SystemSettings
-	if err := s.db.First(&settings).Error; err != nil {
-		return models.SystemSettings{}, nil
-	}
-	return settings, nil
+	return s.repo.Get()
 }
 
 func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettings, error) {
 	var settings models.SystemSettings
-	s.db.FirstOrCreate(&settings)
+	if err := s.repo.FirstOrCreate(&settings); err != nil {
+		return models.SystemSettings{}, err
+	}
 
 	helpers.ApplyIfSet(&settings.InstanceName, input.InstanceName)
 	helpers.ApplyIfSet(&settings.InstanceURL, input.InstanceURL)
@@ -68,11 +71,10 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	helpers.ApplyIfSet(&settings.NotifyOnContainerDown, input.NotifyOnContainerDown)
 	helpers.ApplyIfSet(&settings.NotifyOnWebhookFail, input.NotifyOnWebhookFail)
 
-	if err := s.db.Save(&settings).Error; err != nil {
+	if err := s.repo.Save(&settings); err != nil {
 		return models.SystemSettings{}, fmt.Errorf("update settings: %w", err)
 	}
 
-	// Update Caddy base domain live if changed
 	if input.CaddyBaseDomain != nil && s.caddy != nil {
 		s.caddy.SetBaseDomain(*input.CaddyBaseDomain)
 	}

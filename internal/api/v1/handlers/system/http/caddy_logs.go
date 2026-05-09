@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
 )
 
 func (h *Handler) CaddyLogs(c *echo.Context) error {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	deploysvc "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/deploy/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
-	notifiersvc "github.com/tidefly-oss/tidefly-plane/internal/services/notifier"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type ListServicesInput struct{}
@@ -57,62 +57,52 @@ func (h *Handler) DeployService(ctx context.Context, input *DeployServiceInput) 
 		return nil, huma400("Caddy integration is not enabled on this instance")
 	}
 
-	result, err := h.deploy.Deploy(
-		ctx, deploysvc.DeployRequest{
-			TemplateSlug: input.Body.TemplateSlug,
-			ProjectID:    input.Body.ProjectID,
-			Version:      input.Body.Version,
-			Fields:       input.Body.Fields,
-			Expose:       input.Body.Expose,
-			CustomDomain: input.Body.CustomDomain,
-			WorkerID:     input.Body.WorkerID,
-		},
-	)
+	result, err := h.deploy.Deploy(ctx, deploysvc.DeployRequest{
+		TemplateSlug: input.Body.TemplateSlug,
+		ProjectID:    input.Body.ProjectID,
+		Version:      input.Body.Version,
+		Fields:       input.Body.Fields,
+		Expose:       input.Body.Expose,
+		CustomDomain: input.Body.CustomDomain,
+		WorkerID:     input.Body.WorkerID,
+	})
 
 	if err != nil {
-		h.log.Audit(
-			ctx, logger.AuditEntry{
-				Action:     logger.AuditContainerDeploy,
-				ResourceID: input.Body.ProjectID,
-				Success:    false,
-				Details: fmt.Sprintf(
-					"template=%s project=%s version=%s expose=%v worker=%s error=%s",
-					input.Body.TemplateSlug, input.Body.ProjectID,
-					input.Body.Version, input.Body.Expose,
-					input.Body.WorkerID, err.Error(),
-				),
-			},
-		)
+		h.log.Audit(ctx, logger.AuditEntry{
+			Action:     logger.AuditContainerDeploy,
+			ResourceID: input.Body.ProjectID,
+			Success:    false,
+			Details: fmt.Sprintf(
+				"template=%s project=%s version=%s expose=%v worker=%s error=%s",
+				input.Body.TemplateSlug, input.Body.ProjectID,
+				input.Body.Version, input.Body.Expose,
+				input.Body.WorkerID, err.Error(),
+			),
+		})
 		if err.Error() == "template not found" {
 			return nil, huma404("template not found")
 		}
 		return nil, err
 	}
 
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditContainerDeploy,
-			ResourceID: input.Body.ProjectID,
-			Success:    true,
-			Details: fmt.Sprintf(
-				"template=%s project=%s version=%s expose=%v worker=%s url=%s",
-				input.Body.TemplateSlug, input.Body.ProjectID,
-				input.Body.Version, input.Body.Expose,
-				input.Body.WorkerID, result.PublicURL,
-			),
-		},
-	)
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditContainerDeploy,
+		ResourceID: input.Body.ProjectID,
+		Success:    true,
+		Details: fmt.Sprintf(
+			"template=%s project=%s version=%s expose=%v worker=%s url=%s",
+			input.Body.TemplateSlug, input.Body.ProjectID,
+			input.Body.Version, input.Body.Expose,
+			input.Body.WorkerID, result.PublicURL,
+		),
+	})
 
-	h.notifierSvc.Send(
-		ctx, notifiersvc.Event{
-			Title: "Service deployed: " + input.Body.TemplateSlug,
-			Message: fmt.Sprintf(
-				"template=%s project=%s worker=%s",
-				input.Body.TemplateSlug, input.Body.ProjectID, input.Body.WorkerID,
-			),
-			Level: "info",
-		},
-	)
+	h.notifierSvc.Send(ctx, notification.Event{
+		Title: "Service deployed: " + input.Body.TemplateSlug,
+		Message: fmt.Sprintf("template=%s project=%s worker=%s",
+			input.Body.TemplateSlug, input.Body.ProjectID, input.Body.WorkerID),
+		Level: "info",
+	})
 
 	out := &DeployServiceOutput{}
 	out.Body.Service = result.Service
@@ -123,14 +113,12 @@ func (h *Handler) DeployService(ctx context.Context, input *DeployServiceInput) 
 
 func (h *Handler) DeleteService(ctx context.Context, input *DeleteServiceInput) (*struct{}, error) {
 	err := h.deploy.Destroy(ctx, input.ID)
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditContainerDelete,
-			ResourceID: input.ID,
-			Success:    err == nil,
-			Details:    "service destroy",
-		},
-	)
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditContainerDelete,
+		ResourceID: input.ID,
+		Success:    err == nil,
+		Details:    "service destroy",
+	})
 	if err != nil {
 		return nil, err
 	}

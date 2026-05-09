@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type ResetUserPasswordInput struct {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/labstack/echo/v5"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 func Recover(log *logger.Logger) echo.MiddlewareFunc {

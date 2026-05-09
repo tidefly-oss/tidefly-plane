@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/template"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/services/agent"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/services/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/deploy"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/services/template"
+	"gorm.io/gorm"
 )
 
 type DeployService struct {

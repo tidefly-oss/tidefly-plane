@@ -48,9 +48,8 @@ func (w *WorkerNode) IsActive() bool {
 }
 
 func (w *WorkerNode) MarkConnected(ip string, version string) {
-	now := time.Now()
 	w.Status = WorkerStatusConnected
-	w.LastSeenAt = &now
+	w.LastSeenAt = new(time.Now())
 	w.LastSeenIP = ip
 	w.AgentVersion = version
 }
@@ -60,8 +59,7 @@ func (w *WorkerNode) MarkDisconnected() {
 }
 
 func (w *WorkerNode) UpdateHeartbeat(cpuPercent, memPercent float64, containerCount int32) {
-	now := time.Now()
-	w.LastSeenAt = &now
+	w.LastSeenAt = new(time.Now())
 	w.CPUPercent = cpuPercent
 	w.MemPercent = memPercent
 	w.ContainerCount = containerCount

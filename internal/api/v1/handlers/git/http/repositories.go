@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/services/git/types"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/git/types"
 )
 
 type ListRepositoriesInput struct {

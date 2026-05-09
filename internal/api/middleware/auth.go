@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 )
 
 // ── Context keys ──────────────────────────────────────────────────────────────

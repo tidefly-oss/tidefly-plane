@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/admin/mapper"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type SetProjectMembersInput struct {

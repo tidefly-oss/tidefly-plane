@@ -7,7 +7,7 @@ import (
 type NotificationSeverity string
 
 const (
-	SeverityInfo  NotificationSeverity = "INFO"
+	SeverityInfo  NotificationSeverity = "INFO" //nolint:unused
 	SeverityFatal NotificationSeverity = "FATAL"
 	SeverityError NotificationSeverity = "ERROR"
 	SeverityWarn  NotificationSeverity = "WARN"

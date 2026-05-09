@@ -2,8 +2,8 @@ package http
 
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/service"
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
-	"github.com/tidefly-oss/tidefly-plane/internal/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 

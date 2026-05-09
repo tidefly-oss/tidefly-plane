@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/version"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/tidefly-oss/tidefly-plane/internal/services/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/version"
 )
 
 type HealthInput struct{}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/auth"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 )
 
 // RequireAuthSSE validates JWT from Authorization header OR ?token= query param.

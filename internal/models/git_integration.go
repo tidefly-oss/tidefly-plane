@@ -24,7 +24,7 @@ type GitIntegration struct {
 	Shares []GitIntegrationShare `gorm:"foreignKey:IntegrationID" json:"-"`
 }
 
-func (g *GitIntegration) BeforeCreate(tx *gorm.DB) error {
+func (g *GitIntegration) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
