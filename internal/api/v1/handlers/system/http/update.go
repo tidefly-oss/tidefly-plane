@@ -23,7 +23,7 @@ type progressEvent struct {
 	Status    string `json:"status"` // "pulling" | "done" | "error"
 	Message   string `json:"message"`
 	Layer     string `json:"layer,omitempty"`
-	Component string `json:"component,omitempty"` // "plane" | "ui" | "caddy"
+	Component string `json:"component,omitempty"` // componentPlane | componentUI | "caddy"
 }
 
 type progressBus struct {
@@ -74,9 +74,9 @@ func (h *Handler) Version(ctx context.Context, _ *VersionInput) (*VersionOutput,
 		h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
 		return &VersionOutput{Body: versionInfo{
 			Components: []ComponentVersion{{
-				Name:    "plane",
+				Name:    componentPlane,
 				Current: currentVersion(),
-				Latest:  "unknown",
+				Latest:  versionUnknown,
 			}},
 			AnyUpdateAvailable: false,
 		}}, nil
@@ -97,20 +97,20 @@ type UpdateOutput struct {
 
 // component → image map
 var componentImages = map[string]string{
-	"plane": "tidefly/tidefly-plane",
-	"ui":    "tidefly/tidefly-ui",
+	componentPlane: "tidefly/tidefly-plane",
+	componentUI:    "tidefly/tidefly-ui",
 }
 
 // component → container name map (dev + prod)
 func containerName(component string) string {
 	name := os.Getenv("TIDEFLY_CONTAINER_NAME")
 	switch component {
-	case "plane":
+	case componentPlane:
 		if name != "" {
 			return name
 		}
 		return "tidefly_backend"
-	case "ui":
+	case componentUI:
 		return "tidefly_ui"
 	}
 	return ""
@@ -203,7 +203,7 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	wg.Wait()
 
 	// Restart in order: ui first, plane last
-	restartOrder := []string{"ui", "plane"}
+	restartOrder := []string{componentUI, componentPlane}
 	for _, name := range restartOrder {
 		cn := containerName(name)
 		if cn == "" {

@@ -16,6 +16,11 @@ import (
 const (
 	githubAPIBase   = "https://api.github.com/repos/tidefly-oss/%s/releases/latest"
 	versionCacheTTL = 1 * time.Hour
+
+	componentPlane = "plane"
+	componentUI    = "ui"
+	componentAgent = "agent"
+	versionUnknown = "unknown"
 )
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -97,24 +102,38 @@ func fetchGitHubRelease(ctx context.Context, repo string) (*githubRelease, error
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, err
 	}
+	release.Body = cleanChangelog(release.Body)
 	return &release, nil
+}
+
+// cleanChangelog strips boilerplate sections not relevant for the update dialog.
+func cleanChangelog(body string) string {
+	cutMarkers := []string{
+		"## Docker",
+		"## Platforms",
+		"## Checksums",
+		"## Installation",
+	}
+	for _, marker := range cutMarkers {
+		if idx := strings.Index(body, marker); idx != -1 {
+			body = strings.TrimSpace(body[:idx])
+		}
+	}
+	return body
 }
 
 // ── Current version detection ─────────────────────────────────────────────────
 
-// getContainerVersion reads the image tag of a running container via Docker socket.
-// Falls back to "unknown" if container is not running or label not set.
 func (h *Handler) getContainerVersion(ctx context.Context, containerName string) string {
 	details, err := h.runtime.GetContainer(ctx, containerName)
 	if err != nil {
-		return "unknown"
+		return versionUnknown
 	}
-	// Image tag is after the colon e.g. tidefly/tidefly-ui:v0.1.0-alpha.5
 	parts := strings.SplitN(details.Image, ":", 2)
 	if len(parts) == 2 {
 		return parts[1]
 	}
-	return "unknown"
+	return versionUnknown
 }
 
 // ── Main fetch ────────────────────────────────────────────────────────────────
@@ -132,29 +151,24 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 
 	components := []componentDef{
 		{
-			name:      "plane",
+			name:      componentPlane,
 			repo:      "tidefly-plane",
-			currentFn: func() string { return currentVersion() },
+			currentFn: currentVersion,
 		},
 		{
-			name: "ui",
+			name: componentUI,
 			repo: "tidefly-ui",
 			currentFn: func() string {
 				return h.getContainerVersion(ctx, "tidefly_ui")
 			},
 		},
 		{
-			name: "agent",
+			name: componentAgent,
 			repo: "tidefly-agent",
 			currentFn: func() string {
 				return h.getContainerVersion(ctx, "tidefly_agent")
 			},
 		},
-	}
-
-	type result struct {
-		idx  int
-		comp ComponentVersion
 	}
 
 	results := make([]ComponentVersion, len(components))
@@ -169,9 +183,8 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 			comp := ComponentVersion{
 				Name:    def.name,
 				Current: current,
-				Latest:  "unknown",
+				Latest:  versionUnknown,
 			}
-
 			release, err := fetchGitHubRelease(ctx, def.repo)
 			if err == nil {
 				comp.Latest = release.TagName
@@ -180,7 +193,6 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 				comp.ReleaseURL = release.HTMLURL
 				comp.Prerelease = release.Prerelease
 			}
-
 			mu.Lock()
 			results[idx] = comp
 			mu.Unlock()
@@ -209,7 +221,7 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 // ── Semver helpers ────────────────────────────────────────────────────────────
 
 func isNewerVersion(latest, current string) bool {
-	if current == "unknown" || current == "" {
+	if current == versionUnknown || current == "" {
 		return false
 	}
 	l := strings.TrimPrefix(latest, "v")
