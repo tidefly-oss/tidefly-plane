@@ -63,7 +63,7 @@ tasks:
     desc: Regenerate Wire DI bindings (internal/bootstrap/wire_gen.go)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/bootstrap/
+      - wire ./internal/platform/bootstrap/
       - echo 'wire_gen.go updated'
 
   # ── Dev ───────────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ tasks:
         msg: Run task setup first
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/bootstrap/
+      - wire ./internal/platform/bootstrap/
       - air
 
   # ── Migrations ────────────────────────────────────────────────────────────
@@ -180,10 +180,10 @@ tasks:
     desc: Build production binary (runs wire first)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/bootstrap/
+      - wire ./internal/platform/bootstrap/
       - go build
         -trimpath
-        -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/version.Version={{.VERSION}}"
+        -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version={{.VERSION}}"
         -o dist/tidefly-plane
         ./cmd/tidefly-plane
       - echo 'Binary at dist/tidefly-plane'
@@ -195,7 +195,7 @@ tasks:
     desc: Build Docker image (from repo root)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/bootstrap/
+      - wire ./internal/platform/bootstrap/
       - docker buildx build
         --platform linux/amd64,linux/arm64
         --build-arg VERSION={{.VERSION}}

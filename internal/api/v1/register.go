@@ -85,7 +85,7 @@ func Register(
 	notifhttp.New(notifSvc).RegisterRoutes(api, e, mw, echoSSE, echoInject)
 	projectshttp.New(db, rt, log).RegisterRoutes(api, mw)
 	systemHandler := systemhttp.New(rt, log, metricsReg)
-	systemHandler.RegisterRoutes(api, mw)
+	systemHandler.RegisterRoutes(api, mw, adminMw)
 	systemHandler.RegisterSSERoutes(e, echoSSE, echoInject)
 	templateshttp.New(templateLoader).RegisterRoutes(api, mw)
 	volumeshttp.New(rt, deployer, db, log).RegisterRoutes(api, mw, adminMw)
