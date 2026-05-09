@@ -55,9 +55,9 @@ jobs:
         run: |
           go build \
             -ldflags="-s -w \
-              -X github.com/tidefly-oss/tidefly-plane/internal/version.Version=${{ github.ref_name }} \
-              -X github.com/tidefly-oss/tidefly-plane/internal/version.Commit=${{ github.sha }} \
-              -X github.com/tidefly-oss/tidefly-plane/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version=${{ github.ref_name }} \
+              -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Commit=${{ github.sha }} \
+              -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o dist/tidefly-plane-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/tidefly-plane
 
@@ -110,6 +110,7 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
 
   release:
     name: Create GitHub Release
@@ -139,39 +140,17 @@ jobs:
           VERSION_CLEAN="${VERSION#v}"
           NOTES=$(awk "/^## \[${VERSION_CLEAN}\]/{found=1; next} found && /^## \[/{exit} found{print}" changelog.md)
           if [ -z "$NOTES" ]; then
-            NOTES="See [changelog.md](changelog.md) for details."
+            NOTES="No changelog entry found for ${VERSION_CLEAN}."
           fi
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Write release notes
-        run: |
-          cat > release_notes.md << 'EOF'
-          ## What's Changed
-
-          ${{ steps.changelog.outputs.notes }}
-
-          ## Docker
-
-          ```bash
-          docker pull tidefly/tidefly-plane:${{ github.ref_name }}
-          ```
-
-          ## Platforms
-
-          `linux/amd64` · `linux/arm64`
-
-          ## Checksums
-
-          See `checksums.txt` in the release assets.
-          EOF
-
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           name: Tidefly Plane ${{ github.ref_name }}
-          body_path: release_notes.md
+          body: ${{ steps.changelog.outputs.notes }}
           files: dist/*
           draft: true
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}

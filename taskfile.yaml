@@ -16,6 +16,17 @@ tasks:
       - wire ./internal/platform/bootstrap/
       - echo 'wire_gen.go updated'
 
+  # ── Development ───────────────────────────────────────────────────────────
+
+  dev:
+    desc: Start backend with Air hot reload (runs wire first)
+    cmds:
+      - which wire || go install github.com/google/wire/cmd/wire@latest
+      - wire ./internal/platform/bootstrap/
+      - air
+    dotenv:
+      - "{{.HOME}}/.local/share/tidefly-plane/.env.dev"
+
   # ── Quality ───────────────────────────────────────────────────────────────
 
   lint:

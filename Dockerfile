@@ -27,7 +27,7 @@ ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-    wire ./internal/bootstrap/ && \
+    wire ./internal/platform/bootstrap/ && \
     mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux \
     go build \

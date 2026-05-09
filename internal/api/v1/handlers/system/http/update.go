@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	dockercontainer "github.com/docker/docker/api/types/container"
+	dockertypes "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/labstack/echo/v5"
@@ -20,9 +20,10 @@ import (
 // ── Progress Bus ──────────────────────────────────────────────────────────────
 
 type progressEvent struct {
-	Status  string `json:"status"` // "pulling" | "done" | "error"
-	Message string `json:"message"`
-	Layer   string `json:"layer,omitempty"` // Docker layer id
+	Status    string `json:"status"` // "pulling" | "done" | "error"
+	Message   string `json:"message"`
+	Layer     string `json:"layer,omitempty"`
+	Component string `json:"component,omitempty"` // "plane" | "ui" | "caddy"
 }
 
 type progressBus struct {
@@ -68,13 +69,16 @@ type VersionOutput struct {
 }
 
 func (h *Handler) Version(ctx context.Context, _ *VersionInput) (*VersionOutput, error) {
-	info, err := fetchLatestVersion(ctx)
+	info, err := h.fetchVersionInfo(ctx)
 	if err != nil {
-		h.log.Warnw("version_check", "failed to fetch latest version", "error", err.Error())
+		h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
 		return &VersionOutput{Body: versionInfo{
-			Current:         currentVersion(),
-			Latest:          "unknown",
-			UpdateAvailable: false,
+			Components: []ComponentVersion{{
+				Name:    "plane",
+				Current: currentVersion(),
+				Latest:  "unknown",
+			}},
+			AnyUpdateAvailable: false,
 		}}, nil
 	}
 	return &VersionOutput{Body: *info}, nil
@@ -86,46 +90,71 @@ type UpdateInput struct{}
 
 type UpdateOutput struct {
 	Body struct {
-		Message string `json:"message"`
-		Version string `json:"version"`
+		Message    string   `json:"message"`
+		Components []string `json:"components"`
 	}
 }
 
-func (h *Handler) UpdateSelf(ctx context.Context, _ *UpdateInput) (*UpdateOutput, error) {
-	info, err := fetchLatestVersion(ctx)
-	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("cannot reach GitHub to check for updates: " + err.Error())
+// component → image map
+var componentImages = map[string]string{
+	"plane": "tidefly/tidefly-plane",
+	"ui":    "tidefly/tidefly-ui",
+}
+
+// component → container name map (dev + prod)
+func containerName(component string) string {
+	name := os.Getenv("TIDEFLY_CONTAINER_NAME")
+	switch component {
+	case "plane":
+		if name != "" {
+			return name
+		}
+		return "tidefly_backend"
+	case "ui":
+		return "tidefly_ui"
 	}
-	if !info.UpdateAvailable {
+	return ""
+}
+
+func (h *Handler) UpdateSelf(ctx context.Context, _ *UpdateInput) (*UpdateOutput, error) {
+	info, err := h.fetchVersionInfo(ctx)
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("cannot reach GitHub: " + err.Error())
+	}
+	if !info.AnyUpdateAvailable {
 		out := &UpdateOutput{}
-		out.Body.Message = "already on latest version"
-		out.Body.Version = info.Current
+		out.Body.Message = "all components are up to date"
 		return out, nil
 	}
 
-	containerName := os.Getenv("TIDEFLY_CONTAINER_NAME")
-	if containerName == "" {
-		containerName = "tidefly_backend"
+	var toUpdate []ComponentVersion
+	for _, c := range info.Components {
+		if c.UpdateAvailable {
+			toUpdate = append(toUpdate, c)
+		}
 	}
 
-	imageName := fmt.Sprintf("tidefly/tidefly-plane:%s", info.Latest)
+	var names []string
+	for _, c := range toUpdate {
+		names = append(names, c.Name)
+	}
 
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
-		if err := pullAndRestart(bgCtx, containerName, imageName, h); err != nil {
+		if err := h.pullAndRestartAll(bgCtx, toUpdate); err != nil {
 			h.log.Errorw("self_update", "update failed", "error", err.Error())
 			updateBus.publish(progressEvent{Status: "error", Message: err.Error()})
 		}
 	}()
 
 	out := &UpdateOutput{}
-	out.Body.Message = fmt.Sprintf("update to %s initiated — plane will restart shortly", info.Latest)
-	out.Body.Version = info.Latest
+	out.Body.Message = "update initiated — services will restart shortly"
+	out.Body.Components = names
 	return out, nil
 }
 
-func pullAndRestart(ctx context.Context, containerName, imageName string, h *Handler) error {
+func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentVersion) error {
 	cli, err := dockerclient.NewClientWithOpts(
 		dockerclient.FromEnv,
 		dockerclient.WithAPIVersionNegotiation(),
@@ -137,42 +166,63 @@ func pullAndRestart(ctx context.Context, containerName, imageName string, h *Han
 		_ = cli.Close()
 	}(cli)
 
-	h.log.Info("self_update", "pulling image", "image", imageName)
-	updateBus.publish(progressEvent{Status: "pulling", Message: "pulling " + imageName})
-
-	rc, err := cli.ImagePull(ctx, imageName, dockerimage.PullOptions{})
-	if err != nil {
-		return fmt.Errorf("image pull: %w", err)
-	}
-	defer func(rc io.ReadCloser) {
-		_ = rc.Close()
-	}(rc)
-
-	// Stream Docker pull progress to SSE bus
-	dec := json.NewDecoder(rc)
-	for dec.More() {
-		var msg struct {
-			Status string `json:"status"`
-			ID     string `json:"id"`
-		}
-		if err := dec.Decode(&msg); err != nil {
+	// Pull all images first (parallel)
+	var wg sync.WaitGroup
+	for _, c := range components {
+		img, ok := componentImages[c.Name]
+		if !ok {
 			continue
 		}
-		updateBus.publish(progressEvent{
-			Status:  "pulling",
-			Message: msg.Status,
-			Layer:   msg.ID,
-		})
+		imageName := fmt.Sprintf("%s:%s", img, c.Latest)
+		wg.Add(1)
+		go func(name, image string) {
+			defer wg.Done()
+			updateBus.publish(progressEvent{Status: "pulling", Message: "pulling " + image, Component: name})
+			rc, err := cli.ImagePull(ctx, image, dockerimage.PullOptions{})
+			if err != nil {
+				updateBus.publish(progressEvent{Status: "error", Message: err.Error(), Component: name})
+				return
+			}
+			defer func(rc io.ReadCloser) {
+				_ = rc.Close()
+			}(rc)
+			dec := json.NewDecoder(rc)
+			for dec.More() {
+				var msg struct {
+					Status string `json:"status"`
+					ID     string `json:"id"`
+				}
+				if err := dec.Decode(&msg); err != nil {
+					continue
+				}
+				updateBus.publish(progressEvent{Status: "pulling", Message: msg.Status, Layer: msg.ID, Component: name})
+			}
+			updateBus.publish(progressEvent{Status: "pulled", Message: image + " ready", Component: name})
+		}(c.Name, imageName)
+	}
+	wg.Wait()
+
+	// Restart in order: ui first, plane last
+	restartOrder := []string{"ui", "plane"}
+	for _, name := range restartOrder {
+		cn := containerName(name)
+		if cn == "" {
+			continue
+		}
+		// Check if container exists
+		_, err := cli.ContainerInspect(ctx, cn)
+		if err != nil {
+			continue // not running, skip
+		}
+		updateBus.publish(progressEvent{Status: "restarting", Message: "restarting " + cn, Component: name})
+		if err := cli.ContainerRestart(ctx, cn, dockertypes.StopOptions{Timeout: new(5)}); err != nil {
+			updateBus.publish(progressEvent{Status: "error", Message: err.Error(), Component: name})
+			continue
+		}
+		updateBus.publish(progressEvent{Status: "restarted", Message: cn + " restarted", Component: name})
 	}
 
-	h.log.Info("self_update", "image pulled, restarting", "container", containerName)
-	updateBus.publish(progressEvent{Status: "pulling", Message: "restarting container..."})
-
-	if err := cli.ContainerRestart(ctx, containerName, dockercontainer.StopOptions{Timeout: new(5)}); err != nil {
-		return fmt.Errorf("container restart: %w", err)
-	}
-
-	updateBus.publish(progressEvent{Status: "done", Message: "restart triggered"})
+	updateBus.publish(progressEvent{Status: "done", Message: "all updates applied"})
 	return nil
 }
 
