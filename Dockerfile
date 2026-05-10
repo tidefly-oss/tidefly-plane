@@ -3,28 +3,29 @@
 # =============================================================================
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
+
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Templates clonen
 RUN git clone --depth=1 https://github.com/tidefly-oss/tidefly-templates /templates
 
-# Dependencies mit Go module cache (bleibt zwischen Builds gecacht)
+# Dependencies cachen
 COPY go.mod go.sum ./
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     go mod download && go mod verify
 
-# Wire installieren (gecacht via GOPATH cache)
+# Wire installieren
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     go install github.com/google/wire/cmd/wire@latest
 
-# Source kopieren
 COPY . .
 
-# Wire Bindings generieren + Binary bauen
 ARG VERSION=v0.0.1-alpha.1
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
+
+# Wire + main binary
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     wire ./internal/platform/bootstrap/ && \
@@ -39,19 +40,33 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
       -o /out/tidefly-plane \
       ./cmd/tidefly-plane
 
+# Healthcheck binary
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux \
+    go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o /out/healthcheck \
+      ./cmd/healthcheck
+
 # =============================================================================
 # Runtime Stage - scratch
 # =============================================================================
 FROM scratch
+
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /templates /home/tidefly/templates
+
 WORKDIR /app
 COPY --from=builder /out/tidefly-plane .
+COPY --from=builder /out/healthcheck .
 
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
+
 LABEL org.opencontainers.image.title="tidefly-plane" \
       org.opencontainers.image.description="Tidefly Plane - container management backend" \
       org.opencontainers.image.version="${VERSION}" \
@@ -61,4 +76,6 @@ LABEL org.opencontainers.image.title="tidefly-plane" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 EXPOSE 8181 7443
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/healthcheck"]
 ENTRYPOINT ["/app/tidefly-plane"]

@@ -20,10 +20,10 @@ import (
 // ── Progress Bus ──────────────────────────────────────────────────────────────
 
 type progressEvent struct {
-	Status    string `json:"status"` // "pulling" | "done" | "error"
+	Status    string `json:"status"`
 	Message   string `json:"message"`
 	Layer     string `json:"layer,omitempty"`
-	Component string `json:"component,omitempty"` // componentPlane | componentUI | "caddy"
+	Component string `json:"component,omitempty"`
 }
 
 type progressBus struct {
