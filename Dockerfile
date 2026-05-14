@@ -76,6 +76,6 @@ LABEL org.opencontainers.image.title="tidefly-plane" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 EXPOSE 8181 7443
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
     CMD ["/app/healthcheck"]
 ENTRYPOINT ["/app/tidefly-plane"]
