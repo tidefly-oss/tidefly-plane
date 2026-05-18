@@ -3,7 +3,7 @@ module github.com/tidefly-oss/tidefly-plane
 go 1.26.3
 
 require (
-	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.7.0
 	github.com/go-git/go-git/v5 v5.19.0
@@ -140,7 +140,7 @@ require (
 	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260511170946-3700d4141b60 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gotest.tools/v3 v3.5.2 // indirect
 )
