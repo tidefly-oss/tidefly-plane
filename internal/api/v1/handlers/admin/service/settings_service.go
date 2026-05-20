@@ -29,6 +29,7 @@ type SettingsUpdateInput struct {
 	NotifyOnDeploy        *bool
 	NotifyOnContainerDown *bool
 	NotifyOnWebhookFail   *bool
+	APIDocsEnabled        *bool
 }
 
 type SettingsService struct {
@@ -70,6 +71,7 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	helpers.ApplyIfSet(&settings.NotifyOnDeploy, input.NotifyOnDeploy)
 	helpers.ApplyIfSet(&settings.NotifyOnContainerDown, input.NotifyOnContainerDown)
 	helpers.ApplyIfSet(&settings.NotifyOnWebhookFail, input.NotifyOnWebhookFail)
+	helpers.ApplyIfSet(&settings.APIDocsEnabled, input.APIDocsEnabled)
 
 	if err := s.repo.Save(&settings); err != nil {
 		return models.SystemSettings{}, fmt.Errorf("update settings: %w", err)

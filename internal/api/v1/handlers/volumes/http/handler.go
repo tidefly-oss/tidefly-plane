@@ -14,6 +14,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
 type Handler struct {
@@ -21,10 +22,11 @@ type Handler struct {
 	deployer *deploy.Deployer
 	log      *logger.Logger
 	db       *gorm.DB
+	bus      *eventbus.Bus
 }
 
-func New(rt runtime.Runtime, deployer *deploy.Deployer, db *gorm.DB, log *logger.Logger) *Handler {
-	return &Handler{runtime: rt, deployer: deployer, log: log, db: db}
+func New(rt runtime.Runtime, deployer *deploy.Deployer, db *gorm.DB, log *logger.Logger, bus *eventbus.Bus) *Handler {
+	return &Handler{runtime: rt, deployer: deployer, log: log, db: db, bus: bus}
 }
 
 type ContainerRef struct {
@@ -124,6 +126,11 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	if err != nil {
 		return nil, fmt.Errorf("delete volume: %w", err)
 	}
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventVolumeDeleted,
+		Topic:   eventbus.TopicVolumes,
+		Payload: eventbus.VolumeDeletedPayload{Name: input.ID},
+	})
 	return nil, nil
 }
 

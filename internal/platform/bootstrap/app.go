@@ -11,6 +11,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
@@ -30,6 +31,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/logwatcher"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
 type App struct {
@@ -50,6 +52,8 @@ type App struct {
 	metrics     *metrics.Registry
 	caService   *ca.Service
 	agentSrv    *agentsvc.Server
+	bus         *eventbus.Bus
+	ingress     ingress.Adapter
 }
 
 func NewApp(
@@ -70,25 +74,31 @@ func NewApp(
 	metricsReg *metrics.Registry,
 	caService *ca.Service,
 	agentSrv *agentsvc.Server,
+	bus *eventbus.Bus,
+	ingressAdapter ingress.Adapter,
 ) *App {
 	return &App{
 		cfg: cfg, log: log, rt: rt, db: db,
 		jwtSvc: jwtSvc, tokenStore: tokenStore,
-		caddy:      caddy,
-		templateLd: templateLd, notifSvc: notifSvc,
-		gitSvc: gitSvc, webhookSvc: webhookSvc,
-		jobServer: jobServer, asynq: asynqClient,
+		caddy:       caddy,
+		templateLd:  templateLd,
+		notifSvc:    notifSvc,
+		gitSvc:      gitSvc,
+		webhookSvc:  webhookSvc,
+		jobServer:   jobServer,
+		asynq:       asynqClient,
 		notifierSvc: notifierSvc,
 		metrics:     metricsReg,
 		caService:   caService,
 		agentSrv:    agentSrv,
+		bus:         bus,
+		ingress:     ingressAdapter,
 	}
 }
 
 func (a *App) Run(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	// Bootstrap Caddy on startup
 	if a.cfg.Caddy.Enabled {
 		if err := a.caddy.Bootstrap(ctx); err != nil {
 			a.log.Warn("app", "caddy bootstrap failed — continuing without proxy", err)
@@ -119,21 +129,20 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 	}
 	if a.jobServer != nil {
 		eg.Go(func() error { return a.jobServer.Run(ctx) })
-		a.log.Info(
-			"app", fmt.Sprintf(
-				"background jobs enabled (cleanup: %s, healthcheck: %s)",
-				a.cfg.Jobs.CleanupCron, a.cfg.Jobs.HealthCheckCron,
-			),
-		)
+		a.log.Info("app", fmt.Sprintf(
+			"background jobs enabled (cleanup: %s, healthcheck: %s)",
+			a.cfg.Jobs.CleanupCron, a.cfg.Jobs.HealthCheckCron,
+		))
 	}
-
-	// CA renewal job — checks daily, renews certs expiring within 30 days
 	a.caService.StartRenewalJob(ctx)
 	a.log.Info("app", "CA certificate renewal job started")
 
-	// Agent gRPC server — accepts worker connections via mTLS
 	eg.Go(func() error { return a.agentSrv.Start(ctx) })
 	a.log.Info("app", fmt.Sprintf("agent gRPC server listening on :%s", a.cfg.App.AgentGRPCPort))
+
+	a.bus.StartRuntimeWatcher(ctx, a.rt, a.log)
+	a.bus.StartMetricsTicker(ctx, a.metrics)
+	a.log.Info("app", "WebSocket event bus started")
 }
 
 func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
@@ -141,10 +150,7 @@ func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
 	a.log.Info("app", fmt.Sprintf("starting tidefly-plane on %s (env: %s)", addr, a.cfg.App.Env))
 	a.log.Info("app", fmt.Sprintf("OpenAPI docs: http://localhost%s/docs", addr))
 
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: e,
-	}
+	srv := &http.Server{Addr: addr, Handler: e}
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -165,13 +171,12 @@ func (a *App) buildEcho() *echo.Echo {
 	e.Use(middleware.RequestID())
 	e.Use(middleware.CORS())
 	e.Use(middleware.SecurityHeaders())
-	e.Use(
-		middleware.RequestLogger(
-			a.log, middleware.RequestLoggerOptions{
-				SlowThreshold: time.Duration(a.cfg.Logger.SlowQueryMS) * time.Millisecond,
-			},
-		),
-	)
+	e.Use(middleware.GuardDocs(a.db))
+	e.Use(middleware.RequestLogger(
+		a.log, middleware.RequestLoggerOptions{
+			SlowThreshold: time.Duration(a.cfg.Logger.SlowQueryMS) * time.Millisecond,
+		},
+	))
 
 	humaConfig := huma.DefaultConfig("Tidefly API", "0.0.1-alpha.1")
 	humaConfig.Info.Description = "Container Management Platform"
@@ -182,7 +187,6 @@ func (a *App) buildEcho() *echo.Echo {
 		{Name: "Auth", Description: "Authentication & sessions"},
 		{Name: "Backup", Description: "Backup management"},
 		{Name: "Containers", Description: "Container lifecycle"},
-		{Name: "Deploy", Description: "Deployment management"},
 		{Name: "Git", Description: "Git integrations"},
 		{Name: "Images", Description: "Container images"},
 		{Name: "Logs", Description: "Application & audit logs"},
@@ -193,10 +197,7 @@ func (a *App) buildEcho() *echo.Echo {
 		{Name: "Templates", Description: "Service templates"},
 		{Name: "Volumes", Description: "Docker volumes"},
 		{Name: "Webhooks", Description: "Webhook configuration"},
-	}
-	if !a.cfg.App.DocsEnabled {
-		humaConfig.DocsPath = ""
-		a.log.Info("app", "API docs disabled via API_DOCS_ENABLED=false")
+		{Name: "Services", Description: "Manifest-based service management"},
 	}
 
 	humaAPI := adapter.NewEchoV5Adapter(e, humaConfig)
@@ -208,6 +209,8 @@ func (a *App) buildEcho() *echo.Echo {
 		a.asynq, a.notifierSvc, a.metrics,
 		a.caService,
 		agentsvc.NewClient(a.agentSrv.Registry()),
+		a.bus,
+		a.ingress,
 	)
 
 	return e

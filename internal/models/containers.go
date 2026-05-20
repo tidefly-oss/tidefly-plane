@@ -1,57 +1,31 @@
 package models
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-	"gorm.io/gorm"
-)
+// ContainerMeta stores Tidefly-specific metadata for containers that
+// Docker/Podman don't natively support. One row per container ID.
+// For managed services, Service.ManifestJSON remains the source of truth
+// for desired state — ContainerMeta is the fast-read cache for the runtime layer.
+type ContainerMeta struct {
+	// ContainerID is the Docker/Podman short or full container ID.
+	ContainerID string `gorm:"primaryKey;type:varchar(64)" json:"container_id"`
 
-type ServiceStatus string
+	// ServiceID links this container to a managed Service record.
+	// Empty string for plain (unmanaged) containers.
+	ServiceID *string `gorm:"type:uuid;index;default:null" json:"service_id,omitempty"`
 
-const (
-	ServiceStatusDeploying ServiceStatus = "deploying"
-	ServiceStatusRunning   ServiceStatus = "running"
-	ServiceStatusStopped   ServiceStatus = "stopped" //nolint:unused
-	ServiceStatusFailed    ServiceStatus = "failed"
-)
+	// DeployStrategy controls how redeployments are rolled out.
+	// One of: "rolling" | "recreate" | "blue-green". Default: "rolling".
+	DeployStrategy string `gorm:"type:varchar(32);default:'rolling'" json:"deploy_strategy"`
 
-// Service represents a deployed template instance.
-type Service struct {
-	ID           uuid.UUID           `gorm:"type:uuid;primaryKey"         json:"id"`
-	Name         string              `gorm:"not null"                     json:"name"`
-	TemplateSlug string              `gorm:"not null"                     json:"template_slug"`
-	Version      string              `gorm:"not null"                     json:"version"`
-	Status       ServiceStatus       `gorm:"not null;default:'deploying'" json:"status"`
-	ProjectID    string              `gorm:"not null;index"               json:"project_id"`
-	WorkerID     string              `gorm:"type:varchar(64);default:''"  json:"worker_id,omitempty"`
-	CreatedAt    time.Time           `                                     json:"created_at"`
-	UpdatedAt    time.Time           `                                     json:"updated_at"`
-	Credentials  []ServiceCredential `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"credentials,omitempty"`
+	// AutoscalingEnabled — when true the autoscale job manages replica count.
+	AutoscalingEnabled bool `gorm:"default:false" json:"autoscaling_enabled"`
+
+	// Replicas is the desired replica count when autoscaling is off.
+	Replicas int `gorm:"default:1" json:"replicas"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func (s *Service) BeforeCreate(_ *gorm.DB) error {
-	if s.ID == uuid.Nil {
-		s.ID = uuid.New()
-	}
-	return nil
-}
-
-// ServiceCredential stores a single credential for a service.
-// The plaintext is only available at creation time — afterwards only the hash.
-type ServiceCredential struct {
-	ID               uuid.UUID  `gorm:"type:uuid;primaryKey"     json:"id"`
-	ServiceID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
-	Key              string     `gorm:"not null"                 json:"key"`
-	Label            string     `gorm:"not null"                 json:"label"`
-	Hash             string     `gorm:"not null"                 json:"-"`
-	PlaintextShownAt *time.Time `                                json:"plaintext_shown_at,omitempty"`
-	CreatedAt        time.Time  `                                json:"created_at"`
-}
-
-func (c *ServiceCredential) BeforeCreate(_ *gorm.DB) error {
-	if c.ID == uuid.Nil {
-		c.ID = uuid.New()
-	}
-	return nil
-}
+func (*ContainerMeta) TableName() string { return "container_meta" }

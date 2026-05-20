@@ -25,12 +25,12 @@ func (r *SettingsRepository) Get() (models.SystemSettings, error) {
 }
 
 func (r *SettingsRepository) Save(s *models.SystemSettings) error {
-	if err := r.db.Save(s).Error; err != nil {
+	if err := r.db.Session(&gorm.Session{FullSaveAssociations: false}).
+		Select("*").Save(s).Error; err != nil {
 		return fmt.Errorf("save settings: %w", err)
 	}
 	return nil
 }
-
 func (r *SettingsRepository) FirstOrCreate(s *models.SystemSettings) error {
 	if err := r.db.FirstOrCreate(s).Error; err != nil {
 		return fmt.Errorf("first or create settings: %w", err)

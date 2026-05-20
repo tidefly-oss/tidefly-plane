@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -14,77 +13,10 @@ import (
 	dockertypes "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
-	"github.com/labstack/echo/v5"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
-// ── Progress Bus ──────────────────────────────────────────────────────────────
-
-type progressEvent struct {
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-	Layer     string `json:"layer,omitempty"`
-	Component string `json:"component,omitempty"`
-}
-
-type progressBus struct {
-	mu   sync.RWMutex
-	subs map[chan progressEvent]struct{}
-}
-
-var updateBus = &progressBus{
-	subs: make(map[chan progressEvent]struct{}),
-}
-
-func (b *progressBus) subscribe() chan progressEvent {
-	ch := make(chan progressEvent, 32)
-	b.mu.Lock()
-	b.subs[ch] = struct{}{}
-	b.mu.Unlock()
-	return ch
-}
-
-func (b *progressBus) unsubscribe(ch chan progressEvent) {
-	b.mu.Lock()
-	delete(b.subs, ch)
-	b.mu.Unlock()
-}
-
-func (b *progressBus) publish(ev progressEvent) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for ch := range b.subs {
-		select {
-		case ch <- ev:
-		default:
-		}
-	}
-}
-
-// ── Version Check ─────────────────────────────────────────────────────────────
-
-type VersionInput struct{}
-
-type VersionOutput struct {
-	Body versionInfo
-}
-
-func (h *Handler) Version(ctx context.Context, _ *VersionInput) (*VersionOutput, error) {
-	info, err := h.fetchVersionInfo(ctx)
-	if err != nil {
-		h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
-		return &VersionOutput{Body: versionInfo{
-			Components: []ComponentVersion{{
-				Name:    componentPlane,
-				Current: currentVersion(),
-				Latest:  versionUnknown,
-			}},
-			AnyUpdateAvailable: false,
-		}}, nil
-	}
-	return &VersionOutput{Body: *info}, nil
-}
-
-// ── Self-Update ───────────────────────────────────────────────────────────────
+const systemUpdateID = "system-update"
 
 type UpdateInput struct{}
 
@@ -95,13 +27,11 @@ type UpdateOutput struct {
 	}
 }
 
-// component → image map
 var componentImages = map[string]string{
 	componentPlane: "tidefly/tidefly-plane",
 	componentUI:    "tidefly/tidefly-ui",
 }
 
-// component → container name map (dev + prod)
 func containerName(component string) string {
 	name := os.Getenv("TIDEFLY_CONTAINER_NAME")
 	switch component {
@@ -144,7 +74,14 @@ func (h *Handler) UpdateSelf(ctx context.Context, _ *UpdateInput) (*UpdateOutput
 		defer cancel()
 		if err := h.pullAndRestartAll(bgCtx, toUpdate); err != nil {
 			h.log.Errorw("self_update", "update failed", "error", err.Error())
-			updateBus.publish(progressEvent{Status: "error", Message: err.Error()})
+			h.bus.Publish(eventbus.Event{
+				Type:  eventbus.EventDeployFailed,
+				Topic: eventbus.TopicDeploy,
+				Payload: eventbus.DeployFailedPayload{
+					DeployID: systemUpdateID,
+					Error:    err.Error(),
+				},
+			})
 		}
 	}()
 
@@ -162,11 +99,8 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	if err != nil {
 		return fmt.Errorf("docker client: %w", err)
 	}
-	defer func(cli *dockerclient.Client) {
-		_ = cli.Close()
-	}(cli)
+	defer func(cli *dockerclient.Client) { _ = cli.Close() }(cli)
 
-	// Pull all images first (parallel)
 	var wg sync.WaitGroup
 	for _, c := range components {
 		img, ok := componentImages[c.Name]
@@ -177,15 +111,28 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		wg.Add(1)
 		go func(name, image string) {
 			defer wg.Done()
-			updateBus.publish(progressEvent{Status: "pulling", Message: "pulling " + image, Component: name})
+			h.bus.Publish(eventbus.Event{
+				Type:  eventbus.EventDeployProgress,
+				Topic: eventbus.TopicDeploy,
+				Payload: eventbus.DeployProgressPayload{
+					DeployID: systemUpdateID,
+					Step:     "pulling",
+					Message:  "pulling " + image,
+				},
+			})
 			rc, err := cli.ImagePull(ctx, image, dockerimage.PullOptions{})
 			if err != nil {
-				updateBus.publish(progressEvent{Status: "error", Message: err.Error(), Component: name})
+				h.bus.Publish(eventbus.Event{
+					Type:  eventbus.EventDeployFailed,
+					Topic: eventbus.TopicDeploy,
+					Payload: eventbus.DeployFailedPayload{
+						DeployID: systemUpdateID,
+						Error:    err.Error(),
+					},
+				})
 				return
 			}
-			defer func(rc io.ReadCloser) {
-				_ = rc.Close()
-			}(rc)
+			defer func(rc io.ReadCloser) { _ = rc.Close() }(rc)
 			dec := json.NewDecoder(rc)
 			for dec.More() {
 				var msg struct {
@@ -195,77 +142,75 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 				if err := dec.Decode(&msg); err != nil {
 					continue
 				}
-				updateBus.publish(progressEvent{Status: "pulling", Message: msg.Status, Layer: msg.ID, Component: name})
+				h.bus.Publish(eventbus.Event{
+					Type:  eventbus.EventDeployProgress,
+					Topic: eventbus.TopicDeploy,
+					Payload: eventbus.DeployProgressPayload{
+						DeployID: systemUpdateID,
+						Step:     "pulling",
+						Message:  msg.Status,
+					},
+				})
 			}
-			updateBus.publish(progressEvent{Status: "pulled", Message: image + " ready", Component: name})
+			h.bus.Publish(eventbus.Event{
+				Type:  eventbus.EventDeployProgress,
+				Topic: eventbus.TopicDeploy,
+				Payload: eventbus.DeployProgressPayload{
+					DeployID: systemUpdateID,
+					Step:     "pulled",
+					Message:  image + " ready",
+				},
+			})
 		}(c.Name, imageName)
 	}
 	wg.Wait()
 
-	// Restart in order: ui first, plane last
 	restartOrder := []string{componentUI, componentPlane}
 	for _, name := range restartOrder {
 		cn := containerName(name)
 		if cn == "" {
 			continue
 		}
-		// Check if container exists
-		_, err := cli.ContainerInspect(ctx, cn)
-		if err != nil {
-			continue // not running, skip
-		}
-		updateBus.publish(progressEvent{Status: "restarting", Message: "restarting " + cn, Component: name})
-		if err := cli.ContainerRestart(ctx, cn, dockertypes.StopOptions{Timeout: new(5)}); err != nil {
-			updateBus.publish(progressEvent{Status: "error", Message: err.Error(), Component: name})
+		if _, err := cli.ContainerInspect(ctx, cn); err != nil {
 			continue
 		}
-		updateBus.publish(progressEvent{Status: "restarted", Message: cn + " restarted", Component: name})
-	}
-
-	updateBus.publish(progressEvent{Status: "done", Message: "all updates applied"})
-	return nil
-}
-
-// ── SSE Update Progress ───────────────────────────────────────────────────────
-
-func (h *Handler) UpdateProgress(c *echo.Context) error {
-	ctx := (*c).Request().Context()
-	resp := (*c).Response()
-
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
-
-	flusher, ok := resp.(http.Flusher)
-	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
-	}
-
-	ch := updateBus.subscribe()
-	defer updateBus.unsubscribe(ch)
-
-	ticker := time.NewTicker(20 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case ev, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			data, _ := json.Marshal(ev)
-			_, _ = fmt.Fprintf(resp, "data: %s\n\n", data)
-			flusher.Flush()
-			if ev.Status == "done" || ev.Status == "error" {
-				return nil
-			}
-		case <-ticker.C:
-			_, _ = fmt.Fprintf(resp, "event: ping\ndata: {}\n\n")
-			flusher.Flush()
+		h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventDeployProgress,
+			Topic: eventbus.TopicDeploy,
+			Payload: eventbus.DeployProgressPayload{
+				DeployID: systemUpdateID,
+				Step:     "restarting",
+				Message:  "restarting " + cn,
+			},
+		})
+		if err := cli.ContainerRestart(ctx, cn, dockertypes.StopOptions{Timeout: new(5)}); err != nil {
+			h.bus.Publish(eventbus.Event{
+				Type:  eventbus.EventDeployFailed,
+				Topic: eventbus.TopicDeploy,
+				Payload: eventbus.DeployFailedPayload{
+					DeployID: "system-update",
+					Error:    err.Error(),
+				},
+			})
+			continue
 		}
+		h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventDeployProgress,
+			Topic: eventbus.TopicDeploy,
+			Payload: eventbus.DeployProgressPayload{
+				DeployID: systemUpdateID,
+				Step:     "restarted",
+				Message:  cn + " restarted",
+			},
+		})
 	}
+
+	h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventDeployDone,
+		Topic: eventbus.TopicDeploy,
+		Payload: eventbus.DeployDonePayload{
+			DeployID: systemUpdateID,
+		},
+	})
+	return nil
 }

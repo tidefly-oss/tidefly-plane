@@ -8,10 +8,10 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
-	dockerruntime "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime/docker"
 )
 
 func (h *Handler) Logs(c *echo.Context) error {
@@ -29,17 +29,16 @@ func (h *Handler) Logs(c *echo.Context) error {
 	resp.Header().Set("Connection", "keep-alive")
 	resp.Header().Set("X-Accel-Buffering", "no")
 	resp.WriteHeader(http.StatusOK)
+
 	flusher, ok := resp.(http.Flusher)
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
 	}
 
 	ctx := c.Request().Context()
-	logs, err := h.runtime.ContainerLogs(
-		ctx, id, runtime.LogOptions{
-			Follow: true, Tail: tail, Since: since, Timestamps: timestamps,
-		},
-	)
+	logs, err := h.runtime.ContainerLogs(ctx, id, runtime.LogOptions{
+		Follow: true, Tail: tail, Since: since, Timestamps: timestamps,
+	})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -58,10 +57,7 @@ func (h *Handler) Logs(c *echo.Context) error {
 		}
 		if _, err := io.ReadFull(logs, hdr); err != nil {
 			if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
-				_, err := fmt.Fprintf(resp, "event: done\ndata: {}\n\n")
-				if err != nil {
-					return err
-				}
+				_, _ = fmt.Fprintf(resp, "event: done\ndata: {}\n\n")
 				flusher.Flush()
 			}
 			return nil
@@ -79,58 +75,170 @@ func (h *Handler) Logs(c *echo.Context) error {
 			streamType = "stderr"
 		}
 		data, _ := json.Marshal(map[string]string{"stream": streamType, "line": string(payload)})
-		_, err := fmt.Fprintf(resp, "event: log\ndata: %s\n\n", data)
-		if err != nil {
+		if _, err := fmt.Fprintf(resp, "event: log\ndata: %s\n\n", data); err != nil {
 			return err
 		}
 		flusher.Flush()
 	}
 }
 
+// Stats streams container resource metrics as SSE every second.
 func (h *Handler) Stats(c *echo.Context) error {
 	id := c.Param("id")
+
 	resp := c.Response()
 	resp.Header().Set("Content-Type", "text/event-stream")
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 	resp.Header().Set("X-Accel-Buffering", "no")
 	resp.WriteHeader(http.StatusOK)
+
 	flusher, ok := resp.(http.Flusher)
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
 	}
 
 	ctx := c.Request().Context()
-	statsStream, err := h.runtime.ContainerStats(ctx, id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	defer func() {
-		if err := statsStream.Close(); err != nil {
-			h.log.Error("streams", "failed to close stats stream", err)
-		}
-	}()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	decoder := json.NewDecoder(statsStream)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
+		case <-ticker.C:
+			rc, err := h.runtime.ContainerStats(ctx, id)
+			if err != nil {
+				_, _ = fmt.Fprintf(resp, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+				flusher.Flush()
+				return nil
+			}
+
+			buf := make([]byte, 65536)
+			n, _ := rc.Read(buf)
+			_ = rc.Close()
+			if n == 0 {
+				continue
+			}
+			raw := buf[:n]
+
+			entry := parseStats(raw)
+			if entry == nil {
+				continue
+			}
+
+			data, _ := json.Marshal(entry)
+			if _, err := fmt.Fprintf(resp, "event: stats\ndata: %s\n\n", data); err != nil {
+				return nil
+			}
+			flusher.Flush()
 		}
-		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
-			return nil
+	}
+}
+
+type statsEntry struct {
+	CPUPercent   float64 `json:"cpu_percent"`
+	MemUsageMB   float64 `json:"mem_usage_mb"`
+	MemLimitMB   float64 `json:"mem_limit_mb"`
+	MemPercent   float64 `json:"mem_percent"`
+	NetworkRxMB  float64 `json:"network_rx_mb"`
+	NetworkTxMB  float64 `json:"network_tx_mb"`
+	BlockReadMB  float64 `json:"block_read_mb"`
+	BlockWriteMB float64 `json:"block_write_mb"`
+	PIDs         int     `json:"pids"`
+}
+
+type dockerStatsRaw struct {
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs     int    `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	PreCPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+	} `json:"precpu_stats"`
+	MemoryStats struct {
+		Usage uint64            `json:"usage"`
+		Limit uint64            `json:"limit"`
+		Stats map[string]uint64 `json:"stats"`
+	} `json:"memory_stats"`
+	Networks map[string]struct {
+		RxBytes uint64 `json:"rx_bytes"`
+		TxBytes uint64 `json:"tx_bytes"`
+	} `json:"networks"`
+	BlkioStats struct {
+		IOServiceBytesRecursive []struct {
+			Op    string `json:"op"`
+			Value uint64 `json:"value"`
+		} `json:"io_service_bytes_recursive"`
+	} `json:"blkio_stats"`
+	PidsStats struct {
+		Current int `json:"current"`
+	} `json:"pids_stats"`
+}
+
+func parseStats(raw []byte) *statsEntry {
+	var ds dockerStatsRaw
+	if err := json.Unmarshal(raw, &ds); err != nil {
+		return nil
+	}
+
+	// CPU
+	cpuDelta := float64(ds.CPUStats.CPUUsage.TotalUsage) - float64(ds.PreCPUStats.CPUUsage.TotalUsage)
+	sysDelta := float64(ds.CPUStats.SystemCPUUsage) - float64(ds.PreCPUStats.SystemCPUUsage)
+	cpus := ds.CPUStats.OnlineCPUs
+	if cpus == 0 {
+		cpus = 1
+	}
+	var cpuPct float64
+	if sysDelta > 0 {
+		cpuPct = (cpuDelta / sysDelta) * float64(cpus) * 100
+	}
+
+	// Memory
+	cache := ds.MemoryStats.Stats["cache"]
+	if cache == 0 {
+		cache = ds.MemoryStats.Stats["inactive_file"]
+	}
+	memUsage := float64(ds.MemoryStats.Usage-cache) / 1024 / 1024
+	memLimit := float64(ds.MemoryStats.Limit) / 1024 / 1024
+	var memPct float64
+	if ds.MemoryStats.Limit > 0 {
+		memPct = float64(ds.MemoryStats.Usage-cache) / float64(ds.MemoryStats.Limit) * 100
+	}
+
+	// Network
+	var rxBytes, txBytes uint64
+	for _, n := range ds.Networks {
+		rxBytes += n.RxBytes
+		txBytes += n.TxBytes
+	}
+
+	// Block I/O
+	var blockRead, blockWrite uint64
+	for _, b := range ds.BlkioStats.IOServiceBytesRecursive {
+		switch b.Op {
+		case "Read":
+			blockRead += b.Value
+		case "Write":
+			blockWrite += b.Value
 		}
-		parsed, err := dockerruntime.ParseStats(raw)
-		if err != nil {
-			continue
-		}
-		data, _ := json.Marshal(parsed)
-		_, err = fmt.Fprintf(resp, "event: stats\ndata: %s\n\n", data)
-		if err != nil {
-			return err
-		}
-		flusher.Flush()
+	}
+
+	return &statsEntry{
+		CPUPercent:   cpuPct,
+		MemUsageMB:   memUsage,
+		MemLimitMB:   memLimit,
+		MemPercent:   memPct,
+		NetworkRxMB:  float64(rxBytes) / 1024 / 1024,
+		NetworkTxMB:  float64(txBytes) / 1024 / 1024,
+		BlockReadMB:  float64(blockRead) / 1024 / 1024,
+		BlockWriteMB: float64(blockWrite) / 1024 / 1024,
+		PIDs:         ds.PidsStats.Current,
 	}
 }

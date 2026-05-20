@@ -7,14 +7,16 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/images/helpers"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
 type Handler struct {
 	runtime runtime.Runtime
+	bus     *eventbus.Bus
 }
 
-func New(rt runtime.Runtime) *Handler {
-	return &Handler{runtime: rt}
+func New(rt runtime.Runtime, bus *eventbus.Bus) *Handler {
+	return &Handler{runtime: rt, bus: bus}
 }
 
 type ImageContainerRef struct {
@@ -47,7 +49,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 	internalImages := map[string]bool{}
 	if containers, err := h.runtime.ListContainers(ctx, true); err == nil {
 		for _, ct := range containers {
-			if ct.Labels["tidefly-plane.internal"] == "true" && ct.Image != "" {
+			if ct.Labels["tidefly.internal"] == "true" && ct.Image != "" {
 				internalImages[ct.Image] = true
 			}
 		}
@@ -66,6 +68,11 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	if err := h.runtime.DeleteImage(ctx, input.ID, input.Force); err != nil {
 		return nil, fmt.Errorf("delete image: %w", err)
 	}
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventImageDeleted,
+		Topic:   eventbus.TopicImages,
+		Payload: eventbus.ImageDeletedPayload{ID: input.ID},
+	})
 	return nil, nil
 }
 
@@ -97,6 +104,9 @@ outer:
 	}
 	refs := make([]ImageContainerRef, 0)
 	for _, ct := range containers {
+		if ct.Labels["tidefly.internal"] == "true" {
+			continue
+		}
 		for _, tag := range matchedTags {
 			if ct.Image == tag || strings.HasPrefix(ct.Image, tag) {
 				refs = append(refs, ImageContainerRef{ID: ct.ID, Name: ct.Name})

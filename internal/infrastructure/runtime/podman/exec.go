@@ -6,20 +6,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/gorilla/websocket"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
 
-type ExecMessage struct {
-	Type string `json:"type"`
-	Data string `json:"data,omitempty"`
-	Cols uint   `json:"cols,omitempty"`
-	Rows uint   `json:"rows,omitempty"`
-}
-
-func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error {
+func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws runtime.ExecConn) error {
 	shell := p.detectShell(ctx, containerID)
 
-	// 1. Create exec session
 	execBody := map[string]any{
 		"AttachStdin":  true,
 		"AttachStdout": true,
@@ -27,7 +19,6 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		"Tty":          true,
 		"Cmd":          []string{shell},
 	}
-
 	code, respBody, err := p.c.post(ctx, "/libpod/containers/"+escPath(containerID)+"/exec", nil, execBody)
 	if err != nil {
 		return fmt.Errorf("podman exec create: %w", err)
@@ -44,8 +35,8 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 	}
 	execID := createResult.ID
 
-	shellInfo, _ := json.Marshal(ExecMessage{Type: "shell", Data: shell})
-	_ = ws.WriteMessage(websocket.TextMessage, shellInfo)
+	shellInfo, _ := json.Marshal(runtime.ExecMessage{Type: "shell", Data: shell})
+	_ = ws.WriteMessage(runtime.WSText, shellInfo)
 
 	conn, err := p.c.hijack(ctx, "/libpod/exec/"+execID+"/start", `{"Detach":false,"Tty":true,"h":24,"w":80}`)
 	if err != nil {
@@ -60,17 +51,17 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		for {
 			n, readErr := conn.Read(buf)
 			if n > 0 {
-				msg := ExecMessage{Type: "output", Data: string(buf[:n])}
+				msg := runtime.ExecMessage{Type: "output", Data: string(buf[:n])}
 				data, _ := json.Marshal(msg)
-				if sendErr := ws.WriteMessage(websocket.TextMessage, data); sendErr != nil {
+				if sendErr := ws.WriteMessage(runtime.WSText, data); sendErr != nil {
 					errCh <- sendErr
 					return
 				}
 			}
 			if readErr != nil {
 				if readErr == io.EOF {
-					exitMsg, _ := json.Marshal(ExecMessage{Type: "exit"})
-					_ = ws.WriteMessage(websocket.TextMessage, exitMsg)
+					exitMsg, _ := json.Marshal(runtime.ExecMessage{Type: "exit"})
+					_ = ws.WriteMessage(runtime.WSText, exitMsg)
 				}
 				errCh <- readErr
 				return
@@ -82,28 +73,16 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 		for {
 			msgType, raw, readErr := ws.ReadMessage()
 			if readErr != nil {
-				if websocket.IsCloseError(
-					readErr,
-					websocket.CloseNormalClosure,
-					websocket.CloseGoingAway,
-					websocket.CloseNoStatusReceived,
-				) {
-					errCh <- nil
-				} else {
-					errCh <- readErr
-				}
+				errCh <- readErr
 				return
 			}
-
-			if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
+			if msgType != runtime.WSText && msgType != runtime.WSBinary {
 				continue
 			}
-
-			var msg ExecMessage
+			var msg runtime.ExecMessage
 			if err := json.Unmarshal(raw, &msg); err != nil {
 				continue
 			}
-
 			switch msg.Type {
 			case "input":
 				if _, writeErr := conn.Write([]byte(msg.Data)); writeErr != nil {
@@ -130,14 +109,11 @@ func (p *Runtime) ExecAttach(ctx context.Context, containerID string, ws *websoc
 }
 
 func (p *Runtime) detectShell(ctx context.Context, containerID string) string {
-	for _, shell := range []string{"/bin/bash", "/bin/sh", "/bin/ash", "redis-cli"} {
-		if p.canExec(ctx, containerID, shell) {
-			return shell
-		}
+	if p.canExec(ctx, containerID, "/bin/bash") {
+		return "/bin/bash"
 	}
 	return "/bin/sh"
 }
-
 func (p *Runtime) canExec(ctx context.Context, containerID string, binary string) bool {
 	execBody := map[string]any{
 		"AttachStdout": true,
@@ -145,22 +121,18 @@ func (p *Runtime) canExec(ctx context.Context, containerID string, binary string
 		"Tty":          false,
 		"Cmd":          []string{binary, "--version"},
 	}
-
 	code, respBody, err := p.c.post(ctx, "/libpod/containers/"+escPath(containerID)+"/exec", nil, execBody)
 	if err != nil || code != 201 {
 		return false
 	}
-
 	var result struct {
 		ID string `json:"Id"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return false
 	}
-
 	startBody := map[string]any{"Detach": false, "Tty": false}
 	_, _, _ = p.c.post(ctx, "/libpod/exec/"+result.ID+"/start", nil, startBody)
-
 	var session struct {
 		ExitCode int `json:"ExitCode"`
 	}
@@ -168,6 +140,5 @@ func (p *Runtime) canExec(ctx context.Context, containerID string, binary string
 	if err != nil || inspCode != 200 {
 		return false
 	}
-
 	return session.ExitCode != 126 && session.ExitCode != 127
 }

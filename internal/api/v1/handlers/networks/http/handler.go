@@ -9,6 +9,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/repository"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
@@ -17,13 +18,15 @@ type Handler struct {
 	runtime runtime.Runtime
 	log     *logger.Logger
 	filter  *repository.FilterRepository
+	bus     *eventbus.Bus
 }
 
-func New(rt runtime.Runtime, log *logger.Logger, db *gorm.DB) *Handler {
+func New(rt runtime.Runtime, log *logger.Logger, db *gorm.DB, bus *eventbus.Bus) *Handler {
 	return &Handler{
 		runtime: rt,
 		log:     log,
 		filter:  repository.NewFilterRepository(db),
+		bus:     bus,
 	}
 }
 
@@ -115,6 +118,11 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	if err != nil {
 		return nil, fmt.Errorf("delete network: %w", err)
 	}
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventNetworkDeleted,
+		Topic:   eventbus.TopicNetworks,
+		Payload: eventbus.NetworkDeletedPayload{ID: input.ID},
+	})
 	return nil, nil
 }
 

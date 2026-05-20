@@ -7,20 +7,23 @@ import (
 	"io"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"gorm.io/gorm"
 )
 
 type Runtime struct {
 	socketPath string
 	c          *client
+	db         *gorm.DB // optional — nil for plain runtime without DB
 }
 
-func New(socketPath string) (*Runtime, error) {
+func New(socketPath string, db *gorm.DB) (*Runtime, error) {
 	if socketPath == "" {
 		socketPath = "/run/user/1000/podman/podman.sock"
 	}
 	return &Runtime{
 		socketPath: socketPath,
 		c:          newClient(socketPath),
+		db:         db,
 	}, nil
 }
 

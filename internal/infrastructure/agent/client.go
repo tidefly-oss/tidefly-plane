@@ -178,7 +178,7 @@ func (c *Client) Deploy(_ context.Context, workerID string, req DeployRequest) (
 		return nil, fmt.Errorf("unexpected result type")
 	}
 	if !res.Success {
-		return nil, fmt.Errorf("deploy failed: %s", res.Error)
+		return nil, fmt.Errorf("services failed: %s", res.Error)
 	}
 	return res, nil
 }

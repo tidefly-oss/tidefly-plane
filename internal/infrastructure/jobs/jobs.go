@@ -8,6 +8,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"gorm.io/gorm"
@@ -20,15 +21,18 @@ const (
 	TaskRuntimeCleanup     = "runtime:cleanup"
 	TaskRuntimeHealthCheck = "runtime:healthcheck"
 	TaskLogsRetention      = "logs:retention"
+	TaskServiceHealthCheck = "services:healthcheck"
+	TaskServiceAutoscale   = "services:autoscale"
 )
 
 type Server struct {
-	server    *asynq.Server
-	scheduler *asynq.Scheduler
-	client    *asynq.Client
-	handler   *Handler
-	cfg       config.JobsConfig
-	log       *logger.Logger
+	server     *asynq.Server
+	scheduler  *asynq.Scheduler
+	client     *asynq.Client
+	handler    *Handler
+	svcHandler *ServiceJobHandler
+	cfg        config.JobsConfig
+	log        *logger.Logger
 }
 
 type Handler struct {
@@ -48,6 +52,7 @@ func NewServer(
 	log *logger.Logger,
 	notifySvc *notification.Service,
 	metricsReg *metrics.Registry,
+	ingressAdapter ingress.Adapter,
 ) (*Server, error) {
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     redisCfg.Addr,
@@ -74,6 +79,7 @@ func NewServer(
 
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 	client := asynq.NewClient(redisOpt)
+
 	h := &Handler{
 		rt:       rt,
 		db:       db,
@@ -83,22 +89,38 @@ func NewServer(
 		metrics:  metricsReg,
 	}
 
+	svcHandler := NewServiceJobHandler(db, rt, ingressAdapter, log, client)
+
 	return &Server{
-		server:    srv,
-		scheduler: scheduler,
-		client:    client,
-		handler:   h,
-		cfg:       jobsCfg,
-		log:       log,
+		server:     srv,
+		scheduler:  scheduler,
+		client:     client,
+		handler:    h,
+		svcHandler: svcHandler,
+		cfg:        jobsCfg,
+		log:        log,
 	}, nil
 }
 
 func (s *Server) Run(ctx context.Context) error {
 	mux := asynq.NewServeMux()
-	mux.HandleFunc(TaskRuntimeCleanup, s.handler.HandleRuntimeCleanup)
+
+	// ── Runtime jobs ──────────────────────────────────────────────────────────
+	mux.HandleFunc(TaskServiceCleanup, s.svcHandler.HandleServiceCleanup)
 	mux.HandleFunc(TaskRuntimeHealthCheck, s.handler.HandleRuntimeHealthCheck)
 	mux.HandleFunc(TaskLogsRetention, s.handler.HandleLogsRetention)
 	mux.HandleFunc(TaskMetricsCollect, s.handler.HandleMetricsCollect)
+
+	// ── Service lifecycle jobs ────────────────────────────────────────────────
+	mux.HandleFunc(TaskServiceDeploy, s.svcHandler.HandleServiceDeploy)
+	mux.HandleFunc(TaskServiceRedeploy, s.svcHandler.HandleServiceRedeploy)
+	mux.HandleFunc(TaskServiceUpdate, s.svcHandler.HandleServiceUpdate)
+	mux.HandleFunc(TaskServiceDelete, s.svcHandler.HandleServiceDelete)
+
+	// ── Scheduled + event-driven jobs ────────────────────────────────────────
+	mux.HandleFunc(TaskServiceHealthCheck, s.svcHandler.HandleServiceHealthCheck) // fallback @every 30s
+	mux.HandleFunc(TaskServiceAutoscale, s.svcHandler.HandleServiceAutoscale)     // @every 30s
+	mux.HandleFunc(TaskServiceHeal, s.svcHandler.HandleServiceHeal)               // event-driven, immediate
 
 	if err := s.registerSchedules(); err != nil {
 		return fmt.Errorf("jobs: register schedules: %w", err)
@@ -106,6 +128,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.scheduler.Start(); err != nil {
 		return fmt.Errorf("jobs: start scheduler: %w", err)
 	}
+
+	// ── Start event watcher — enqueues TaskServiceHeal on container die/oom/kill ──
+	go s.WatchContainerEvents(ctx)
 
 	s.log.Info("jobs", fmt.Sprintf("background jobs started (runtime: %s)", s.handler.rt.Type()))
 
@@ -125,7 +150,6 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) registerSchedules() error {
-	// ── Runtime Cleanup ──────────────────────────────────────────────────────
 	cleanupTask, err := newTask(
 		TaskRuntimeCleanup, map[string]any{
 			"older_than_hours":   s.cfg.CleanupOlderThan.Hours(),
@@ -144,7 +168,6 @@ func (s *Server) registerSchedules() error {
 		return fmt.Errorf("register cleanup: %w", err)
 	}
 
-	// ── Health Check ─────────────────────────────────────────────────────────
 	healthTask, err := newTask(TaskRuntimeHealthCheck, nil)
 	if err != nil {
 		return err
@@ -156,7 +179,6 @@ func (s *Server) registerSchedules() error {
 		return fmt.Errorf("register healthcheck: %w", err)
 	}
 
-	// ── Log / Data Retention ─────────────────────────────────────────────────
 	retentionTask, err := newTask(
 		TaskLogsRetention, map[string]any{
 			"log_retention_days":          s.cfg.LogRetentionDays,
@@ -174,7 +196,6 @@ func (s *Server) registerSchedules() error {
 		return fmt.Errorf("register log retention: %w", err)
 	}
 
-	// ── Metrics Collect ───────────────────────────────────────────────────────
 	metricsTask, err := newTask(TaskMetricsCollect, nil)
 	if err != nil {
 		return err
@@ -184,6 +205,29 @@ func (s *Server) registerSchedules() error {
 		asynq.Queue("critical"), asynq.MaxRetry(0), asynq.Timeout(10*time.Second),
 	); err != nil {
 		return fmt.Errorf("register metrics collect: %w", err)
+	}
+
+	// Self-healing fallback — catches anything the event watcher missed
+	serviceHealthTask, err := newTask(TaskServiceHealthCheck, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := s.scheduler.Register(
+		"@every 30s", serviceHealthTask,
+		asynq.Queue("critical"), asynq.MaxRetry(0), asynq.Timeout(30*time.Second),
+	); err != nil {
+		return fmt.Errorf("register service healthcheck: %w", err)
+	}
+
+	autoscaleTask, err := newTask(TaskServiceAutoscale, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := s.scheduler.Register(
+		"@every 30s", autoscaleTask,
+		asynq.Queue("critical"), asynq.MaxRetry(0), asynq.Timeout(25*time.Second),
+	); err != nil {
+		return fmt.Errorf("register autoscale: %w", err)
 	}
 
 	return nil

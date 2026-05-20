@@ -62,7 +62,7 @@ func (d *Deployer) Redeploy(ctx context.Context, serviceID string, req DeployReq
 	return err
 }
 
-// DeployFromTemplate runs a full deploy from a template slug + optional Git source.
+// DeployFromTemplate runs a full services from a template slug + optional Git source.
 // Returns the new service ID as a string.
 func (d *Deployer) DeployFromTemplate(ctx context.Context, req DeployRequest) (string, error) {
 	if req.TemplateSlug == "" {

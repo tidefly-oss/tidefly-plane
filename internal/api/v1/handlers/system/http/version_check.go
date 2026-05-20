@@ -23,8 +23,6 @@ const (
 	versionUnknown = "unknown"
 )
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type ComponentVersion struct {
 	Name            string `json:"name"`
 	Current         string `json:"current"`
@@ -39,8 +37,6 @@ type versionInfo struct {
 	Components         []ComponentVersion `json:"components"`
 	AnyUpdateAvailable bool               `json:"any_update_available"`
 }
-
-// ── Cache ─────────────────────────────────────────────────────────────────────
 
 type versionCache struct {
 	mu        sync.RWMutex
@@ -66,8 +62,6 @@ func (c *versionCache) set(info *versionInfo) {
 	c.fetchedAt = time.Now()
 }
 
-// ── GitHub fetcher ────────────────────────────────────────────────────────────
-
 type githubRelease struct {
 	TagName    string `json:"tag_name"`
 	Body       string `json:"body"`
@@ -90,9 +84,7 @@ func fetchGitHubRelease(ctx context.Context, repo string) (*githubRelease, error
 	if err != nil {
 		return nil, err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github API returned %d for %s", resp.StatusCode, repo)
@@ -106,23 +98,14 @@ func fetchGitHubRelease(ctx context.Context, repo string) (*githubRelease, error
 	return &release, nil
 }
 
-// cleanChangelog strips boilerplate sections not relevant for the update dialog.
 func cleanChangelog(body string) string {
-	cutMarkers := []string{
-		"## Docker",
-		"## Platforms",
-		"## Checksums",
-		"## Installation",
-	}
-	for _, marker := range cutMarkers {
+	for _, marker := range []string{"## Docker", "## Platforms", "## Checksums", "## Installation"} {
 		if idx := strings.Index(body, marker); idx != -1 {
 			body = strings.TrimSpace(body[:idx])
 		}
 	}
 	return body
 }
-
-// ── Current version detection ─────────────────────────────────────────────────
 
 func (h *Handler) getContainerVersion(ctx context.Context, containerName string) string {
 	details, err := h.runtime.GetContainer(ctx, containerName)
@@ -136,57 +119,34 @@ func (h *Handler) getContainerVersion(ctx context.Context, containerName string)
 	return versionUnknown
 }
 
-// ── Main fetch ────────────────────────────────────────────────────────────────
-
 func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 	if cached := globalVersionCache.get(); cached != nil {
 		return cached, nil
 	}
-
 	type componentDef struct {
 		name      string
 		repo      string
 		currentFn func() string
 	}
-
 	components := []componentDef{
-		{
-			name:      componentPlane,
-			repo:      "tidefly-plane",
-			currentFn: currentVersion,
-		},
-		{
-			name: componentUI,
-			repo: "tidefly-ui",
-			currentFn: func() string {
-				return h.getContainerVersion(ctx, "tidefly_ui")
-			},
-		},
-		{
-			name: componentAgent,
-			repo: "tidefly-agent",
-			currentFn: func() string {
-				return h.getContainerVersion(ctx, "tidefly_agent")
-			},
-		},
+		{name: componentPlane, repo: "tidefly-plane", currentFn: currentVersion},
+		{name: componentUI, repo: "tidefly-ui", currentFn: func() string {
+			return h.getContainerVersion(ctx, "tidefly_ui")
+		}},
+		{name: componentAgent, repo: "tidefly-agent", currentFn: func() string {
+			return h.getContainerVersion(ctx, "tidefly_agent")
+		}},
 	}
-
 	results := make([]ComponentVersion, len(components))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-
 	for i, c := range components {
 		wg.Add(1)
 		go func(idx int, def componentDef) {
 			defer wg.Done()
 			current := def.currentFn()
-			comp := ComponentVersion{
-				Name:    def.name,
-				Current: current,
-				Latest:  versionUnknown,
-			}
-			release, err := fetchGitHubRelease(ctx, def.repo)
-			if err == nil {
+			comp := ComponentVersion{Name: def.name, Current: current, Latest: versionUnknown}
+			if release, err := fetchGitHubRelease(ctx, def.repo); err == nil {
 				comp.Latest = release.TagName
 				comp.UpdateAvailable = isNewerVersion(release.TagName, current)
 				comp.Changelog = release.Body
@@ -198,9 +158,7 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 			mu.Unlock()
 		}(i, c)
 	}
-
 	wg.Wait()
-
 	anyUpdate := false
 	for _, c := range results {
 		if c.UpdateAvailable {
@@ -208,17 +166,10 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 			break
 		}
 	}
-
-	info := &versionInfo{
-		Components:         results,
-		AnyUpdateAvailable: anyUpdate,
-	}
-
+	info := &versionInfo{Components: results, AnyUpdateAvailable: anyUpdate}
 	globalVersionCache.set(info)
 	return info, nil
 }
-
-// ── Semver helpers ────────────────────────────────────────────────────────────
 
 func isNewerVersion(latest, current string) bool {
 	if current == versionUnknown || current == "" {
@@ -232,10 +183,8 @@ func isNewerVersion(latest, current string) bool {
 func semverGreater(a, b string) bool {
 	aParts := strings.SplitN(a, "-", 2)
 	bParts := strings.SplitN(b, "-", 2)
-
 	aCore := strings.Split(aParts[0], ".")
 	bCore := strings.Split(bParts[0], ".")
-
 	for i := 0; i < 3; i++ {
 		av := versionSegment(aCore, i)
 		bv := versionSegment(bCore, i)
@@ -264,6 +213,27 @@ func versionSegment(parts []string, i int) int {
 	return n
 }
 
-func currentVersion() string {
-	return version.Version
+func currentVersion() string { return version.Version }
+
+// ── Version HTTP handler ──────────────────────────────────────────────────────
+
+type VersionInput struct{}
+type VersionOutput struct {
+	Body versionInfo
+}
+
+func (h *Handler) Version(ctx context.Context, _ *VersionInput) (*VersionOutput, error) {
+	info, err := h.fetchVersionInfo(ctx)
+	if err != nil {
+		h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
+		return &VersionOutput{Body: versionInfo{
+			Components: []ComponentVersion{{
+				Name:    componentPlane,
+				Current: currentVersion(),
+				Latest:  versionUnknown,
+			}},
+			AnyUpdateAvailable: false,
+		}}, nil
+	}
+	return &VersionOutput{Body: *info}, nil
 }

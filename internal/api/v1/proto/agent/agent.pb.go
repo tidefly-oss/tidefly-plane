@@ -1243,7 +1243,7 @@ type PlaneMessage_StreamLogs struct {
 }
 
 type PlaneMessage_Deploy struct {
-	Deploy *CmdDeploy `protobuf:"bytes,16,opt,name=deploy,proto3,oneof"`
+	Deploy *CmdDeploy `protobuf:"bytes,16,opt,name=services,proto3,oneof"`
 }
 
 type PlaneMessage_CollectMetrics struct {
@@ -2283,7 +2283,7 @@ var file_agent_proto_depIdxs = []int32{
 	17, // 14: agent.v1.PlaneMessage.restart_container:type_name -> agent.v1.CmdRestartContainer
 	18, // 15: agent.v1.PlaneMessage.remove_container:type_name -> agent.v1.CmdRemoveContainer
 	19, // 16: agent.v1.PlaneMessage.stream_logs:type_name -> agent.v1.CmdStreamLogs
-	20, // 17: agent.v1.PlaneMessage.deploy:type_name -> agent.v1.CmdDeploy
+	20, // 17: agent.v1.PlaneMessage.services:type_name -> agent.v1.CmdDeploy
 	24, // 18: agent.v1.PlaneMessage.collect_metrics:type_name -> agent.v1.CmdCollectMetrics
 	25, // 19: agent.v1.PlaneMessage.register_route:type_name -> agent.v1.CmdRegisterRoute
 	26, // 20: agent.v1.PlaneMessage.remove_route:type_name -> agent.v1.CmdRemoveRoute

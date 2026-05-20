@@ -18,6 +18,8 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/webhook"
 	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
+	caddyingress "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/redis"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
@@ -26,6 +28,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/crypto"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
@@ -40,6 +43,7 @@ var ProviderSet = wire.NewSet(
 	ProvideJWTService,
 	ProvideTokenStore,
 	ProvideCaddyClient,
+	ProvideCaddyIngress,
 	ProvideTemplateLoader,
 	ProvideNotificationService,
 	ProvideNotifier,
@@ -47,6 +51,7 @@ var ProviderSet = wire.NewSet(
 	ProvideWebhookService,
 	ProvideJobServer,
 	ProvideMetricsRegistry,
+	ProvideEventBus,
 	ProvideCAService,
 	ProvideAgentServer,
 	ProvideAgentClient,
@@ -96,23 +101,27 @@ func ProvideRedis(cfg *config.Config) (*goredis.Client, func(), error) {
 }
 
 func ProvideAsynqClient(cfg *config.Config) (*asynq.Client, func(), error) {
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Redis.Addr})
+	client := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     cfg.Redis.Addr,
+		Username: cfg.Redis.User,
+		Password: cfg.Redis.Password,
+	})
 	return client, func() { _ = client.Close() }, nil
 }
 
-func ProvideRuntime(cfg *config.Config) (runtime.Runtime, error) {
+func ProvideRuntime(cfg *config.Config, db *gorm.DB) (runtime.Runtime, error) {
 	switch runtime.RuntimeType(cfg.Runtime.Type) {
 	case runtime.RuntimeDocker:
-		return docker.New(cfg.Runtime.SocketPath)
+		return docker.New(cfg.Runtime.SocketPath, db)
 	case runtime.RuntimePodman:
-		return podman.New(cfg.Runtime.SocketPath)
+		return podman.New(cfg.Runtime.SocketPath, db)
 	default:
-		if d, err := docker.New(cfg.Runtime.SocketPath); err == nil {
+		if d, err := docker.New(cfg.Runtime.SocketPath, db); err == nil {
 			if err := d.Ping(context.Background()); err == nil {
 				return d, nil
 			}
 		}
-		if p, err := podman.New(cfg.Runtime.SocketPath); err == nil {
+		if p, err := podman.New(cfg.Runtime.SocketPath, db); err == nil {
 			if err := p.Ping(context.Background()); err == nil {
 				return p, nil
 			}
@@ -136,12 +145,25 @@ func ProvideCaddyClient(cfg *config.Config) *caddysvc.Client {
 	return caddysvc.New(cfg.Caddy)
 }
 
+// ProvideCaddyIngress creates the Caddy ingress adapter.
+// Returns a no-op adapter if Caddy is disabled so jobs don't panic.
+func ProvideCaddyIngress(caddy *caddysvc.Client) ingress.Adapter {
+	if caddy == nil {
+		return &noopIngressAdapter{}
+	}
+	return caddyingress.New(caddy)
+}
+
 func ProvideTemplateLoader(cfg *config.Config) (*template.Loader, error) {
 	return template.NewLoader(cfg.Templates.Dir, cfg.Templates.RepoURL)
 }
 
-func ProvideNotificationService(db *gorm.DB) *notification.Service {
-	return notification.New(db)
+func ProvideEventBus() *eventbus.Bus {
+	return eventbus.New()
+}
+
+func ProvideNotificationService(db *gorm.DB, bus *eventbus.Bus) *notification.Service {
+	return notification.New(db, bus)
 }
 
 func ProvideNotifier(db *gorm.DB, log *applogger.Logger) *notification.Notifier {
@@ -167,11 +189,12 @@ func ProvideJobServer(
 	log *applogger.Logger,
 	notifSvc *notification.Service,
 	metricsReg *metrics.Registry,
+	ingressAdapter ingress.Adapter,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
 		return nil, func() {}, nil
 	}
-	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, metricsReg)
+	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, metricsReg, ingressAdapter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -197,3 +220,14 @@ func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service) 
 func ProvideAgentClient(srv *agentsvc.Server) *agentsvc.Client {
 	return agentsvc.NewClient(srv.Registry())
 }
+
+// ── noopIngressAdapter ────────────────────────────────────────────────────────
+// Used when Caddy is disabled — all route operations are silently ignored.
+
+type noopIngressAdapter struct{}
+
+func (n *noopIngressAdapter) AddRoute(_ context.Context, _ ingress.Route) error       { return nil }
+func (n *noopIngressAdapter) RemoveRoute(_ context.Context, _ string) error           { return nil }
+func (n *noopIngressAdapter) UpdateRoute(_ context.Context, _ ingress.Route) error    { return nil }
+func (n *noopIngressAdapter) AddTCPRoute(_ context.Context, _ ingress.TCPRoute) error { return nil }
+func (n *noopIngressAdapter) RemoveTCPRoute(_ context.Context, _ string) error        { return nil }

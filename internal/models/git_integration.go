@@ -29,7 +29,7 @@ func (g *GitIntegration) BeforeCreate(_ *gorm.DB) error {
 }
 
 // GitIntegrationShare allows an owner to share a Git integration with a project.
-// Members of the shared project can use the integration (read repos/branches, deploy)
+// Members of the shared project can use the integration (read repos/branches, services)
 // but cannot see credentials or modify the integration itself.
 type GitIntegrationShare struct {
 	IntegrationID string    `gorm:"type:uuid;not null;index:idx_git_share,unique" json:"integration_id"`

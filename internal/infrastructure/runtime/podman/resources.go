@@ -2,10 +2,14 @@ package podman
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtime.ResourceConfig, error) {
@@ -37,6 +41,7 @@ func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 		return cfg, nil
 	}
 
+	// ── Podman-native fields ──────────────────────────────────────────────────
 	if hc.NanoCpus != nil && *hc.NanoCpus > 0 {
 		cfg.CPUCores = float64(*hc.NanoCpus) / 1e9
 	} else if hc.CpuQuota != nil && *hc.CpuQuota > 0 {
@@ -50,7 +55,6 @@ func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	if hc.Memory != nil && *hc.Memory > 0 {
 		cfg.MemoryMB = *hc.Memory / (1024 * 1024)
 	}
-
 	if hc.MemorySwap != nil {
 		switch {
 		case *hc.MemorySwap == -1:
@@ -59,12 +63,35 @@ func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 			cfg.MemorySwapMB = *hc.MemorySwap / (1024 * 1024)
 		}
 	}
-
 	if hc.RestartPolicy != nil {
 		cfg.RestartPolicy = derefStr(hc.RestartPolicy.Name)
 		if hc.RestartPolicy.MaximumRetryCount != nil {
 			cfg.MaxRetries = *hc.RestartPolicy.MaximumRetryCount
 		}
+	}
+
+	// ── Tidefly-specific fields from ContainerMeta ───────────────────────────
+	if p.db != nil {
+		var meta models.ContainerMeta
+		if err := p.db.WithContext(ctx).
+			Where("container_id = ?", containerID).
+			First(&meta).Error; err == nil {
+			cfg.DeployStrategy = meta.DeployStrategy
+			cfg.Replicas = meta.Replicas
+			if meta.AutoscalingEnabled {
+				cfg.Autoscaling = &runtime.AutoscalingConfig{Enabled: true}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			_ = err
+		}
+	}
+
+	// Defaults
+	if cfg.DeployStrategy == "" {
+		cfg.DeployStrategy = "rolling"
+	}
+	if cfg.Replicas == 0 {
+		cfg.Replicas = 1
 	}
 
 	return cfg, nil
@@ -86,7 +113,7 @@ func (p *Runtime) UpdateResources(
 		needsRestart = true
 	}
 
-	// Build update body (cgroup-native fields)
+	// ── Podman-native update ──────────────────────────────────────────────────
 	type linuxCPU struct {
 		Period *uint64 `json:"period,omitempty"`
 		Quota  *int64  `json:"quota,omitempty"`
@@ -119,7 +146,6 @@ func (p *Runtime) UpdateResources(
 			mem.Limit = &newMemBytes
 			result.Applied = append(result.Applied, fmt.Sprintf("memory=%d MB", cfg.MemoryMB))
 		}
-
 		if cfg.MemoryMB > 0 {
 			switch cfg.MemorySwapMB {
 			case -1:
@@ -153,11 +179,44 @@ func (p *Runtime) UpdateResources(
 		return nil, fmt.Errorf("podman update resources: status %d", code)
 	}
 
+	// ── Tidefly-specific fields → ContainerMeta (upsert) ─────────────────────
+	if p.db != nil {
+		meta := models.ContainerMeta{
+			ContainerID:        containerID,
+			AutoscalingEnabled: cfg.Autoscaling != nil && cfg.Autoscaling.Enabled,
+			Replicas:           cfg.Replicas,
+		}
+		if meta.Replicas == 0 {
+			meta.Replicas = 1
+		}
+		if cfg.DeployStrategy != "" {
+			meta.DeployStrategy = cfg.DeployStrategy
+		} else {
+			meta.DeployStrategy = "rolling"
+		}
+		if cfg.Autoscaling != nil && cfg.Autoscaling.Enabled {
+			result.Applied = append(result.Applied, "autoscaling=on")
+		}
+		if cfg.DeployStrategy != "" {
+			result.Applied = append(result.Applied, fmt.Sprintf("strategy=%s", cfg.DeployStrategy))
+		}
+		if err := p.db.WithContext(ctx).
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "container_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"deploy_strategy", "autoscaling_enabled", "replicas", "updated_at"}),
+			}).
+			Create(&meta).Error; err != nil {
+			_ = err
+		}
+	}
+
+	// ── Restart if memory was reduced ─────────────────────────────────────────
 	if needsRestart {
 		running, _ := p.isRunning(ctx, containerID)
 		if running {
 			restartCode, _, restartErr := p.c.post(
-				ctx, "/libpod/containers/"+escPath(containerID)+"/restart", url.Values{"t": {"10"}}, nil,
+				ctx, "/libpod/containers/"+escPath(containerID)+"/restart",
+				url.Values{"t": {"10"}}, nil,
 			)
 			if restartErr != nil {
 				return nil, fmt.Errorf("podman restart after memory reduction: %w", restartErr)

@@ -6,8 +6,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 type RuntimeType string
@@ -20,12 +18,14 @@ const (
 type ContainerStatus string
 
 const (
-	StatusRunning ContainerStatus = "running"
-	StatusStopped ContainerStatus = "stopped"
-	StatusPaused  ContainerStatus = "paused"
-	StatusExited  ContainerStatus = "exited"
-	StatusCreated ContainerStatus = "created"
-	StatusUnknown ContainerStatus = "unknown"
+	StatusRunning    ContainerStatus = "running"
+	StatusStopped    ContainerStatus = "stopped"
+	StatusPaused     ContainerStatus = "paused"
+	StatusExited     ContainerStatus = "exited"
+	StatusDead       ContainerStatus = "dead"
+	StatusRestarting ContainerStatus = "restarting"
+	StatusCreated    ContainerStatus = "created"
+	StatusUnknown    ContainerStatus = "unknown"
 )
 
 type Container struct {
@@ -187,7 +187,7 @@ type Runtime interface {
 	GetResources(ctx context.Context, containerID string) (*ResourceConfig, error)
 	UpdateResources(ctx context.Context, containerID string, cfg ResourceConfig) (*UpdateResult, error)
 
-	ExecAttach(ctx context.Context, containerID string, ws *websocket.Conn) error
+	ExecAttach(ctx context.Context, containerID string, ws ExecConn) error
 
 	ListImages(ctx context.Context) ([]Image, error)
 	DeleteImage(ctx context.Context, id string, force bool) error
@@ -206,22 +206,34 @@ type Runtime interface {
 	EventStream(ctx context.Context) (<-chan ContainerEvent, <-chan error)
 }
 
+// NeedsRestart returns true if a container in this state should be
+// restarted by the self-healing job.
+func NeedsRestart(s ContainerStatus) bool {
+	switch s {
+	case StatusExited, StatusDead, StatusStopped:
+		return true
+	default:
+		return false
+	}
+}
+
 //nolint:whitespace
 func MapStatus(state string) ContainerStatus {
 	switch strings.ToLower(state) {
-
 	case "running":
 		return StatusRunning
-
-	case "exited", "stopped", "dead":
+	case "exited":
+		return StatusExited
+	case "dead":
+		return StatusDead
+	case "stopped":
 		return StatusStopped
-
+	case "restarting":
+		return StatusRestarting
 	case "paused":
 		return StatusPaused
-
 	case "created", "configured":
 		return StatusCreated
-
 	default:
 		return StatusUnknown
 	}

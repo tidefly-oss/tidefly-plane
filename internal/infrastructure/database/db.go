@@ -54,6 +54,7 @@ func AutoMigrate(database *gorm.DB) error {
 		// Containers & Services
 		&models.Service{},
 		&models.ServiceCredential{},
+		&models.ContainerMeta{},
 		&models.Stack{},
 		// Git
 		&models.GitIntegration{},

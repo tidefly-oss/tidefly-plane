@@ -48,7 +48,7 @@ const (
 	AuditAdminUserProjectsUpdate AuditAction = "admin.user.projects_update"
 	AuditAdminSettingsUpdate     AuditAction = "admin.settings.update"
 
-	AuditContainerDeploy  AuditAction = "container.deploy"
+	AuditContainerDeploy  AuditAction = "container.services"
 	AuditContainerStart   AuditAction = "container.start"
 	AuditContainerStop    AuditAction = "container.stop"
 	AuditContainerRestart AuditAction = "container.restart"

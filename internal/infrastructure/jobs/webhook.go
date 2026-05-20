@@ -18,7 +18,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
-const TaskWebhookDeploy = "webhooks:deploy"
+const TaskWebhookDeploy = "webhooks:services"
 
 type WebhookDeployPayload struct {
 	WebhookID  string          `json:"webhook_id"`
@@ -150,10 +150,10 @@ func (h *WebhookDeployHandler) deployFresh(
 	ctx context.Context, wh *models.Webhook, p webhook.Payload, overrides map[string]string,
 ) (string, error) {
 	if wh.GitIntegrationID == nil {
-		return "", fmt.Errorf("deploy trigger requires git_integration_id")
+		return "", fmt.Errorf("services trigger requires git_integration_id")
 	}
 	if wh.TemplateSlug == "" {
-		return "", fmt.Errorf("deploy trigger requires template_slug")
+		return "", fmt.Errorf("services trigger requires template_slug")
 	}
 
 	fields := make(map[string]string)
@@ -180,11 +180,11 @@ func (h *WebhookDeployHandler) deployFresh(
 		Fields:           fields,
 	})
 	if err != nil {
-		return "", fmt.Errorf("deploy failed: %w", err)
+		return "", fmt.Errorf("services failed: %w", err)
 	}
 
 	h.log.Info("jobs", fmt.Sprintf(
-		"webhook deploy triggered: template=%s service=%s branch=%s commit=%s",
+		"webhook services triggered: template=%s service=%s branch=%s commit=%s",
 		wh.TemplateSlug, serviceID, p.Branch, p.Commit,
 	))
 
@@ -206,9 +206,9 @@ func (h *WebhookDeployHandler) findServiceContainer(ctx context.Context, service
 
 func (h *WebhookDeployHandler) fail(ctx context.Context, deliveryID string, err error, started time.Time) error {
 	_ = h.updateDelivery(ctx, deliveryID, models.WebhookStatusFailed, err.Error(), "", started)
-	_ = h.notifSvc.Publish(ctx, models.SeverityError, "Webhook deploy failed", err.Error())
+	_ = h.notifSvc.Publish(ctx, models.SeverityError, "Webhook services failed", err.Error())
 	h.notifierSvc.Send(ctx, notification.Event{
-		Title:   "Webhook deploy failed",
+		Title:   "Webhook services failed",
 		Message: err.Error(),
 		Level:   "error",
 	})

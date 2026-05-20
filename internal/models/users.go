@@ -131,6 +131,7 @@ type SystemSettings struct {
 	NotifyOnDeploy        bool      `gorm:"default:true"               json:"notify_on_deploy"`
 	NotifyOnContainerDown bool      `gorm:"default:true"               json:"notify_on_container_down"`
 	NotifyOnWebhookFail   bool      `gorm:"default:true"               json:"notify_on_webhook_fail"`
-	UpdatedAt             time.Time `                                  json:"updated_at"`
 	CaddyBaseDomain       string    `gorm:"size:255"                   json:"caddy_base_domain"`
+	APIDocsEnabled        bool      `gorm:"default:true"               json:"api_docs_enabled"`
+	UpdatedAt             time.Time `                                  json:"updated_at"`
 }

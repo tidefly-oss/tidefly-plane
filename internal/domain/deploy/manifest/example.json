@@ -1,0 +1,204 @@
+{
+  "_examples": [
+
+    {
+      "_comment": "=== 1. Plain image — minimal ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "service",
+      "metadata": {
+        "name": "whoami"
+      },
+      "spec": {
+        "container": {
+          "image": "traefik/whoami:latest"
+        },
+        "expose": {
+          "domain": "whoami.example.com"
+        }
+      }
+    },
+
+    {
+      "_comment": "=== 2. Plain image — full options ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "service",
+      "metadata": {
+        "name": "api",
+        "namespace": "default",
+        "labels": {
+          "app": "api",
+          "tier": "backend"
+        }
+      },
+      "spec": {
+        "container": {
+          "image": "ghcr.io/myorg/api:latest",
+          "env": [
+            { "name": "ENV", "value": "production" },
+            { "name": "DB_PASSWORD", "secret": "postgres/password" }
+          ],
+          "volumes": [
+            { "name": "uploads", "mountPath": "/app/uploads" }
+          ],
+          "resources": {
+            "memory": "256Mi",
+            "cpu": "500m",
+            "memoryLimit": "512Mi",
+            "cpuLimit": "1000m"
+          }
+        },
+        "expose": {
+          "port": 8080,
+          "domain": "api.example.com",
+          "tls": true,
+          "www": false
+        },
+        "health": {
+          "http": "/health",
+          "interval": "10s",
+          "timeout": "3s",
+          "retries": 3,
+          "startupGrace": "30s"
+        },
+        "scaling": {
+          "replicas": 2,
+          "restart": "always",
+          "restartDelay": "5s",
+          "maxRestarts": 10,
+          "strategy": "rolling",
+          "autoscaling": {
+            "enabled": true,
+            "min": 1,
+            "max": 5
+          }
+        },
+        "dependsOn": ["postgres", "redis"],
+        "alerts": {
+          "onCrash": true,
+          "onDeploy": true,
+          "webhook": "https://hooks.example.com/deploy"
+        },
+        "maintenance": {
+          "restartCron": "0 3 * * *"
+        }
+      }
+    },
+
+    {
+      "_comment": "=== 3. Inline Dockerfile ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "service",
+      "metadata": {
+        "name": "myapp"
+      },
+      "spec": {
+        "container": {
+          "build": {
+            "dockerfileInline": "FROM node:20-alpine\nWORKDIR /app\nCOPY . .\nRUN npm ci --omit=dev\nEXPOSE 3000\nCMD [\"node\", \"index.js\"]"
+          },
+          "env": [
+            { "name": "PORT", "value": "3000" },
+            { "name": "NODE_ENV", "value": "production" }
+          ]
+        },
+        "expose": {
+          "port": 3000,
+          "domain": "myapp.example.com",
+          "tls": true
+        },
+        "health": {
+          "http": "/health"
+        }
+      }
+    },
+
+    {
+      "_comment": "=== 4. Dockerfile from path in build context ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "service",
+      "metadata": {
+        "name": "backend"
+      },
+      "spec": {
+        "container": {
+          "build": {
+            "context": ".",
+            "dockerfile": "docker/Dockerfile.prod",
+            "target": "production",
+            "args": {
+              "NODE_VERSION": "20",
+              "APP_ENV": "production"
+            }
+          },
+          "env": [
+            { "name": "DATABASE_URL", "secret": "postgres/url" }
+          ]
+        },
+        "expose": {
+          "port": 8080,
+          "domain": "backend.example.com"
+        }
+      }
+    },
+
+    {
+      "_comment": "=== 5. Git repo with Dockerfile ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "service",
+      "metadata": {
+        "name": "myapi"
+      },
+      "spec": {
+        "container": {
+          "build": {
+            "context": "git://github.com/myorg/myapi#main",
+            "dockerfile": "Dockerfile"
+          },
+          "env": [
+            { "name": "DATABASE_URL", "secret": "postgres/url" },
+            { "name": "REDIS_URL", "secret": "redis/url" }
+          ],
+          "volumes": [
+            { "name": "myapi-data", "mountPath": "/app/data" }
+          ]
+        },
+        "expose": {
+          "port": 8080,
+          "domain": "api.example.com",
+          "tls": true
+        },
+        "health": {
+          "http": "/health",
+          "startupGrace": "30s"
+        },
+        "scaling": {
+          "strategy": "blue-green",
+          "autoscaling": {
+            "enabled": true,
+            "min": 1,
+            "max": 3
+          }
+        },
+        "alerts": {
+          "onCrash": true,
+          "onDeploy": true
+        }
+      }
+    },
+
+    {
+      "_comment": "=== 6. Docker Compose stack ===",
+      "apiVersion": "tidefly/v1",
+      "kind": "stack",
+      "metadata": {
+        "name": "mystack"
+      },
+      "spec": {
+        "compose": "services:\n  web:\n    image: nginx:alpine\n    ports:\n      - '80:80'\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: secret\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata:\n",
+        "domain": "mystack.example.com",
+        "expose": true
+      }
+    }
+
+  ]
+}

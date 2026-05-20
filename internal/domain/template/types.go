@@ -1,28 +1,38 @@
 package template
 
-// Template is the parsed representation of a service template YAML file.
+import "encoding/json"
+
+// Template is the parsed representation of a service template file (JSON or YAML).
 type Template struct {
-	Slug           string              `yaml:"slug"            json:"slug"`
-	Name           string              `yaml:"name"            json:"name"`
-	Category       string              `yaml:"category"        json:"category"`
-	Icon           string              `yaml:"icon"            json:"icon"`
-	Description    string              `yaml:"description"     json:"description"`
-	Versions       []string            `yaml:"versions"        json:"versions"`
-	DefaultVersion string              `yaml:"default_version" json:"default_version"`
-	Fields         []TemplateField     `yaml:"fields"          json:"fields"`
-	Containers     []TemplateContainer `yaml:"containers"      json:"containers,omitempty"`
+	Slug           string          `yaml:"slug"            json:"slug"`
+	Name           string          `yaml:"name"            json:"name"`
+	Category       string          `yaml:"category"        json:"category"`
+	Icon           string          `yaml:"icon"            json:"icon"`
+	Description    string          `yaml:"description"     json:"description"`
+	Versions       []string        `yaml:"versions"        json:"versions"`
+	DefaultVersion string          `yaml:"default_version" json:"default_version"`
+	Fields         []TemplateField `yaml:"fields"          json:"fields"`
+
+	// Manifest is the raw ServiceManifest JSON with {placeholder} fields.
+	// New-style templates use this instead of Containers.
+	Manifest json.RawMessage `yaml:"manifest" json:"manifest,omitempty"`
+
+	// Containers is kept for backwards compatibility with old YAML templates.
+	Containers []TemplateContainer `yaml:"containers" json:"containers,omitempty"`
 }
 
 type TemplateField struct {
 	Key               string           `yaml:"key"                json:"key"`
 	Label             string           `yaml:"label"              json:"label"`
-	Type              string           `yaml:"type"               json:"type"`
-	Default           string           `yaml:"default"            json:"default,omitempty"`
+	Type              string           `yaml:"type"               json:"type"` // string|port|credential|boolean|select
+	Default           any              `yaml:"default"            json:"default,omitempty"`
 	Placeholder       string           `yaml:"placeholder"        json:"placeholder,omitempty"`
 	Required          bool             `yaml:"required"           json:"required"`
 	Generated         bool             `yaml:"generated"          json:"generated"`
 	StoreHash         bool             `yaml:"store_hash"         json:"store_hash,omitempty"`
 	ShowPlaintextOnce bool             `yaml:"show_plaintext_once" json:"show_plaintext_once,omitempty"`
+	DependsOn         string           `yaml:"depends_on"         json:"depends_on,omitempty"`
+	Hint              string           `yaml:"hint"               json:"hint,omitempty"`
 	Options           []TemplateOption `yaml:"options"            json:"options,omitempty"`
 }
 
@@ -30,6 +40,8 @@ type TemplateOption struct {
 	Value string `yaml:"value" json:"value"`
 	Label string `yaml:"label" json:"label"`
 }
+
+// ── Legacy YAML container format ──────────────────────────────────────────────
 
 type TemplateContainer struct {
 	Name        string               `yaml:"name"         json:"name"`

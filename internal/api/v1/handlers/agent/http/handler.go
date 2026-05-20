@@ -10,6 +10,7 @@ import (
 	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"gorm.io/gorm"
 )
 
@@ -17,13 +18,15 @@ type Handler struct {
 	workers     *repository.WorkerRepository
 	caService   *ca.Service
 	agentClient *agentsvc.Client
+	bus         *eventbus.Bus
 }
 
-func New(db *gorm.DB, caService *ca.Service, agentClient *agentsvc.Client) *Handler {
+func New(db *gorm.DB, caService *ca.Service, agentClient *agentsvc.Client, bus *eventbus.Bus) *Handler {
 	return &Handler{
 		workers:     repository.NewWorkerRepository(db),
 		caService:   caService,
 		agentClient: agentClient,
+		bus:         bus,
 	}
 }
 
@@ -139,15 +142,17 @@ func (h *Handler) RevokeWorker(ctx context.Context, input *RevokeWorkerInput) (*
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-
 	if err := h.caService.RevokeWorkerCert(input.ID, claims.UserID); err != nil {
 		return nil, huma.Error500InternalServerError("failed to revoke certificate")
 	}
-
 	if err := h.workers.Revoke(input.ID); err != nil {
 		return nil, huma.Error500InternalServerError("failed to revoke worker")
 	}
-
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventWorkerUpdated,
+		Topic:   eventbus.TopicWorkers,
+		Payload: eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "revoked"},
+	})
 	return &RevokeWorkerOutput{}, nil
 }
 
@@ -156,15 +161,17 @@ func (h *Handler) DeleteWorker(ctx context.Context, input *DeleteWorkerInput) (*
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-
 	worker, err := h.workers.FindRevoked(input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("worker not found or not revoked")
 	}
-
 	if err := h.workers.Delete(worker); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete worker")
 	}
-
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventWorkerUpdated,
+		Topic:   eventbus.TopicWorkers,
+		Payload: eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "deleted"},
+	})
 	return &DeleteWorkerOutput{}, nil
 }

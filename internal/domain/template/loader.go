@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,13 +42,11 @@ func syncTemplates(dir, repoURL string) error {
 	if _, err := os.Stat(dir); err == nil {
 		return nil
 	}
-
 	if repoURL == "" {
 		return fmt.Errorf("TEMPLATES_DIR %q does not exist and TEMPLATES_REPO is not set", dir)
 	}
 
 	zipURL := strings.TrimSuffix(repoURL, ".git") + "/archive/refs/heads/main.zip"
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -55,26 +54,19 @@ func syncTemplates(dir, repoURL string) error {
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			_ = closeErr
-		}
-	}()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
 	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read zip: %w", err)
 	}
-
 	return unzipTemplates(body, dir)
 }
 
@@ -107,21 +99,17 @@ func unzipTemplates(data []byte, dest string) error {
 			_ = rc.Close()
 			return err
 		}
-		_, err = io.Copy(out, rc)
-		if closeErr := rc.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-		if closeErr := out.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			return err
+		_, copyErr := io.Copy(out, rc)
+		_ = rc.Close()
+		_ = out.Close()
+		if copyErr != nil {
+			return copyErr
 		}
 	}
 	return nil
 }
 
-// Load (re)reads all YAML files from the template directory.
+// Load (re)reads all JSON and YAML template files from the directory.
 func (l *Loader) Load() error {
 	entries, err := os.ReadDir(l.dir)
 	if err != nil {
@@ -129,34 +117,42 @@ func (l *Loader) Load() error {
 	}
 
 	loaded := make(map[string]*Template)
-	for _, e := range entries {
-		if e.IsDir() {
-			// Skip hidden directories (starting with .)
-			if strings.HasPrefix(e.Name(), ".") {
-				continue
+
+	var loadEntry func(path string) error
+	loadEntry = func(path string) error {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if strings.HasPrefix(info.Name(), ".") {
+				return nil
 			}
-			// recurse one level (e.g. databases/, messaging/)
-			sub := filepath.Join(l.dir, e.Name())
-			subEntries, err := os.ReadDir(sub)
-			if err != nil {
-				continue
-			}
-			for _, se := range subEntries {
-				if !isYAML(se.Name()) {
-					continue
-				}
-				t, err := loadFile(filepath.Join(sub, se.Name()))
-				if err != nil {
-					return err
-				}
-				loaded[t.Slug] = t
-			}
-		} else if isYAML(e.Name()) {
-			t, err := loadFile(filepath.Join(l.dir, e.Name()))
+			sub, err := os.ReadDir(path)
 			if err != nil {
 				return err
 			}
-			loaded[t.Slug] = t
+			for _, se := range sub {
+				if err := loadEntry(filepath.Join(path, se.Name())); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if !isTemplate(info.Name()) {
+			return nil
+		}
+		t, err := loadFile(path)
+		if err != nil {
+			return err
+		}
+		loaded[t.Slug] = t
+		return nil
+	}
+
+	for _, e := range entries {
+		if err := loadEntry(filepath.Join(l.dir, e.Name())); err != nil {
+			return err
 		}
 	}
 
@@ -192,7 +188,7 @@ func (l *Loader) List() []*Template {
 func (l *Loader) ListByCategory(category string) []*Template {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	result := make([]*Template, 0)
+	var result []*Template
 	for _, t := range l.templates {
 		if t.Category == category {
 			result = append(result, t)
@@ -206,17 +202,30 @@ func loadFile(path string) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read template %q: %w", path, err)
 	}
+
 	var t Template
-	if err := yaml.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("parse template %q: %w", path, err)
+	ext := strings.ToLower(filepath.Ext(path))
+
+	switch ext {
+	case ".json":
+		if err := json.Unmarshal(data, &t); err != nil {
+			return nil, fmt.Errorf("parse template %q: %w", path, err)
+		}
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &t); err != nil {
+			return nil, fmt.Errorf("parse template %q: %w", path, err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported template format %q", ext)
 	}
+
 	if t.Slug == "" {
 		return nil, fmt.Errorf("template %q missing slug", path)
 	}
 	return &t, nil
 }
 
-func isYAML(name string) bool {
+func isTemplate(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
-	return ext == ".yaml" || ext == ".yml"
+	return ext == ".json" || ext == ".yaml" || ext == ".yml"
 }

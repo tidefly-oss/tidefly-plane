@@ -36,7 +36,7 @@ type DeployRequest struct {
 	Fields      map[string]string
 	ExtraLabels map[string]string
 
-	// Git + template deploy — used by webhook deploy trigger and Git deploy wizard.
+	// Git + template services — used by webhook services trigger and Git services wizard.
 	GitIntegrationID string
 	RepoURL          string
 	Branch           string

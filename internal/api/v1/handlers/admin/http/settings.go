@@ -39,6 +39,7 @@ type UpdateSettingsBody struct {
 	NotifyOnDeploy        *bool   `json:"notify_on_deploy,omitempty"`
 	NotifyOnContainerDown *bool   `json:"notify_on_container_down,omitempty"`
 	NotifyOnWebhookFail   *bool   `json:"notify_on_webhook_fail,omitempty"`
+	APIDocsEnabled        *bool   `json:"api_docs_enabled,omitempty"`
 }
 
 type UpdateSettingsInput struct {
@@ -69,6 +70,7 @@ func (h *Handler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput
 			NotifyOnDeploy:        input.Body.NotifyOnDeploy,
 			NotifyOnContainerDown: input.Body.NotifyOnContainerDown,
 			NotifyOnWebhookFail:   input.Body.NotifyOnWebhookFail,
+			APIDocsEnabled:        input.Body.APIDocsEnabled,
 		},
 	)
 	h.log.Audit(

@@ -3,15 +3,14 @@ package notification
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -25,66 +24,28 @@ var normalizeRe = regexp.MustCompile(
 		`)\b`,
 )
 
-// SSEClient represents one connected browser tab listening for notifications.
-type SSEClient struct {
-	ch   chan []byte
-	done <-chan struct{}
-}
-
-// Service handles creation, deduplication, acknowledgement and SSE broadcasting.
 type Service struct {
-	db      *gorm.DB
-	mu      sync.RWMutex
-	clients map[string]*SSEClient // key = random connection id
+	db  *gorm.DB
+	bus *eventbus.Bus
 }
 
-func New(db *gorm.DB) *Service {
-	return &Service{
-		db:      db,
-		clients: make(map[string]*SSEClient),
-	}
+func New(db *gorm.DB, bus *eventbus.Bus) *Service {
+	return &Service{db: db, bus: bus}
 }
 
-// Subscribe registers a new SSE client and returns its channel + unsubscribe func.
-func (s *Service) Subscribe(ctx context.Context) (<-chan []byte, func()) {
-	id := ulid.Make().String()
-	ch := make(chan []byte, 32)
-	client := &SSEClient{ch: ch, done: ctx.Done()}
-
-	s.mu.Lock()
-	s.clients[id] = client
-	s.mu.Unlock()
-
-	unsub := func() {
-		s.mu.Lock()
-		delete(s.clients, id)
-		s.mu.Unlock()
-		close(ch)
-	}
-	return ch, unsub
+func (s *Service) publish(n *models.Notification) {
+	s.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventNotificationCreated,
+		Topic: eventbus.TopicNotifications,
+		Payload: eventbus.NotificationCreatedPayload{
+			ID:      n.ID,
+			Title:   n.ContainerName,
+			Message: n.Message,
+			Level:   string(n.Severity),
+		},
+	})
 }
 
-// broadcast sends a JSON-encoded notifications to all connected SSE clients.
-func (s *Service) broadcast(n *models.Notification) {
-	data, err := json.Marshal(n)
-	if err != nil {
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, c := range s.clients {
-		select {
-		case c.ch <- data:
-		default:
-		}
-	}
-}
-
-// Upsert creates a new notifications or increments OccurrenceCount if one with
-// the same fingerprint already exists. Only broadcasts on first occurrence or
-// when the existing one was previously acknowledged (re-opened).
 func (s *Service) Upsert(
 	ctx context.Context,
 	containerID, containerName string,
@@ -92,7 +53,6 @@ func (s *Service) Upsert(
 	message string,
 ) error {
 	fp := Fingerprint(containerID, string(severity), message)
-
 	now := time.Now()
 	n := models.Notification{
 		ID:              ulid.Make().String(),
@@ -105,90 +65,23 @@ func (s *Service) Upsert(
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-
 	result := s.db.WithContext(ctx).
-		Clauses(
-			clause.OnConflict{
-				Columns: []clause.Column{{Name: "fingerprint"}},
-				DoUpdates: clause.Assignments(
-					map[string]interface{}{
-						"occurrence_count": gorm.Expr("notifications.occurrence_count + 1"),
-						"updated_at":       now,
-					},
-				),
-			},
-		).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "fingerprint"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"occurrence_count": gorm.Expr("notifications.occurrence_count + 1"),
+				"updated_at":       now,
+			}),
+		}).
 		Create(&n)
-
 	if result.Error != nil {
 		return fmt.Errorf("notifications.Upsert: %w", result.Error)
 	}
-
 	var final models.Notification
-	if err := s.db.WithContext(ctx).
-		Where("fingerprint = ?", fp).
-		First(&final).Error; err == nil {
-		s.broadcast(&final)
+	if err := s.db.WithContext(ctx).Where("fingerprint = ?", fp).First(&final).Error; err == nil {
+		s.publish(&final)
 	}
-
 	return nil
-}
-
-// List returns all unacknowledged notifications, newest first.
-func (s *Service) List(ctx context.Context) ([]models.Notification, error) {
-	var ns []models.Notification
-	err := s.db.WithContext(ctx).
-		Where("acknowledged_at IS NULL").
-		Order("updated_at DESC").
-		Find(&ns).Error
-	return ns, err
-}
-
-// ListAll returns all notifications (including acknowledged), newest first.
-func (s *Service) ListAll(ctx context.Context, limit int) ([]models.Notification, error) {
-	var ns []models.Notification
-	err := s.db.WithContext(ctx).
-		Order("updated_at DESC").
-		Limit(limit).
-		Find(&ns).Error
-	return ns, err
-}
-
-// Acknowledge marks a notifications as done. If id == "all", all are acknowledged.
-func (s *Service) Acknowledge(ctx context.Context, id string) error {
-	now := time.Now()
-	q := s.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("acknowledged_at IS NULL")
-
-	if id != "all" {
-		q = q.Where("id = ?", id)
-	}
-
-	return q.Update("acknowledged_at", now).Error
-}
-
-// Delete removes a notifications by id (hard delete, used by "Clear").
-func (s *Service) Delete(ctx context.Context, id string) error {
-	return s.db.WithContext(ctx).
-		Where("id = ?", id).
-		Delete(&models.Notification{}).Error
-}
-
-// DeleteAll hard-deletes all acknowledged notifications (housekeeping).
-func (s *Service) DeleteAll(ctx context.Context) error {
-	return s.db.WithContext(ctx).
-		Where("acknowledged_at IS NOT NULL").
-		Delete(&models.Notification{}).Error
-}
-
-// UnreadCount returns the number of unacknowledged notifications.
-func (s *Service) UnreadCount(ctx context.Context) (int64, error) {
-	var count int64
-	err := s.db.WithContext(ctx).
-		Model(&models.Notification{}).
-		Where("acknowledged_at IS NULL").
-		Count(&count).Error
-	return count, err
 }
 
 func (s *Service) Publish(ctx context.Context, severity models.NotificationSeverity, title, message string) error {
@@ -206,27 +99,70 @@ func (s *Service) Publish(ctx context.Context, severity models.NotificationSever
 		UpdatedAt:       now,
 	}
 	result := s.db.WithContext(ctx).
-		Clauses(
-			clause.OnConflict{
-				Columns: []clause.Column{{Name: "fingerprint"}},
-				DoUpdates: clause.Assignments(
-					map[string]interface{}{
-						"occurrence_count": gorm.Expr("notifications.occurrence_count + 1"),
-						"acknowledged_at":  nil,
-						"updated_at":       now,
-					},
-				),
-			},
-		).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "fingerprint"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"occurrence_count": gorm.Expr("notifications.occurrence_count + 1"),
+				"acknowledged_at":  nil,
+				"updated_at":       now,
+			}),
+		}).
 		Create(&n)
 	if result.Error != nil {
 		return fmt.Errorf("notifications.Publish: %w", result.Error)
 	}
 	var final models.Notification
 	if err := s.db.WithContext(ctx).Where("fingerprint = ?", fp).First(&final).Error; err == nil {
-		s.broadcast(&final)
+		s.publish(&final)
 	}
 	return nil
+}
+
+func (s *Service) List(ctx context.Context) ([]models.Notification, error) {
+	var ns []models.Notification
+	err := s.db.WithContext(ctx).
+		Where("acknowledged_at IS NULL").
+		Order("updated_at DESC").
+		Find(&ns).Error
+	return ns, err
+}
+
+func (s *Service) ListAll(ctx context.Context, limit int) ([]models.Notification, error) {
+	var ns []models.Notification
+	err := s.db.WithContext(ctx).
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&ns).Error
+	return ns, err
+}
+
+func (s *Service) Acknowledge(ctx context.Context, id string) error {
+	now := time.Now()
+	q := s.db.WithContext(ctx).Model(&models.Notification{}).
+		Where("acknowledged_at IS NULL")
+	if id != "all" {
+		q = q.Where("id = ?", id)
+	}
+	return q.Update("acknowledged_at", now).Error
+}
+
+func (s *Service) Delete(ctx context.Context, id string) error {
+	return s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.Notification{}).Error
+}
+
+func (s *Service) DeleteAll(ctx context.Context) error {
+	return s.db.WithContext(ctx).
+		Where("acknowledged_at IS NOT NULL").
+		Delete(&models.Notification{}).Error
+}
+
+func (s *Service) UnreadCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.WithContext(ctx).
+		Model(&models.Notification{}).
+		Where("acknowledged_at IS NULL").
+		Count(&count).Error
+	return count, err
 }
 
 func (s *Service) IsNew(ctx context.Context, fp string) bool {
@@ -236,8 +172,6 @@ func (s *Service) IsNew(ctx context.Context, fp string) bool {
 		Count(&count)
 	return count > 0
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 func Fingerprint(containerID, severity, message string) string {
 	normalized := normalizeRe.ReplaceAllString(message, "<X>")

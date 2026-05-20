@@ -52,7 +52,7 @@ The wizard guides you through server setup, generates secrets, and starts all se
 ```bash
 git clone https://github.com/tidefly-oss/tidefly-plane
 cd tidefly-plane
-task setup      # generates deploy/development/.env with secrets
+task setup      # generates services/development/.env with secrets
 task dev:up     # starts Postgres, Redis, Caddy
 task dev        # starts backend with hot reload
 ```

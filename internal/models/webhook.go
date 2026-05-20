@@ -10,8 +10,8 @@ type WebhookTriggerType string
 const (
 	// WebhookTriggerRedeploy pulls the latest image and recreates the existing service.
 	WebhookTriggerRedeploy WebhookTriggerType = "redeploy"
-	// WebhookTriggerDeploy runs a full deploy from a template + Git source.
-	WebhookTriggerDeploy WebhookTriggerType = "deploy"
+	// WebhookTriggerDeploy runs a full services from a template + Git source.
+	WebhookTriggerDeploy WebhookTriggerType = "services"
 )
 
 // WebhookStatus is the result of the last trigger.
@@ -23,7 +23,7 @@ const (
 	WebhookStatusFailed  WebhookStatus = "failed"
 )
 
-// Webhook represents a project-scoped inbound webhooks that triggers a deploy.
+// Webhook represents a project-scoped inbound webhooks that triggers a services.
 //
 // Public receiver:  POST /webhooks/:id          (no auth, HMAC verified)
 // Management API:   /api/v1/projects/:pid/webhooks
@@ -61,11 +61,11 @@ type Webhook struct {
 	ServiceID *string `gorm:"index" json:"service_id,omitempty"`
 
 	// ── Deploy trigger ─────────────────────────────────────────────────────
-	// Run a full deploy from Git source + template.
+	// Run a full services from Git source + template.
 	GitIntegrationID *string `gorm:"index" json:"git_integration_id,omitempty"`
 	RepoURL          string  `json:"repo_url,omitempty"`
 	TemplateSlug     string  `json:"template_slug,omitempty"`
-	// FieldOverrides are merged into the template fields on deploy.
+	// FieldOverrides are merged into the template fields on services.
 	// Stored as JSON: {"PORT": "3000", "IMAGE_TAG": "{{.branch}}"}
 	// Supports {{.branch}}, {{.commit}}, {{.tag}} placeholders.
 	FieldOverrides string `gorm:"type:text" json:"field_overrides,omitempty"`

@@ -13,6 +13,8 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 )
 
+const caddyHandlerKey = "handler"
+
 // Client speaks to the Caddy Admin API.
 // All routing is configured via API — no Caddyfile needed.
 type Client struct {
@@ -45,8 +47,8 @@ func (c *Client) AddHTTPRoute(ctx context.Context, routeID, host, upstream strin
 		},
 		"handle": []map[string]any{
 			{
-				"handler":   "reverse_proxy",
-				"upstreams": []map[string]string{{"dial": upstream}},
+				caddyHandlerKey: "reverse_proxy",
+				"upstreams":     []map[string]string{{"dial": upstream}},
 			},
 		},
 		"terminal": true,
@@ -325,8 +327,8 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 		},
 		"handle": []map[string]any{
 			{
-				"handler":   "reverse_proxy",
-				"upstreams": []map[string]string{{"dial": "tidefly_backend:8181"}},
+				caddyHandlerKey: "reverse_proxy",
+				"upstreams":     []map[string]string{{"dial": "tidefly_backend:8181"}},
 			},
 		},
 		"terminal": true,
@@ -340,8 +342,8 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 		},
 		"handle": []map[string]any{
 			{
-				"handler":   "reverse_proxy",
-				"upstreams": []map[string]string{{"dial": "tidefly_ui:3000"}},
+				caddyHandlerKey: "reverse_proxy",
+				"upstreams":     []map[string]string{{"dial": "tidefly_ui:3000"}},
 			},
 		},
 		"terminal": true,

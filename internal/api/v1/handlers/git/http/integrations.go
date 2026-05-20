@@ -9,6 +9,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/git/mapper"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/git/types"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
@@ -115,6 +116,14 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput
 	if err != nil {
 		return nil, fmt.Errorf("save integration: %w", err)
 	}
+	h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventGitIntegrationCreated,
+		Topic: eventbus.TopicGit,
+		Payload: eventbus.GitIntegrationPayload{
+			ID:   m.ID,
+			Name: m.Name,
+		},
+	})
 	return &CreateOutput{Body: mapper.ToIntegrationResponse(m, user.ID)}, nil
 }
 
@@ -151,6 +160,14 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	if err != nil {
 		return nil, fmt.Errorf("delete integration: %w", err)
 	}
+	h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventGitIntegrationDeleted,
+		Topic: eventbus.TopicGit,
+		Payload: eventbus.GitIntegrationPayload{
+			ID:   input.ID,
+			Name: m.Name,
+		},
+	})
 	return nil, nil
 }
 
