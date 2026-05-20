@@ -5,7 +5,41 @@ All notable changes to Tidefly Plane will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## [0.0.1-beta.1] - 2026-05-20
+
+> First beta release. Orchestration API surface, cascading resource cleanup, self-healing improvements, and admin settings enhancements.
+
+### Added
+
+#### Orchestration API
+- Unified `ServiceView` response on `GET /services` and `GET /services/:id` combining desired state (manifest/DB) with live runtime state (Docker/Podman)
+- `BuildView()` in `ServiceManager` merges live container state (status, replicas) with manifest desired state
+- `DriftState` exposes replica drift and not-running state per service
+
+#### Resource Cleanup
+- Cascading async cleanup on service delete via `TaskServiceCleanup` job
+- Collects associated images and volumes before container removal
+- Safely skips shared resources still referenced by other containers
+
+#### Self-Healing
+- Orphan purge in `HandleServiceHealthCheck`: services with no manifest and no container are automatically deleted
+- Stuck-deploying purge: services stuck in `deploying` for > 10 minutes with no container are removed
+
+#### Admin Settings
+- `api_docs_enabled` toggle in admin settings
+- `GuardDocs` Echo middleware: blocks `/docs` and `/openapi` live from DB — no restart required
+
+#### Templates
+- Locust load testing template (`category: testing`)
+
+### Fixed
+- Suppress self-heal log noise for already-deleted services
+- Extract `proxyNetwork` constant in jobs package (goconst)
+
+### Changed
+- `ServiceJobHandler` carries `asynq.Client` for cleanup job enqueueing
+- Roadmap: marked orchestration API as complete
 
 ---
 
@@ -89,13 +123,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Auto-scheduling across worker nodes
 - [ ] Custom domain management UI
 
+### Done in Beta
+- [x] Unified orchestration API (runtime + desired state + drift detection)
+- [x] Cascading resource cleanup on service delete
+- [x] Self-healing orphan and stuck-deploy purge
+- [x] API docs toggle in admin settings
+
 ### Later
 - [ ] Two-factor authentication
 - [ ] SSO / LDAP integration (Enterprise)
 
 ---
 
-[Unreleased]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-alpha.1...HEAD
+[Unreleased]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-beta.1...HEAD
+[0.0.1-beta.1]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-alpha.1...v0.0.1-beta.1
 [0.0.1-alpha.1]: https://github.com/tidefly-oss/tidefly-plane/releases/tag/v0.0.1-alpha.1
 
 
