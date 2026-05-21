@@ -21,7 +21,6 @@ func (h *ServiceJobHandler) HandleServiceHeal(ctx context.Context, t *asynq.Task
 	var svc models.Service
 	if err := h.db.Where("name = ? AND manifest_service = ?", p.ServiceName, true).
 		First(&svc).Error; err != nil {
-		// Service no longer exists — deleted, ignore heal trigger
 		return nil
 	}
 
@@ -37,6 +36,28 @@ func (h *ServiceJobHandler) HandleServiceHeal(ctx context.Context, t *asynq.Task
 
 	time.Sleep(2 * time.Second)
 
+	// Worker node heal
+	if svc.WorkerID != "" && h.agentClient != nil && h.agentClient.IsConnected(svc.WorkerID) {
+		var raw manifest.ServiceManifest
+		if err := json.Unmarshal([]byte(svc.ManifestJSON), &raw); err != nil {
+			return fmt.Errorf("unmarshal manifest: %w", err)
+		}
+		resolved, err := manifest.Resolve(&raw)
+		if err != nil {
+			return fmt.Errorf("resolve: %w", err)
+		}
+		deployCmd := resolvedToDeployCmd(&svc, resolved)
+		if err := h.agentClient.SendHeal(ctx, svc.WorkerID, svc.Name, p.Reason, deployCmd); err != nil {
+			h.log.Error("jobs", fmt.Sprintf("worker self-heal failed for %q", p.ServiceName), err)
+			h.db.Model(&svc).Update("status", models.ServiceStatusFailed)
+			return fmt.Errorf("worker self-heal %q: %w", p.ServiceName, err)
+		}
+		h.db.Model(&svc).Update("status", models.ServiceStatusRunning)
+		h.log.Info("jobs", fmt.Sprintf("self-heal: %q recovered on worker %s", p.ServiceName, svc.WorkerID))
+		return nil
+	}
+
+	// Local heal
 	containers, err := h.rt.ListContainers(ctx, true)
 	if err == nil {
 		for _, ct := range containers {
@@ -86,8 +107,6 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 	for i := range services {
 		svc := &services[i]
 
-		// ── Orphan cleanup ────────────────────────────────────────────────────
-		// No manifest + no container = failed deploy, never recovered → purge
 		if svc.Name == "" || svc.ManifestJSON == "" {
 			_, hasContainer := running[svc.Name]
 			if !hasContainer {
@@ -99,12 +118,10 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 			continue
 		}
 
-		// ── Stuck deploying cleanup ───────────────────────────────────────────
-		// Deploying for > 10 minutes with no container = stuck, purge
 		if svc.Status == models.ServiceStatusDeploying {
 			_, hasContainer := running[svc.Name]
 			if !hasContainer && time.Since(svc.UpdatedAt) > 10*time.Minute {
-				h.log.Info("jobs", fmt.Sprintf("self-heal: purging stuck deploying service %q (stuck for %s)", svc.Name, time.Since(svc.UpdatedAt).Round(time.Second)))
+				h.log.Info("jobs", fmt.Sprintf("self-heal: purging stuck deploying service %q", svc.Name))
 				h.db.Delete(svc)
 				continue
 			}
@@ -115,6 +132,15 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 			continue
 		}
 
+		// Worker node — health managed by agent
+		if svc.WorkerID != "" {
+			if h.agentClient != nil && !h.agentClient.IsConnected(svc.WorkerID) {
+				h.log.Warn("jobs", fmt.Sprintf("self-heal: worker %s offline for service %q", svc.WorkerID, svc.Name))
+			}
+			continue
+		}
+
+		// Local
 		status, exists := running[svc.Name]
 		if exists && !runtime.NeedsRestart(status) {
 			if svc.Status != models.ServiceStatusRunning {
@@ -154,10 +180,10 @@ func (h *ServiceJobHandler) restartService(ctx context.Context, svc *models.Serv
 		return fmt.Errorf("resolve: %w", err)
 	}
 
-	_ = h.ensureNetwork(ctx, "tidefly_proxy")
+	_ = h.ensureNetwork(ctx, proxyNetwork)
 
 	isPodman := h.rt.Type() == runtime.RuntimePodman
-	spec := manifest.ToContainerSpec(resolved, "tidefly_proxy", isPodman)
+	spec := manifest.ToContainerSpec(resolved, proxyNetwork, isPodman)
 	spec.Labels["tidefly.service-id"] = svc.ID.String()
 
 	time.Sleep(2 * time.Second)

@@ -78,6 +78,15 @@ func (h *ServiceJobHandler) processAutoscale(ctx context.Context, svc *models.Se
 		return nil
 	}
 
+	now := time.Now()
+	entry := scaleHistory.get(svc.Name)
+
+	// Worker node autoscale
+	if svc.WorkerID != "" && h.agentClient != nil && h.agentClient.IsConnected(svc.WorkerID) {
+		return h.processWorkerAutoscale(ctx, svc, resolved, as, now, entry)
+	}
+
+	// Local autoscale
 	containers, err := h.rt.ListContainers(ctx, false)
 	if err != nil {
 		return err
@@ -111,8 +120,6 @@ func (h *ServiceJobHandler) processAutoscale(ctx context.Context, svc *models.Se
 	avgCPU := totalCPU / float64(measured)
 	avgMem := totalMem / float64(measured)
 	target := float64(as.Target)
-	now := time.Now()
-	entry := scaleHistory.get(svc.Name)
 	current := len(svContainers)
 
 	switch {
@@ -153,13 +160,82 @@ func (h *ServiceJobHandler) processAutoscale(ctx context.Context, svc *models.Se
 	return nil
 }
 
+func (h *ServiceJobHandler) processWorkerAutoscale(
+	ctx context.Context,
+	svc *models.Service,
+	resolved *manifest.ResolvedManifest,
+	as manifest.ResolvedAutoscaling,
+	now time.Time,
+	entry scaleEntry,
+) error {
+	// Get container list from worker to count replicas
+	workerContainers, err := h.agentClient.ListContainers(ctx, svc.WorkerID)
+	if err != nil {
+		return fmt.Errorf("list worker containers: %w", err)
+	}
+
+	var current int32
+	for _, ct := range workerContainers {
+		if ct.Labels["tidefly.service"] == svc.Name {
+			current++
+		}
+	}
+	if current == 0 {
+		return nil
+	}
+
+	// Collect metrics from worker
+	metrics, err := h.agentClient.CollectMetrics(ctx, svc.WorkerID)
+	if err != nil {
+		return fmt.Errorf("collect worker metrics: %w", err)
+	}
+
+	avgCPU := metrics.CpuPercent
+	avgMem := metrics.MemUsedMb / metrics.MemTotalMb * 100
+	target := float64(as.Target)
+	deployCmd := resolvedToDeployCmd(svc, resolved)
+
+	switch {
+	case (avgCPU >= target || avgMem >= target) && current < int32(as.Max):
+		if now.Sub(entry.lastScaleUp) < scaleUpCooldown {
+			return nil
+		}
+		h.log.Info("jobs", fmt.Sprintf("worker autoscale UP: %s %d→%d", svc.Name, current, current+1))
+		if err := h.agentClient.SendAutoscale(ctx, svc.WorkerID, svc.Name, current, current+1, deployCmd); err != nil {
+			return err
+		}
+		entry.lastScaleUp = now
+		entry.belowThresholdSince = time.Time{}
+		scaleHistory.set(svc.Name, entry)
+
+	case avgCPU < target*0.5 && avgMem < target*0.5 && current > int32(as.Min):
+		if entry.belowThresholdSince.IsZero() {
+			entry.belowThresholdSince = now
+			scaleHistory.set(svc.Name, entry)
+			return nil
+		}
+		if now.Sub(entry.belowThresholdSince) < scaleDownCooldown {
+			return nil
+		}
+		h.log.Info("jobs", fmt.Sprintf("worker autoscale DOWN: %s %d→%d", svc.Name, current, current-1))
+		if err := h.agentClient.SendAutoscale(ctx, svc.WorkerID, svc.Name, current, current-1, deployCmd); err != nil {
+			return err
+		}
+		entry.lastScaleDown = now
+		entry.belowThresholdSince = time.Time{}
+		scaleHistory.set(svc.Name, entry)
+	}
+
+	return nil
+}
+
 func (h *ServiceJobHandler) scaleUp(ctx context.Context, svc *models.Service, resolved *manifest.ResolvedManifest, current int) error {
 	newName := fmt.Sprintf("%s-%d", svc.Name, current+1)
 	newResolved := *resolved
 	newResolved.Name = newName
 
 	isPodman := h.rt.Type() == runtime.RuntimePodman
-	spec := manifest.ToContainerSpec(&newResolved, "tidefly_proxy", isPodman)
+	spec := manifest.ToContainerSpec(&newResolved, proxyNetwork, isPodman)
 	spec.Labels["tidefly.service-id"] = svc.ID.String()
 
 	h.log.Info("jobs", fmt.Sprintf("autoscale UP: %s %d→%d", svc.Name, current, current+1))

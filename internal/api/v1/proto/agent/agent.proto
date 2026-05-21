@@ -4,16 +4,8 @@ package agent.v1;
 
 option go_package = "github.com/tidefly-oss/tidefly-plane/internal/api/v1/proto/agent;agentpb";
 
-// ── Agent Service ─────────────────────────────────────────────────────────────
-// The Worker Agent connects to the Plane and establishes a bidirectional stream.
-// The Plane sends Commands, the Worker sends back Events/Responses.
-
 service AgentService {
-  // Connect establishes the persistent bidirectional stream between
-  // a Worker Agent and the Plane. The worker initiates this call.
   rpc Connect(stream AgentMessage) returns (stream PlaneMessage);
-
-  // Ping is a simple health check used before the full stream is established.
   rpc Ping(PingRequest) returns (PingResponse);
 }
 
@@ -25,13 +17,13 @@ message PingRequest {
 
 message PingResponse {
   string plane_version = 1;
-  int64 timestamp = 2; // unix millis
+  int64 timestamp = 2;
 }
 
 // ── Messages: Worker → Plane ──────────────────────────────────────────────────
 
 message AgentMessage {
-  string message_id = 1; // UUID for correlation
+  string message_id = 1;
   string worker_id = 2;
 
   oneof payload {
@@ -42,32 +34,31 @@ message AgentMessage {
     ContainerLogsResult container_logs = 14;
     MetricsResult metrics = 15;
     DeployResult deploy_result = 16;
+    HealResult heal_result = 17;
+    ScaleResult scale_result = 18;
     ErrorEvent error = 99;
   }
 }
 
-// Sent once on connect — worker identifies itself and reports capabilities
 message AgentHello {
   string agent_version = 1;
   string os = 2;
   string arch = 3;
-  string runtime_type = 4; // "docker" | "podman"
+  string runtime_type = 4;
   string hostname = 5;
 }
 
-// Sent every 30s to keep the stream alive and report basic status
 message AgentHeartbeat {
-  int64 timestamp = 1; // unix millis
+  int64 timestamp = 1;
   int32 container_count = 2;
   double cpu_percent = 3;
   double mem_percent = 4;
 }
 
-// Acknowledgement for a plane command
 message CommandAck {
   string command_id = 1;
   bool accepted = 2;
-  string reason = 3; // if not accepted
+  string reason = 3;
 }
 
 message ContainerListResult {
@@ -80,8 +71,8 @@ message Container {
   string name = 2;
   string image = 3;
   string status = 4;
-  string state = 5; // running | exited | created ...
-  int64 created = 6; // unix millis
+  string state = 5;
+  int64 created = 6;
   map<string, string> labels = 7;
   repeated PortBinding ports = 8;
 }
@@ -90,7 +81,7 @@ message PortBinding {
   string host_ip = 1;
   int32 host_port = 2;
   int32 container_port = 3;
-  string protocol = 4; // tcp | udp
+  string protocol = 4;
 }
 
 message ContainerLogsResult {
@@ -119,8 +110,22 @@ message DeployResult {
   string error = 4;
 }
 
+message HealResult {
+  string command_id = 1;
+  bool success = 2;
+  string container_id = 3;
+  string error = 4;
+}
+
+message ScaleResult {
+  string command_id = 1;
+  bool success = 2;
+  int32 replicas = 3; // actual replica count after scale
+  string error = 4;
+}
+
 message ErrorEvent {
-  string command_id = 1; // empty if not related to a command
+  string command_id = 1;
   string code = 2;
   string message = 3;
 }
@@ -128,7 +133,7 @@ message ErrorEvent {
 // ── Messages: Plane → Worker ──────────────────────────────────────────────────
 
 message PlaneMessage {
-  string command_id = 1; // UUID — worker uses this in CommandAck
+  string command_id = 1;
   string worker_id = 2;
 
   oneof payload {
@@ -142,6 +147,10 @@ message PlaneMessage {
     CmdCollectMetrics collect_metrics = 17;
     CmdRegisterRoute register_route = 18;
     CmdRemoveRoute remove_route = 19;
+    CmdHeal heal = 20;
+    CmdBlueGreen blue_green = 21;
+    CmdRollingUpdate rolling_update = 22;
+    CmdAutoscale autoscale = 23;
     PlaneAck ack = 99;
   }
 }
@@ -176,12 +185,61 @@ message CmdDeploy {
   string project_id = 1;
   string service_name = 2;
   string image = 3;
-  repeated string env = 4; // KEY=VALUE
+  repeated string env = 4;
   repeated PortSpec ports = 5;
   map<string, string> labels = 6;
   ResourceLimits limits = 7;
   repeated VolumeMount volumes = 8;
   string network = 9;
+}
+
+// CmdHeal restarts a service from scratch using the stored manifest.
+// The agent removes all containers matching the service label and redeploys.
+message CmdHeal {
+  string service_name = 1;
+  string reason = 2;        // "die" | "oom" | "kill" | "healthcheck"
+  CmdDeploy deploy = 3;     // full deploy spec to recreate the container
+}
+
+// CmdBlueGreen performs a zero-downtime deploy on the worker.
+// 1. Deploy new container in inactive slot
+// 2. Wait for healthy
+// 3. Switch Caddy route
+// 4. Remove old container
+message CmdBlueGreen {
+  string service_name = 1;
+  string current_slot = 2;  // "blue" | "green" | "" (first deploy)
+  CmdDeploy deploy = 3;     // deploy spec for the new slot
+  string domain = 4;        // domain to switch route on
+  int32 port = 5;           // container port for new upstream
+  bool tls = 6;
+}
+
+// CmdRollingUpdate replaces containers one by one.
+message CmdRollingUpdate {
+  string service_name = 1;
+  CmdDeploy deploy = 2;     // new deploy spec
+  int32 replicas = 3;       // total desired replicas
+}
+
+// CmdAutoscale adjusts the replica count on the worker.
+message CmdAutoscale {
+  string service_name = 1;
+  CmdDeploy deploy = 2;     // deploy spec (for scale-up new containers)
+  int32 current_replicas = 3;
+  int32 target_replicas = 4; // positive = scale up, lower = scale down
+}
+
+message CmdCollectMetrics {}
+
+message CmdRegisterRoute {
+  string upstream = 1;
+  string domain = 2;
+  bool tls = 3;
+}
+
+message CmdRemoveRoute {
+  string domain = 1;
 }
 
 message PortSpec {
@@ -201,19 +259,6 @@ message VolumeMount {
   bool read_only = 3;
 }
 
-message CmdCollectMetrics {}
-
-message CmdRegisterRoute {
-  string upstream = 1; // container:port
-  string domain = 2;
-  bool tls = 3;
-}
-
-message CmdRemoveRoute {
-  string domain = 1;
-}
-
-// Acknowledgement from Plane (e.g. after receiving AgentHello)
 message PlaneAck {
   bool accepted = 1;
   string reason = 2;

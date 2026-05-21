@@ -301,3 +301,113 @@ func (c *Client) IsConnected(workerID string) bool {
 func (c *Client) ConnectedWorkers() []string {
 	return c.registry.ConnectedWorkers()
 }
+
+// ── Orchestration commands ────────────────────────────────────────────────────
+
+// SendHeal triggers self-healing on a worker node for a given service.
+func (c *Client) SendHeal(_ context.Context, workerID, serviceName, reason string, deploy *agentpb.CmdDeploy) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	result, err := conn.Send(&agentpb.PlaneMessage{
+		CommandId: cmdID(),
+		WorkerId:  workerID,
+		Payload: &agentpb.PlaneMessage_Heal{
+			Heal: &agentpb.CmdHeal{
+				ServiceName: serviceName,
+				Reason:      reason,
+				Deploy:      deploy,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res, ok := result.(*agentpb.HealResult); ok && !res.Success {
+		return fmt.Errorf("heal failed: %s", res.Error)
+	}
+	return nil
+}
+
+// SendBlueGreen triggers a blue-green deploy on a worker node.
+func (c *Client) SendBlueGreen(_ context.Context, workerID, serviceName, currentSlot, domain string, port int32, tls bool, deploy *agentpb.CmdDeploy) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	result, err := conn.Send(&agentpb.PlaneMessage{
+		CommandId: cmdID(),
+		WorkerId:  workerID,
+		Payload: &agentpb.PlaneMessage_BlueGreen{
+			BlueGreen: &agentpb.CmdBlueGreen{
+				ServiceName: serviceName,
+				CurrentSlot: currentSlot,
+				Deploy:      deploy,
+				Domain:      domain,
+				Port:        port,
+				Tls:         tls,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res, ok := result.(*agentpb.HealResult); ok && !res.Success {
+		return fmt.Errorf("blue-green failed: %s", res.Error)
+	}
+	return nil
+}
+
+// SendRollingUpdate triggers a rolling update on a worker node.
+func (c *Client) SendRollingUpdate(_ context.Context, workerID, serviceName string, replicas int32, deploy *agentpb.CmdDeploy) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	result, err := conn.Send(&agentpb.PlaneMessage{
+		CommandId: cmdID(),
+		WorkerId:  workerID,
+		Payload: &agentpb.PlaneMessage_RollingUpdate{
+			RollingUpdate: &agentpb.CmdRollingUpdate{
+				ServiceName: serviceName,
+				Deploy:      deploy,
+				Replicas:    replicas,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res, ok := result.(*agentpb.ScaleResult); ok && !res.Success {
+		return fmt.Errorf("rolling update failed: %s", res.Error)
+	}
+	return nil
+}
+
+// SendAutoscale adjusts replica count on a worker node.
+func (c *Client) SendAutoscale(_ context.Context, workerID, serviceName string, current, target int32, deploy *agentpb.CmdDeploy) error {
+	conn, err := c.conn(workerID)
+	if err != nil {
+		return err
+	}
+	result, err := conn.Send(&agentpb.PlaneMessage{
+		CommandId: cmdID(),
+		WorkerId:  workerID,
+		Payload: &agentpb.PlaneMessage_Autoscale{
+			Autoscale: &agentpb.CmdAutoscale{
+				ServiceName:     serviceName,
+				Deploy:          deploy,
+				CurrentReplicas: current,
+				TargetReplicas:  target,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res, ok := result.(*agentpb.ScaleResult); ok && !res.Success {
+		return fmt.Errorf("autoscale failed: %s", res.Error)
+	}
+	return nil
+}

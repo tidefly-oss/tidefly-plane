@@ -190,11 +190,12 @@ func ProvideJobServer(
 	notifSvc *notification.Service,
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
+	agentClient *agentsvc.Client,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
 		return nil, func() {}, nil
 	}
-	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, metricsReg, ingressAdapter)
+	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, metricsReg, ingressAdapter, agentClient)
 	if err != nil {
 		return nil, nil, err
 	}

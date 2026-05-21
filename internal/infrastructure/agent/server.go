@@ -234,6 +234,12 @@ func (s *Server) handleMessage(
 	case *agentpb.AgentMessage_DeployResult:
 		conn.resolveResult(p.DeployResult.CommandId, p.DeployResult)
 
+	case *agentpb.AgentMessage_HealResult:
+		conn.resolveResult(p.HealResult.CommandId, p.HealResult)
+
+	case *agentpb.AgentMessage_ScaleResult:
+		conn.resolveResult(p.ScaleResult.CommandId, p.ScaleResult)
+
 	case *agentpb.AgentMessage_Error:
 		slog.Error(
 			"agent server: worker error",

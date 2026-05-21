@@ -8,6 +8,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
@@ -53,6 +54,7 @@ func NewServer(
 	notifySvc *notification.Service,
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
+	agentClient *agentsvc.Client,
 ) (*Server, error) {
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     redisCfg.Addr,
@@ -89,7 +91,7 @@ func NewServer(
 		metrics:  metricsReg,
 	}
 
-	svcHandler := NewServiceJobHandler(db, rt, ingressAdapter, log, client)
+	svcHandler := NewServiceJobHandler(db, rt, ingressAdapter, log, client, agentClient)
 
 	return &Server{
 		server:     srv,
@@ -105,22 +107,19 @@ func NewServer(
 func (s *Server) Run(ctx context.Context) error {
 	mux := asynq.NewServeMux()
 
-	// ── Runtime jobs ──────────────────────────────────────────────────────────
 	mux.HandleFunc(TaskServiceCleanup, s.svcHandler.HandleServiceCleanup)
 	mux.HandleFunc(TaskRuntimeHealthCheck, s.handler.HandleRuntimeHealthCheck)
 	mux.HandleFunc(TaskLogsRetention, s.handler.HandleLogsRetention)
 	mux.HandleFunc(TaskMetricsCollect, s.handler.HandleMetricsCollect)
 
-	// ── Service lifecycle jobs ────────────────────────────────────────────────
 	mux.HandleFunc(TaskServiceDeploy, s.svcHandler.HandleServiceDeploy)
 	mux.HandleFunc(TaskServiceRedeploy, s.svcHandler.HandleServiceRedeploy)
 	mux.HandleFunc(TaskServiceUpdate, s.svcHandler.HandleServiceUpdate)
 	mux.HandleFunc(TaskServiceDelete, s.svcHandler.HandleServiceDelete)
 
-	// ── Scheduled + event-driven jobs ────────────────────────────────────────
-	mux.HandleFunc(TaskServiceHealthCheck, s.svcHandler.HandleServiceHealthCheck) // fallback @every 30s
-	mux.HandleFunc(TaskServiceAutoscale, s.svcHandler.HandleServiceAutoscale)     // @every 30s
-	mux.HandleFunc(TaskServiceHeal, s.svcHandler.HandleServiceHeal)               // event-driven, immediate
+	mux.HandleFunc(TaskServiceHealthCheck, s.svcHandler.HandleServiceHealthCheck)
+	mux.HandleFunc(TaskServiceAutoscale, s.svcHandler.HandleServiceAutoscale)
+	mux.HandleFunc(TaskServiceHeal, s.svcHandler.HandleServiceHeal)
 
 	if err := s.registerSchedules(); err != nil {
 		return fmt.Errorf("jobs: register schedules: %w", err)
@@ -129,7 +128,6 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("jobs: start scheduler: %w", err)
 	}
 
-	// ── Start event watcher — enqueues TaskServiceHeal on container die/oom/kill ──
 	go s.WatchContainerEvents(ctx)
 
 	s.log.Info("jobs", fmt.Sprintf("background jobs started (runtime: %s)", s.handler.rt.Type()))
@@ -207,7 +205,6 @@ func (s *Server) registerSchedules() error {
 		return fmt.Errorf("register metrics collect: %w", err)
 	}
 
-	// Self-healing fallback — catches anything the event watcher missed
 	serviceHealthTask, err := newTask(TaskServiceHealthCheck, nil)
 	if err != nil {
 		return err

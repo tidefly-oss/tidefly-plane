@@ -3,11 +3,15 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
+	agentpb "github.com/tidefly-oss/tidefly-plane/internal/api/v1/proto/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/converter"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/manifest"
+	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
@@ -98,15 +102,30 @@ type serviceLogger interface {
 }
 
 type ServiceJobHandler struct {
-	db      *gorm.DB
-	rt      runtime.Runtime
-	ingress ingress.Adapter
-	log     serviceLogger
-	client  *asynq.Client
+	db          *gorm.DB
+	rt          runtime.Runtime
+	ingress     ingress.Adapter
+	log         serviceLogger
+	client      *asynq.Client
+	agentClient *agentsvc.Client
 }
 
-func NewServiceJobHandler(db *gorm.DB, rt runtime.Runtime, ingressAdapter ingress.Adapter, log serviceLogger, client *asynq.Client) *ServiceJobHandler {
-	return &ServiceJobHandler{db: db, rt: rt, ingress: ingressAdapter, log: log, client: client}
+func NewServiceJobHandler(
+	db *gorm.DB,
+	rt runtime.Runtime,
+	ingressAdapter ingress.Adapter,
+	log serviceLogger,
+	client *asynq.Client,
+	agentClient *agentsvc.Client,
+) *ServiceJobHandler {
+	return &ServiceJobHandler{
+		db:          db,
+		rt:          rt,
+		ingress:     ingressAdapter,
+		log:         log,
+		client:      client,
+		agentClient: agentClient,
+	}
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -140,4 +159,38 @@ func (h *ServiceJobHandler) ensureNetwork(ctx context.Context, name string) erro
 		return err
 	}
 	return nil
+}
+
+// resolvedToDeployCmd converts a ResolvedManifest to an agentpb.CmdDeploy
+// for sending to a worker node via gRPC.
+func resolvedToDeployCmd(svc *models.Service, resolved *manifest.ResolvedManifest) *agentpb.CmdDeploy {
+	env := make([]string, 0, len(resolved.Container.Env))
+	for _, e := range resolved.Container.Env {
+		env = append(env, fmt.Sprintf("%s=%s", e.Name, e.Value))
+	}
+
+	ports := make([]*agentpb.PortSpec, 0)
+	if resolved.Expose.Port > 0 {
+		ports = append(ports, &agentpb.PortSpec{
+			ContainerPort: int32(resolved.Expose.Port),
+			HostPort:      0,
+			Protocol:      "tcp",
+		})
+	}
+
+	labels := map[string]string{
+		"tidefly.service":    svc.Name,
+		"tidefly.service-id": svc.ID.String(),
+		"tidefly.project":    svc.ProjectID,
+	}
+
+	return &agentpb.CmdDeploy{
+		ProjectId:   svc.ProjectID,
+		ServiceName: svc.Name,
+		Image:       resolved.Container.Image,
+		Env:         env,
+		Ports:       ports,
+		Labels:      labels,
+		Network:     proxyNetwork,
+	}
 }
