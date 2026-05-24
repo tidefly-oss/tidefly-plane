@@ -10,37 +10,40 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/labstack/echo/v5"
+	"github.com/go-chi/chi/v5"
+
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
 
-func (h *Handler) Logs(c *echo.Context) error {
-	id := c.Param("id")
-	tail := c.QueryParam("tail")
+func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tail := r.URL.Query().Get("tail")
 	if tail == "" {
 		tail = "100"
 	}
-	since := c.QueryParam("since")
-	timestamps, _ := strconv.ParseBool(c.QueryParam("timestamps"))
+	since := r.URL.Query().Get("since")
+	timestamps, _ := strconv.ParseBool(r.URL.Query().Get("timestamps"))
 
-	resp := c.Response()
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	logs, err := h.runtime.ContainerLogs(ctx, id, runtime.LogOptions{
 		Follow: true, Tail: tail, Since: since, Timestamps: timestamps,
 	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+		flusher.Flush()
+		return
 	}
 	defer func() {
 		if err := logs.Close(); err != nil {
@@ -52,15 +55,15 @@ func (h *Handler) Logs(c *echo.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		default:
 		}
 		if _, err := io.ReadFull(logs, hdr); err != nil {
 			if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
-				_, _ = fmt.Fprintf(resp, "event: done\ndata: {}\n\n")
+				_, _ = fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 				flusher.Flush()
 			}
-			return nil
+			return
 		}
 		size := binary.BigEndian.Uint32(hdr[4:])
 		if size == 0 {
@@ -68,73 +71,70 @@ func (h *Handler) Logs(c *echo.Context) error {
 		}
 		payload := make([]byte, size)
 		if _, err := io.ReadFull(logs, payload); err != nil {
-			return nil
+			return
 		}
 		streamType := "stdout"
 		if hdr[0] == 2 {
 			streamType = "stderr"
 		}
 		data, _ := json.Marshal(map[string]string{"stream": streamType, "line": string(payload)})
-		if _, err := fmt.Fprintf(resp, "event: log\ndata: %s\n\n", data); err != nil {
-			return err
+		if _, err := fmt.Fprintf(w, "event: log\ndata: %s\n\n", data); err != nil {
+			return
 		}
 		flusher.Flush()
 	}
 }
 
-// Stats streams container resource metrics as SSE every second.
-func (h *Handler) Stats(c *echo.Context) error {
-	id := c.Param("id")
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
-	resp := c.Response()
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
-	ctx := c.Request().Context()
-	ticker := time.NewTicker(1 * time.Second)
+	ctx := r.Context()
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
 			rc, err := h.runtime.ContainerStats(ctx, id)
 			if err != nil {
-				_, _ = fmt.Fprintf(resp, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+				_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
 				flusher.Flush()
-				return nil
+				return
 			}
-
 			buf := make([]byte, 65536)
 			n, _ := rc.Read(buf)
 			_ = rc.Close()
 			if n == 0 {
 				continue
 			}
-			raw := buf[:n]
-
-			entry := parseStats(raw)
+			entry := parseStats(buf[:n])
 			if entry == nil {
 				continue
 			}
-
 			data, _ := json.Marshal(entry)
-			if _, err := fmt.Fprintf(resp, "event: stats\ndata: %s\n\n", data); err != nil {
-				return nil
+			if _, err := fmt.Fprintf(w, "event: stats\ndata: %s\n\n", data); err != nil {
+				return
 			}
 			flusher.Flush()
 		}
 	}
 }
+
+// ── Stats parsing ─────────────────────────────────────────────────────────────
 
 type statsEntry struct {
 	CPUPercent   float64 `json:"cpu_percent"`
@@ -188,7 +188,6 @@ func parseStats(raw []byte) *statsEntry {
 		return nil
 	}
 
-	// CPU
 	cpuDelta := float64(ds.CPUStats.CPUUsage.TotalUsage) - float64(ds.PreCPUStats.CPUUsage.TotalUsage)
 	sysDelta := float64(ds.CPUStats.SystemCPUUsage) - float64(ds.PreCPUStats.SystemCPUUsage)
 	cpus := ds.CPUStats.OnlineCPUs
@@ -200,7 +199,6 @@ func parseStats(raw []byte) *statsEntry {
 		cpuPct = (cpuDelta / sysDelta) * float64(cpus) * 100
 	}
 
-	// Memory
 	cache := ds.MemoryStats.Stats["cache"]
 	if cache == 0 {
 		cache = ds.MemoryStats.Stats["inactive_file"]
@@ -212,14 +210,12 @@ func parseStats(raw []byte) *statsEntry {
 		memPct = float64(ds.MemoryStats.Usage-cache) / float64(ds.MemoryStats.Limit) * 100
 	}
 
-	// Network
 	var rxBytes, txBytes uint64
 	for _, n := range ds.Networks {
 		rxBytes += n.RxBytes
 		txBytes += n.TxBytes
 	}
 
-	// Block I/O
 	var blockRead, blockWrite uint64
 	for _, b := range ds.BlkioStats.IOServiceBytesRecursive {
 		switch b.Op {

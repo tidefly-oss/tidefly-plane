@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/labstack/echo/v5"
+	"github.com/go-chi/chi/v5"
 	"github.com/olahol/melody"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
@@ -79,25 +79,19 @@ func (h *Handler) setupExecHandlers() {
 	})
 }
 
-func (h *Handler) Exec(c *echo.Context) error {
-	id := c.Param("id")
-	details, err := h.runtime.GetContainer(c.Request().Context(), id)
+func (h *Handler) Exec(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	details, err := h.runtime.GetContainer(r.Context(), id)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "container not found"})
+		http.Error(w, `{"error":"container not found"}`, http.StatusNotFound)
+		return
 	}
-	if err := h.access.CheckContainerAccess(c, details.Labels); err != nil {
-		return err
+	if err := h.access.CheckContainerAccess(r.Context(), details.Labels); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
-
-	// Inject container ID as query param so melody's HandleConnect can read it
-	req := c.Request()
-	q := req.URL.Query()
+	q := r.URL.Query()
 	q.Set("id", id)
-	req.URL.RawQuery = q.Encode()
-
-	w, err := echo.UnwrapResponse(c.Response())
-	if err != nil {
-		return err
-	}
-	return h.execMel.HandleRequest(w, req)
+	r.URL.RawQuery = q.Encode()
+	h.execMel.HandleRequest(w, r)
 }

@@ -7,33 +7,32 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/labstack/echo/v5"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
 )
 
-func (h *Handler) CaddyLogs(c *echo.Context) error {
-	ctx := (*c).Request().Context()
-	resp := (*c).Response()
+func (h *Handler) CaddyLogs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
 	sendEvent := func(data []byte) {
-		_, _ = fmt.Fprintf(resp, "data: %s\n\n", data)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
 
 	logWatcher := caddysvc.NewLogWatcher(h.runtime, h.log)
 
-	if tailStr := (*c).QueryParam("tail"); tailStr != "" {
+	if tailStr := r.URL.Query().Get("tail"); tailStr != "" {
 		if n, err := strconv.Atoi(tailStr); err == nil && n > 0 {
 			if entries, err := logWatcher.Tail(ctx, n); err == nil {
 				for _, entry := range entries {
@@ -46,9 +45,9 @@ func (h *Handler) CaddyLogs(c *echo.Context) error {
 
 	ch, err := logWatcher.Stream(ctx)
 	if err != nil {
-		_, _ = fmt.Fprintf(resp, "event: error\ndata: {\"error\":%q}\n\n", err.Error())
+		_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":%q}\n\n", err.Error())
 		flusher.Flush()
-		return nil
+		return
 	}
 
 	ticker := time.NewTicker(20 * time.Second)
@@ -57,15 +56,15 @@ func (h *Handler) CaddyLogs(c *echo.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case entry, ok := <-ch:
 			if !ok {
-				return nil
+				return
 			}
 			data, _ := json.Marshal(entry)
 			sendEvent(data)
 		case <-ticker.C:
-			_, _ = fmt.Fprintf(resp, "event: ping\ndata: {}\n\n")
+			_, _ = fmt.Fprintf(w, "event: ping\ndata: {}\n\n")
 			flusher.Flush()
 		}
 	}

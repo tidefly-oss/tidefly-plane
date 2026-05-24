@@ -12,15 +12,15 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
-type GetResourcesInput struct {
+type ContainerGetResourcesInput struct {
 	ID string `path:"id"`
 }
 
-type GetResourcesOutput struct {
+type ContainerGetResourcesOutput struct {
 	Body *runtime.ResourceConfig
 }
 
-type AutoscalingConfig struct {
+type ContainerAutoscalingConfig struct {
 	Enabled bool    `json:"enabled"`
 	Min     int     `json:"min" minimum:"1"`
 	Max     int     `json:"max" minimum:"1"`
@@ -28,21 +28,21 @@ type AutoscalingConfig struct {
 	Target  float64 `json:"target" minimum:"1" maximum:"100"`
 }
 
-type UpdateResourcesInput struct {
+type ContainerUpdateResourcesInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		CPUCores       float64            `json:"cpu_cores" minimum:"0"`
-		MemoryMB       int64              `json:"memory_mb" minimum:"0"`
-		MemorySwapMB   int64              `json:"memory_swap_mb" minimum:"-1"`
-		RestartPolicy  string             `json:"restart_policy,omitempty" enum:"no,always,on-failure,unless-stopped"`
-		MaxRetries     int                `json:"max_retries" minimum:"0"`
-		Replicas       int                `json:"replicas,omitempty" minimum:"1"`
-		DeployStrategy string             `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
-		Autoscaling    *AutoscalingConfig `json:"autoscaling,omitempty"`
+		CPUCores       float64                     `json:"cpu_cores"                minimum:"0"`
+		MemoryMB       int64                       `json:"memory_mb"                minimum:"0"`
+		MemorySwapMB   int64                       `json:"memory_swap_mb"           minimum:"-1"`
+		RestartPolicy  string                      `json:"restart_policy,omitempty" enum:"no,always,on-failure,unless-stopped"`
+		MaxRetries     int                         `json:"max_retries"              minimum:"0"`
+		Replicas       int                         `json:"replicas,omitempty"       minimum:"1"`
+		DeployStrategy string                      `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
+		Autoscaling    *ContainerAutoscalingConfig `json:"autoscaling,omitempty"`
 	}
 }
 
-type UpdateResourcesOutput struct {
+type ContainerUpdateResourcesOutput struct {
 	Body struct {
 		RestartRequired bool     `json:"restart_required"`
 		Applied         []string `json:"applied"`
@@ -50,31 +50,30 @@ type UpdateResourcesOutput struct {
 	}
 }
 
-func (h *Handler) GetResources(ctx context.Context, input *GetResourcesInput) (*GetResourcesOutput, error) {
+func (h *Handler) GetResources(ctx context.Context, input *ContainerGetResourcesInput) (*ContainerGetResourcesOutput, error) {
 	details, err := h.runtime.GetContainer(ctx, input.ID)
 	if err != nil {
 		return nil, huma404("container not found")
 	}
-	if err := middleware.CheckContainerAccessHuma(ctx, h.db, details.Labels); err != nil {
+	if err := middleware.CheckContainerAccess(ctx, h.db, details.Labels); err != nil {
 		return nil, err
 	}
 	cfg, err := h.runtime.GetResources(ctx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get resources: %w", err)
 	}
-	return &GetResourcesOutput{Body: cfg}, nil
+	return &ContainerGetResourcesOutput{Body: cfg}, nil
 }
 
-func (h *Handler) UpdateResources(ctx context.Context, input *UpdateResourcesInput) (*UpdateResourcesOutput, error) {
+func (h *Handler) UpdateResources(ctx context.Context, input *ContainerUpdateResourcesInput) (*ContainerUpdateResourcesOutput, error) {
 	details, err := h.runtime.GetContainer(ctx, input.ID)
 	if err != nil {
 		return nil, huma404("container not found")
 	}
-	if err := middleware.CheckContainerAccessHuma(ctx, h.db, details.Labels); err != nil {
+	if err := middleware.CheckContainerAccess(ctx, h.db, details.Labels); err != nil {
 		return nil, err
 	}
 
-	// ── Validation ────────────────────────────────────────────────────────────
 	if input.Body.MemoryMB > 0 && input.Body.MemoryMB < 6 {
 		return nil, huma422("memory_mb must be >= 6 or 0 (unlimited)")
 	}
@@ -88,7 +87,6 @@ func (h *Handler) UpdateResources(ctx context.Context, input *UpdateResourcesInp
 		return nil, huma422("autoscaling min must be <= max")
 	}
 
-	// ── Build runtime config ──────────────────────────────────────────────────
 	cfg := runtime.ResourceConfig{
 		CPUCores:       input.Body.CPUCores,
 		MemoryMB:       input.Body.MemoryMB,
@@ -124,12 +122,11 @@ func (h *Handler) UpdateResources(ctx context.Context, input *UpdateResourcesInp
 		return nil, fmt.Errorf("update resources: %w", err)
 	}
 
-	// ── Sync scaling changes into manifest for job runner ─────────────────────
 	if input.Body.Replicas > 0 || input.Body.Autoscaling != nil || input.Body.DeployStrategy != "" {
 		h.syncManifestScaling(details.Name, input)
 	}
 
-	out := &UpdateResourcesOutput{}
+	out := &ContainerUpdateResourcesOutput{}
 	out.Body.RestartRequired = result.RestartRequired
 	out.Body.Applied = result.Applied
 	switch {
@@ -143,10 +140,7 @@ func (h *Handler) UpdateResources(ctx context.Context, input *UpdateResourcesInp
 	return out, nil
 }
 
-// syncManifestScaling updates the stored manifest JSON with new scaling settings
-// so HandleServiceAutoscale and HandleServiceHealthCheck pick up changes immediately.
-// Every container in Tidefly is manifest-managed — if no record is found, it's a bug.
-func (h *Handler) syncManifestScaling(containerName string, input *UpdateResourcesInput) {
+func (h *Handler) syncManifestScaling(containerName string, input *ContainerUpdateResourcesInput) {
 	var svc models.Service
 	if err := h.db.Where("name = ?", containerName).First(&svc).Error; err != nil {
 		h.log.Warnw("resources", "no service record found for container — manifest sync skipped",
@@ -156,12 +150,10 @@ func (h *Handler) syncManifestScaling(containerName string, input *UpdateResourc
 	if svc.ManifestJSON == "" {
 		return
 	}
-
 	var raw manifest.ServiceManifest
 	if err := json.Unmarshal([]byte(svc.ManifestJSON), &raw); err != nil {
 		return
 	}
-
 	if raw.Spec.Scaling == nil {
 		raw.Spec.Scaling = &manifest.ScalingSpec{}
 	}
@@ -180,7 +172,6 @@ func (h *Handler) syncManifestScaling(containerName string, input *UpdateResourc
 			Max:     as.Max,
 		}
 	}
-
 	updated, err := json.Marshal(&raw)
 	if err != nil {
 		return

@@ -13,12 +13,12 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
-type ListInput struct{}
-type ListOutput struct {
+type GitListInput struct{}
+type GitListOutput struct {
 	Body []mapper.IntegrationResponse
 }
 
-type CreateInput struct {
+type GitCreateInput struct {
 	Body struct {
 		Name     string `json:"name"               minLength:"1" maxLength:"255"`
 		Provider string `json:"provider"           enum:"github,gitlab,gitea-forgejo,bitbucket"`
@@ -27,23 +27,22 @@ type CreateInput struct {
 		Username string `json:"username,omitempty" maxLength:"255"`
 	}
 }
-type CreateOutput struct {
+type GitCreateOutput struct {
 	Body mapper.IntegrationResponse
 }
 
-type GetInput struct {
+type GitGetInput struct {
 	ID string `path:"id"`
 }
-type GetOutput struct {
+type GitGetOutput struct {
 	Body mapper.IntegrationResponse
 }
 
-type DeleteInput struct {
+type GitDeleteInput struct {
 	ID string `path:"id"`
 }
 
 // currentUser builds a minimal *models.User from JWT claims.
-// UserID and Role are embedded in the token — no DB lookup needed.
 func currentUser(ctx context.Context) *models.User {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
@@ -55,7 +54,7 @@ func currentUser(ctx context.Context) *models.User {
 	}
 }
 
-func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
+func (h *Handler) List(ctx context.Context, _ *GitListInput) (*GitListOutput, error) {
 	user := currentUser(ctx)
 	if user == nil {
 		return nil, huma401("unauthorized")
@@ -65,16 +64,16 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 		return nil, fmt.Errorf("fetch integrations: %w", err)
 	}
 	if len(ids) == 0 {
-		return &ListOutput{Body: []mapper.IntegrationResponse{}}, nil
+		return &GitListOutput{Body: []mapper.IntegrationResponse{}}, nil
 	}
 	integrations, err := h.integration.ListVisible(ids)
 	if err != nil {
 		return nil, err
 	}
-	return &ListOutput{Body: mapper.ToIntegrationResponses(integrations, user.ID)}, nil
+	return &GitListOutput{Body: mapper.ToIntegrationResponses(integrations, user.ID)}, nil
 }
 
-func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *Handler) Create(ctx context.Context, input *GitCreateInput) (*GitCreateOutput, error) {
 	user := currentUser(ctx)
 	if user == nil {
 		return nil, huma401("unauthorized")
@@ -91,13 +90,11 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput
 	}
 	encrypted, err := h.svc.PrepareSecret(input.Body.Token)
 	if err != nil {
-		h.log.Audit(
-			ctx, logger.AuditEntry{
-				Action:  logger.AuditGitTokenAdd,
-				Success: false,
-				Details: fmt.Sprintf("provider=%s name=%s encrypt_failed", input.Body.Provider, input.Body.Name),
-			},
-		)
+		h.log.Audit(ctx, logger.AuditEntry{
+			Action:  logger.AuditGitTokenAdd,
+			Success: false,
+			Details: fmt.Sprintf("provider=%s name=%s encrypt_failed", input.Body.Provider, input.Body.Name),
+		})
 		return nil, fmt.Errorf("secure token: %w", err)
 	}
 	m := &models.GitIntegration{
@@ -105,14 +102,12 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput
 		BaseURL: baseURL, AuthType: "token", SecretEncrypted: encrypted,
 	}
 	err = h.integration.Create(m)
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditGitTokenAdd,
-			ResourceID: m.ID,
-			Success:    err == nil,
-			Details:    fmt.Sprintf("provider=%s name=%s", input.Body.Provider, input.Body.Name),
-		},
-	)
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditGitTokenAdd,
+		ResourceID: m.ID,
+		Success:    err == nil,
+		Details:    fmt.Sprintf("provider=%s name=%s", input.Body.Provider, input.Body.Name),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("save integration: %w", err)
 	}
@@ -124,10 +119,10 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput
 			Name: m.Name,
 		},
 	})
-	return &CreateOutput{Body: mapper.ToIntegrationResponse(m, user.ID)}, nil
+	return &GitCreateOutput{Body: mapper.ToIntegrationResponse(m, user.ID)}, nil
 }
 
-func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {
+func (h *Handler) Get(ctx context.Context, input *GitGetInput) (*GitGetOutput, error) {
 	user := currentUser(ctx)
 	if user == nil {
 		return nil, huma401("unauthorized")
@@ -136,10 +131,10 @@ func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &GetOutput{Body: mapper.ToIntegrationResponse(m, user.ID)}, nil
+	return &GitGetOutput{Body: mapper.ToIntegrationResponse(m, user.ID)}, nil
 }
 
-func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *Handler) Delete(ctx context.Context, input *GitDeleteInput) (*struct{}, error) {
 	user := currentUser(ctx)
 	if user == nil {
 		return nil, huma401("unauthorized")
@@ -149,14 +144,12 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 		return nil, err
 	}
 	err = h.integration.Delete(input.ID)
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditGitTokenDelete,
-			ResourceID: input.ID,
-			Success:    err == nil,
-			Details:    fmt.Sprintf("provider=%s name=%s", m.Provider, m.Name),
-		},
-	)
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditGitTokenDelete,
+		ResourceID: input.ID,
+		Success:    err == nil,
+		Details:    fmt.Sprintf("provider=%s name=%s", m.Provider, m.Name),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("delete integration: %w", err)
 	}

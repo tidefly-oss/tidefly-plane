@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
@@ -75,53 +75,75 @@ const (
 	AuditWebhookRotate AuditAction = "webhooks.rotate_secret"
 )
 
+// auditActionsToNotify are actions that always generate a notification
+// regardless of success status (security-relevant).
+var auditActionsToNotify = map[AuditAction]bool{
+	AuditLoginFailed:     true,
+	AuditAdminUserDelete: true,
+	AuditProjectDelete:   true,
+	AuditVolumeDelete:    true,
+	AuditNetworkDelete:   true,
+}
+
 // DBLogLevel controls what gets written to the AppLog table.
 type DBLogLevel int
 
 const (
-	DBLogWarnAndAbove DBLogLevel = iota
-	DBLogErrorAndAbove
-	DBLogNone
+	DBLogNone          DBLogLevel = iota // nothing
+	DBLogErrorAndAbove                   // ERROR + FATAL
+	DBLogWarnAndAbove                    // WARN + ERROR + FATAL (default)
 )
 
-// Logger wraps slog.Logger and adds DB-backed audit/app-log persistence.
+// NotificationUpsertFn is the signature for upserting a notification in the DB.
+type NotificationUpsertFn func(ctx context.Context, sourceID, sourceName string, severity models.NotificationSeverity, msg string) error
+
+// NotificationSendFn is the signature for sending a real-time notification event.
+type NotificationSendFn func(title, message, level string)
+
 type Logger struct {
-	slog       *slog.Logger
-	db         *gorm.DB
-	dbLogLevel DBLogLevel
+	slog        *slog.Logger
+	db          *gorm.DB
+	dbLogLevel  DBLogLevel
+	notifUpsert NotificationUpsertFn
+	notifSend   NotificationSendFn
 }
 
-type Option func(*Logger)
-
-func WithDBLogLevel(level DBLogLevel) Option {
-	return func(l *Logger) { l.dbLogLevel = level }
+type Options struct {
+	DBLogLevel DBLogLevel
 }
 
-func New(isDev bool, db *gorm.DB, opts ...Option) (*Logger, error) {
-	var handler slog.Handler
+type Option func(*Options)
+
+func WithDBLogLevel(l DBLogLevel) Option {
+	return func(o *Options) { o.DBLogLevel = l }
+}
+
+func New(isDev bool, _ *gorm.DB, opts ...Option) (*Logger, error) {
+	o := &Options{DBLogLevel: DBLogWarnAndAbove}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	level := slog.LevelInfo
 	if isDev {
-		handler = slog.NewTextHandler(
-			os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug},
-		)
-	} else {
-		handler = slog.NewJSONHandler(
-			os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn},
-		)
+		level = slog.LevelDebug
 	}
-	l := &Logger{
-		slog:       slog.New(handler),
-		db:         db,
-		dbLogLevel: DBLogWarnAndAbove,
-	}
-	for _, o := range opts {
-		o(l)
-	}
-	return l, nil
-}
 
-func (l *Logger) Sync() {}
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	return &Logger{
+		slog:       slog.New(handler),
+		dbLogLevel: o.DBLogLevel,
+	}, nil
+}
 
 func (l *Logger) SetDB(db *gorm.DB) { l.db = db }
+
+// SetNotifier wires the notification services into the logger.
+// Once set, ERROR/FATAL app logs and security audit failures generate notifications.
+func (l *Logger) SetNotifier(upsert NotificationUpsertFn, send NotificationSendFn) {
+	l.notifUpsert = upsert
+	l.notifSend = send
+}
 
 func (l *Logger) Info(component, msg string, args ...any) {
 	l.slog.Info(msg, prepend("component", component, args)...)
@@ -140,13 +162,15 @@ func (l *Logger) Error(component, msg string, err error, args ...any) {
 		extra = append(extra, slog.String("error", err.Error()))
 	}
 	l.slog.Error(msg, extra...)
+
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
 	if l.dbLogLevel <= DBLogErrorAndAbove {
-		errStr := ""
-		if err != nil {
-			errStr = err.Error()
-		}
 		l.writeAppLog("ERROR", component, msg, errStr, "")
 	}
+	l.sendNotification("ERROR", component, msg, errStr)
 }
 
 func (l *Logger) Errorw(component, msg string, args ...any) {
@@ -161,6 +185,7 @@ func (l *Logger) Errorw(component, msg string, args ...any) {
 	if l.dbLogLevel <= DBLogErrorAndAbove {
 		l.writeAppLog("ERROR", component, msg, errStr, "")
 	}
+	l.sendNotification("ERROR", component, msg, errStr)
 }
 
 func (l *Logger) Warnw(component, msg string, args ...any) {
@@ -176,8 +201,8 @@ func (l *Logger) Fatal(component, msg string, err error) {
 		errStr = err.Error()
 	}
 	l.writeAppLog("FATAL", component, msg, errStr, "")
-	l.slog.Error(
-		msg,
+	l.sendNotification("FATAL", component, msg, errStr)
+	l.slog.Error(msg,
 		slog.String("component", component),
 		slog.String("error", errStr),
 		slog.String("level", "FATAL"),
@@ -186,13 +211,11 @@ func (l *Logger) Fatal(component, msg string, err error) {
 }
 
 func (l *Logger) ContainerEvent(level, containerID, containerName, msg, errDetail string) {
-	// Interne Tidefly-Container nicht loggen
 	if isInternalContainer(containerName) {
 		return
 	}
 	component := "container:" + containerName
-	l.slog.Info(
-		"container-event",
+	l.slog.Info("container-event",
 		slog.String("level", level),
 		slog.String("container_id", containerID),
 		slog.String("container_name", containerName),
@@ -221,6 +244,44 @@ func (l *Logger) writeAppLog(level, component, msg, errStr, containerID string) 
 			ContainerID: containerID,
 		})
 	}()
+}
+
+// sendNotification pushes an in-app notification for error/fatal app log events.
+func (l *Logger) sendNotification(level, component, msg, errStr string) {
+	if l.notifUpsert == nil {
+		return
+	}
+	for _, ignore := range ignoredMessages {
+		if strings.Contains(msg, ignore) || strings.Contains(errStr, ignore) {
+			return
+		}
+	}
+
+	severity := models.SeverityError
+	if level == "FATAL" {
+		severity = models.SeverityFatal
+	}
+
+	fullMsg := msg
+	if errStr != "" {
+		fullMsg = msg + ": " + errStr
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = l.notifUpsert(ctx, "plane:"+component, component, severity, fullMsg)
+	}()
+
+	if l.notifSend != nil && (level == "ERROR" || level == "FATAL") {
+		go func() {
+			l.notifSend(
+				fmt.Sprintf("[%s] %s", level, component),
+				fullMsg,
+				"error",
+			)
+		}()
+	}
 }
 
 func isInternalContainer(name string) bool {
@@ -260,19 +321,67 @@ func (l *Logger) Audit(ctx context.Context, entry AuditEntry) {
 			})
 		}()
 	}
-	l.slog.InfoContext(
-		ctx, "audit",
+	l.slog.InfoContext(ctx, "audit",
 		slog.String("action", string(entry.Action)),
 		slog.String("user_id", entry.UserID),
 		slog.String("user_email", entry.UserEmail),
 		slog.String("resource_id", entry.ResourceID),
 		slog.Bool("success", entry.Success),
 	)
+
+	// Notify on security-relevant audit events or failures
+	l.maybeNotifyAudit(entry)
 }
 
-func (l *Logger) AuditC(c *echo.Context, action AuditAction, resourceID string, err error, details string) {
-	userID, _ := c.Get("user_id").(string)
-	userEmail, _ := c.Get("user_email").(string)
+func (l *Logger) maybeNotifyAudit(entry AuditEntry) {
+	if l.notifUpsert == nil {
+		return
+	}
+
+	alwaysNotify := auditActionsToNotify[entry.Action]
+	if !alwaysNotify && entry.Success {
+		return
+	}
+
+	severity := models.SeverityWarn
+	if !entry.Success {
+		severity = models.SeverityError
+	}
+	if entry.Action == AuditLoginFailed {
+		severity = models.SeverityError
+	}
+
+	msg := fmt.Sprintf("audit: %s", entry.Action)
+	if entry.UserEmail != "" {
+		msg += " by " + entry.UserEmail
+	}
+	if !entry.Success {
+		msg += " [FAILED]"
+		if entry.Details != "" {
+			msg += ": " + entry.Details
+		}
+	}
+
+	sourceID := fmt.Sprintf("audit:%s:%s", entry.Action, entry.ResourceID)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = l.notifUpsert(ctx, sourceID, "audit", severity, msg)
+	}()
+
+	if l.notifSend != nil && !entry.Success {
+		go func() {
+			l.notifSend(
+				fmt.Sprintf("[AUDIT] %s", entry.Action),
+				msg,
+				"warn",
+			)
+		}()
+	}
+}
+
+// AuditR extracts audit context from a stdlib *http.Request.
+func (l *Logger) AuditR(r *http.Request, action AuditAction, resourceID string, err error, details string) {
 	if err != nil {
 		if details != "" {
 			details += ": " + err.Error()
@@ -280,18 +389,14 @@ func (l *Logger) AuditC(c *echo.Context, action AuditAction, resourceID string, 
 			details = err.Error()
 		}
 	}
-	l.Audit(
-		c.Request().Context(), AuditEntry{
-			Action:     action,
-			UserID:     userID,
-			UserEmail:  userEmail,
-			IPAddress:  c.RealIP(),
-			UserAgent:  c.Request().Header.Get("User-Agent"),
-			ResourceID: resourceID,
-			Details:    details,
-			Success:    err == nil,
-		},
-	)
+	l.Audit(r.Context(), AuditEntry{
+		Action:     action,
+		IPAddress:  r.RemoteAddr,
+		UserAgent:  r.Header.Get("User-Agent"),
+		ResourceID: resourceID,
+		Details:    details,
+		Success:    err == nil,
+	})
 }
 
 // ── GORM logger adapter ───────────────────────────────────────────────────────

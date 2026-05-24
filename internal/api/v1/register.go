@@ -2,8 +2,8 @@ package v1
 
 import (
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
@@ -44,7 +44,7 @@ import (
 
 func Register(
 	api huma.API,
-	e *echo.Echo,
+	r chi.Router,
 	jwtSvc *auth.Service,
 	tokenStore *auth.TokenStore,
 	caddy *caddysvc.Client,
@@ -69,32 +69,35 @@ func Register(
 
 	requireAuth := middleware.RequireAuthHuma(api, jwtSvc)
 	requireAdmin := middleware.RequireAdminHuma(api)
-	echoInject := middleware.InjectUser(db)
-	echoSSE := middleware.RequireAuthSSE(jwtSvc)
+	sseAuth := middleware.RequireAuthSSE(jwtSvc)
 
 	mw := huma.Middlewares{requireAuth}
 	adminMw := huma.Middlewares{requireAuth, requireAdmin}
 
 	// ── WebSocket ─────────────────────────────────────────────────────────────
-	wshttp.New(bus, jwtSvc, log, metricsReg).RegisterRoutes(e)
+	wshttp.New(bus, jwtSvc, log, metricsReg).RegisterRoutes(r)
 
-	// ── REST + SSE ────────────────────────────────────────────────────────────
+	// ── REST ──────────────────────────────────────────────────────────────────
 	authhttp.New(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
-	agenthttp.New(db, caService, agentClient, bus).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
-	backuphttp.New(backup.New(db)).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
 	adminhttp.New(db, log, notifier, caddy).RegisterRoutes(api, mw, adminMw)
-	containerhttp.New(rt, db, log, caddy, bus).RegisterRoutes(api, e, mw, echoSSE, echoInject)
 	githttp.New(gitSvc, db, log, bus).RegisterRoutes(api, mw)
 	imageshttp.New(rt, bus).RegisterRoutes(api, mw, adminMw)
-	logshttp.New(db).RegisterRoutes(api, e, mw, adminMw, echoSSE, echoInject)
 	networkshttp.New(rt, log, db, bus).RegisterRoutes(api, mw, adminMw)
 	notifhttp.New(notifSvc).RegisterRoutes(api, mw)
 	projectshttp.New(db, rt, log).RegisterRoutes(api, mw)
-	systemHandler := systemhttp.New(rt, log, metricsReg, bus)
-	systemHandler.RegisterRoutes(api, mw, adminMw)
-	systemHandler.RegisterSSERoutes(e, echoSSE, echoInject)
 	templateshttp.New(templateLoader).RegisterRoutes(api, mw)
 	volumeshttp.New(rt, deployer, db, log, bus).RegisterRoutes(api, mw, adminMw)
-	webhookshttp.New(db, asynqClient, log, webhookSvc).RegisterRoutes(api, e, mw)
 	serviceshttp.New(db, deployer, asynqClient, log, gitSvc, templateLoader, rt, ingressAdapter).RegisterRoutes(api, mw)
+
+	// ── REST + SSE ────────────────────────────────────────────────────────────
+	agenthttp.New(db, caService, agentClient, bus).RegisterRoutes(api, r, mw, adminMw, sseAuth)
+	backuphttp.New(backup.New(db)).RegisterRoutes(api, r, mw, adminMw, sseAuth)
+	containerhttp.New(rt, db, log, caddy, bus).RegisterRoutes(api, r, mw, sseAuth)
+	logshttp.New(db).RegisterRoutes(api, r, mw, adminMw, sseAuth)
+	webhookshttp.New(db, asynqClient, log, webhookSvc).RegisterRoutes(api, r, mw)
+
+	// ── SSE ───────────────────────────────────────────────────────────────────
+	systemHandler := systemhttp.New(rt, log, metricsReg, bus)
+	systemHandler.RegisterRoutes(api, mw, adminMw)
+	systemHandler.RegisterSSERoutes(r, sseAuth)
 }

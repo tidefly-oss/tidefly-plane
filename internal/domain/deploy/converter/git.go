@@ -38,10 +38,14 @@ func convertGit(_ context.Context, input ConvertInput) (*Result, error) {
 		name = repoToName(input.GitURL)
 	}
 
+	if err := os.MkdirAll("/tmp", 0o755); err != nil {
+		return nil, fmt.Errorf("git converter: ensure temp dir: %w", err)
+	}
 	tmpDir, err := os.MkdirTemp("", "tidefly-git-*")
 	if err != nil {
 		return nil, fmt.Errorf("git converter: create temp dir: %w", err)
 	}
+
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cloneOpts := &gogit.CloneOptions{

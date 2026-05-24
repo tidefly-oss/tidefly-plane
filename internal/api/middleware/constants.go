@@ -1,6 +1,6 @@
 package middleware
 
-// maxBodySize ist das globale Limit für Request/Response-Body-Logging (2 KB).
+// maxBodySize ist das globale Limit für Request/Response-Body-Logging (64 KB).
 const maxBodySize = 64 * 1024
 
 // sensitiveFields werden aus JSON-Bodies vor dem Logging redigiert.

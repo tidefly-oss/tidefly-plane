@@ -1,7 +1,7 @@
 package http
 
-import "github.com/labstack/echo/v5"
+import "github.com/go-chi/chi/v5"
 
-func (h *Handler) RegisterRoutes(e *echo.Echo) {
-	e.GET("/api/v1/ws", h.ServeWS)
+func (h *Handler) RegisterRoutes(r chi.Router) {
+	r.Get("/api/v1/ws", h.ServeWS)
 }

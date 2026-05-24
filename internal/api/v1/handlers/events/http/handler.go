@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v5"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 )
 
@@ -19,29 +18,24 @@ func New(rt runtime.Runtime) *Handler {
 	return &Handler{rt: rt}
 }
 
-func (h *Handler) Stream(c *echo.Context) error {
-	ctx, cancel := context.WithCancel(context.Background())
+func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	go func() {
-		<-c.Request().Context().Done()
-		cancel()
-	}()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	resp := c.Response()
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
-
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
 	sendEvent := func(event, data string) {
-		_, _ = fmt.Fprintf(resp, "event: %s\ndata: %s\n\n", event, data)
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
 		flusher.Flush()
 	}
 
@@ -54,15 +48,15 @@ func (h *Handler) Stream(c *echo.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case err := <-errCh:
 			if err != nil {
 				sendEvent("error", `{"message":"runtime event stream disconnected"}`)
 			}
-			return nil
+			return
 		case evt, ok := <-eventCh:
 			if !ok {
-				return nil
+				return
 			}
 			data, _ := json.Marshal(evt)
 			sendEvent("container", string(data))

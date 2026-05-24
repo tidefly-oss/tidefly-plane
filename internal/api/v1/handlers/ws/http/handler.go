@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v5"
 	"github.com/olahol/melody"
+
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
@@ -34,12 +34,8 @@ type clientMsg struct {
 
 func (h *Handler) setupHandlers() {
 	m := h.bus.Melody()
-
 	m.HandleConnect(func(s *melody.Session) {
 		h.bus.SetTopics(s, []string{"*"})
-
-		// Push current metrics immediately — in goroutine with brief delay
-		// so Melody has time to fully register the session before we write
 		go func() {
 			time.Sleep(100 * time.Millisecond)
 			snap := h.metrics.GetSystem()
@@ -59,7 +55,6 @@ func (h *Handler) setupHandlers() {
 			}
 		}()
 	})
-
 	m.HandleMessage(func(s *melody.Session, msg []byte) {
 		var cm clientMsg
 		if err := json.Unmarshal(msg, &cm); err != nil {
@@ -75,23 +70,20 @@ func (h *Handler) setupHandlers() {
 			_ = s.Write(pong)
 		}
 	})
-
 	m.HandleError(func(s *melody.Session, err error) {
 		h.log.Warnw("ws error", "err", err)
 	})
 }
 
-func (h *Handler) ServeWS(c *echo.Context) error {
-	token := c.QueryParam("token")
+func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
 	if token == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing token")
+		http.Error(w, `{"message":"missing token"}`, http.StatusUnauthorized)
+		return
 	}
 	if _, err := h.jwtSvc.ValidateAccessToken(token); err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
+		http.Error(w, `{"message":"invalid token"}`, http.StatusUnauthorized)
+		return
 	}
-	w, err := echo.UnwrapResponse(c.Response())
-	if err != nil {
-		return err
-	}
-	return h.bus.Melody().HandleRequest(w, c.Request())
+	h.bus.Melody().HandleRequest(w, r)
 }

@@ -13,10 +13,6 @@ import (
 
 const tokenTypeBearer = "Bearer"
 
-// ── Token response ────────────────────────────────────────────────────────────
-// Refresh token is NOT in the JSON body — it lives in an HttpOnly cookie.
-// Only the access token is returned to JS.
-
 type TokenOutput struct {
 	Body struct {
 		AccessToken string    `json:"access_token"`
@@ -28,7 +24,7 @@ type TokenOutput struct {
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
-type RegisterInput struct {
+type AuthRegisterInput struct {
 	Body struct {
 		Name     string `json:"name"     minLength:"1"  maxLength:"255"`
 		Email    string `json:"email"    format:"email"`
@@ -36,14 +32,12 @@ type RegisterInput struct {
 	}
 }
 
-func (h *Handler) Register(ctx context.Context, input *RegisterInput) (*TokenOutput, error) {
-	_, tokens, err := h.auth.Register(
-		ctx, service.RegisterInput{
-			Name:     input.Body.Name,
-			Email:    input.Body.Email,
-			Password: input.Body.Password,
-		},
-	)
+func (h *Handler) Register(ctx context.Context, input *AuthRegisterInput) (*TokenOutput, error) {
+	_, tokens, err := h.auth.Register(ctx, service.RegisterInput{
+		Name:     input.Body.Name,
+		Email:    input.Body.Email,
+		Password: input.Body.Password,
+	})
 	if err != nil {
 		if errors.Is(err, service.ErrEmailTaken) {
 			return nil, huma.Error409Conflict("email already registered")
@@ -51,11 +45,9 @@ func (h *Handler) Register(ctx context.Context, input *RegisterInput) (*TokenOut
 		h.log.Error("register failed", "error", err)
 		return nil, huma.Error500InternalServerError("registration failed")
 	}
-
 	if hc := middleware.HumaContextFrom(ctx); hc != nil {
 		setRefreshCookie(hc, tokens.RefreshToken)
 	}
-
 	out := &TokenOutput{}
 	out.Body.AccessToken = tokens.AccessToken
 	out.Body.TokenType = tokenTypeBearer
@@ -66,20 +58,18 @@ func (h *Handler) Register(ctx context.Context, input *RegisterInput) (*TokenOut
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
-type LoginInput struct {
+type AuthLoginInput struct {
 	Body struct {
 		Email    string `json:"email"    format:"email"`
 		Password string `json:"password"`
 	}
 }
 
-func (h *Handler) Login(ctx context.Context, input *LoginInput) (*TokenOutput, error) {
-	_, tokens, err := h.auth.Login(
-		ctx, service.LoginInput{
-			Email:    input.Body.Email,
-			Password: input.Body.Password,
-		},
-	)
+func (h *Handler) Login(ctx context.Context, input *AuthLoginInput) (*TokenOutput, error) {
+	_, tokens, err := h.auth.Login(ctx, service.LoginInput{
+		Email:    input.Body.Email,
+		Password: input.Body.Password,
+	})
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) || errors.Is(err, service.ErrAccountInactive) {
 			return nil, huma.Error401Unauthorized("invalid email or password")
@@ -87,11 +77,9 @@ func (h *Handler) Login(ctx context.Context, input *LoginInput) (*TokenOutput, e
 		h.log.Error("login failed", "error", err)
 		return nil, huma.Error500InternalServerError("login failed")
 	}
-
 	if hc := middleware.HumaContextFrom(ctx); hc != nil {
 		setRefreshCookie(hc, tokens.RefreshToken)
 	}
-
 	out := &TokenOutput{}
 	out.Body.AccessToken = tokens.AccessToken
 	out.Body.TokenType = tokenTypeBearer
@@ -102,27 +90,23 @@ func (h *Handler) Login(ctx context.Context, input *LoginInput) (*TokenOutput, e
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
 
-type RefreshInput struct{}
+type AuthRefreshInput struct{}
 
-func (h *Handler) Refresh(ctx context.Context, _ *RefreshInput) (*TokenOutput, error) {
+func (h *Handler) Refresh(ctx context.Context, _ *AuthRefreshInput) (*TokenOutput, error) {
 	hc := middleware.HumaContextFrom(ctx)
 	if hc == nil {
 		return nil, huma.Error500InternalServerError("context error")
 	}
-
 	refreshToken := getRefreshCookie(hc)
 	if refreshToken == "" {
 		return nil, huma.Error401Unauthorized("missing refresh token")
 	}
-
 	tokens, err := h.auth.Refresh(ctx, refreshToken)
 	if err != nil {
 		clearRefreshCookie(hc)
 		return nil, huma.Error401Unauthorized("invalid or expired refresh token")
 	}
-
 	setRefreshCookie(hc, tokens.RefreshToken)
-
 	out := &TokenOutput{}
 	out.Body.AccessToken = tokens.AccessToken
 	out.Body.TokenType = tokenTypeBearer
@@ -133,9 +117,9 @@ func (h *Handler) Refresh(ctx context.Context, _ *RefreshInput) (*TokenOutput, e
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 
-type LogoutInput struct{}
+type AuthLogoutInput struct{}
 
-func (h *Handler) Logout(ctx context.Context, _ *LogoutInput) (*struct{}, error) {
+func (h *Handler) Logout(ctx context.Context, _ *AuthLogoutInput) (*struct{}, error) {
 	if hc := middleware.HumaContextFrom(ctx); hc != nil {
 		if token := getRefreshCookie(hc); token != "" {
 			_ = h.auth.Logout(ctx, token)
@@ -152,11 +136,9 @@ func (h *Handler) LogoutAll(ctx context.Context, _ *struct{}) (*struct{}, error)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-
 	if hc := middleware.HumaContextFrom(ctx); hc != nil {
 		clearRefreshCookie(hc)
 	}
-
 	_ = h.auth.LogoutAll(ctx, claims.UserID)
 	return &struct{}{}, nil
 }

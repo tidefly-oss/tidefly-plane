@@ -3,20 +3,17 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
-type RequestLoggerOptions struct {
-	SlowThreshold time.Duration
-}
+// ── Response Writer Wrapper ───────────────────────────────────────────────────
 
 type wrappedWriter struct {
 	http.ResponseWriter
@@ -62,106 +59,85 @@ func (w *wrappedWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func RequestLogger(log *applogger.Logger, opts ...RequestLoggerOptions) echo.MiddlewareFunc {
+// ── Middleware ────────────────────────────────────────────────────────────────
+
+type RequestLoggerOptions struct {
+	SlowThreshold time.Duration
+}
+
+func RequestLogger(log *applogger.Logger, opts ...RequestLoggerOptions) func(http.Handler) http.Handler {
 	var opt RequestLoggerOptions
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
 
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			req := c.Request()
 
 			var reqBody []byte
-			if req.Body != nil && isLoggableContentType(req.Header.Get("Content-Type")) {
-				limited := io.LimitReader(req.Body, maxBodySize+1)
+			if r.Body != nil && isLoggableContentType(r.Header.Get("Content-Type")) {
+				limited := io.LimitReader(r.Body, maxBodySize+1)
 				if raw, err := io.ReadAll(limited); err == nil {
 					reqBody = raw
-					req.Body = io.NopCloser(bytes.NewReader(raw))
+					r.Body = io.NopCloser(bytes.NewReader(raw))
 				}
 			}
 
-			wrapped := &wrappedWriter{ResponseWriter: c.Response(), status: http.StatusOK}
-			c.SetResponse(wrapped)
+			wrapped := &wrappedWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(wrapped, r)
 
-			handlerErr := next(c)
 			duration := time.Since(start)
-
 			status := wrapped.status
-			if echoResp, uErr := echo.UnwrapResponse(c.Response()); uErr == nil && echoResp.Committed {
-				status = echoResp.Status
-			}
-			if handlerErr != nil {
-				if he, ok := errors.AsType[*echo.HTTPError](handlerErr); ok {
-					status = he.Code
-				}
-			}
-
-			requestID := wrapped.Header().Get(echo.HeaderXRequestID)
-			if requestID == "" {
-				requestID = req.Header.Get(echo.HeaderXRequestID)
-			}
+			requestID := chimiddleware.GetReqID(r.Context())
 
 			isSlow := opt.SlowThreshold > 0 && duration > opt.SlowThreshold
-			isError := handlerErr != nil || status >= 400
+			isError := status >= 400
 
 			attrs := []any{
-				slog.String("method", req.Method),
-				slog.String("path", req.URL.Path),
-				slog.String("query", req.URL.RawQuery),
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("query", r.URL.RawQuery),
 				slog.Int("status", status),
 				slog.Int64("latency_ms", duration.Milliseconds()),
-				slog.String("ip", c.RealIP()),
+				slog.String("ip", r.RemoteAddr),
 				slog.String("request_id", requestID),
 				slog.Int64("response_bytes", wrapped.size),
 			}
 
-			if v, ok := c.Get("user_id").(string); ok && v != "" {
-				attrs = append(attrs, slog.String("user_id", v))
+			if claims := UserFromHumaCtx(r.Context()); claims != nil {
+				attrs = append(attrs, slog.String("user_id", claims.UserID))
 			}
 			if isSlow {
 				attrs = append(attrs, slog.Bool("slow_request", true))
 			}
 			if isError || isSlow {
-				attrs = append(
-					attrs,
-					slog.String("content_type", req.Header.Get("Content-Type")),
-					slog.String("user_agent", req.Header.Get("User-Agent")),
+				attrs = append(attrs,
+					slog.String("content_type", r.Header.Get("Content-Type")),
+					slog.String("user_agent", r.Header.Get("User-Agent")),
 				)
 				if len(reqBody) > 0 {
-					attrs = append(
-						attrs, slog.String(
-							"request_body",
-							truncate(redactBody(reqBody, req.Header.Get("Content-Type")), maxBodySize),
-						),
-					)
+					attrs = append(attrs, slog.String("request_body",
+						truncate(redactBody(reqBody, r.Header.Get("Content-Type")), maxBodySize)))
 				}
 			}
 			if isError && wrapped.buf.Len() > 0 {
-				attrs = append(
-					attrs, slog.String(
-						"response_body",
-						truncate(redactBody(wrapped.buf.Bytes(), wrapped.Header().Get("Content-Type")), maxBodySize),
-					),
-				)
-			}
-			if handlerErr != nil {
-				attrs = append(attrs, slog.String("error", handlerErr.Error()))
+				attrs = append(attrs, slog.String("response_body",
+					truncate(redactBody(wrapped.buf.Bytes(), wrapped.Header().Get("Content-Type")), maxBodySize)))
 			}
 
-			msg := req.Method + " " + req.URL.Path
+			msg := r.Method + " " + r.URL.Path
 			sl := log.Slog()
 			if isError {
 				sl.Error(msg, attrs...)
 			} else {
 				sl.Info(msg, attrs...)
 			}
-
-			return handlerErr
-		}
+		})
 	}
 }
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func redactBody(body []byte, contentType string) string {
 	if !strings.Contains(contentType, "application/json") {

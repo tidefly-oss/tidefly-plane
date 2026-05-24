@@ -40,13 +40,7 @@ func InitializeApp() (*App, func(), error) {
 	}
 	tokenStore := ProvideTokenStore(client)
 	caddyClient := ProvideCaddyClient(config)
-	loader, err := ProvideTemplateLoader(config)
-	if err != nil {
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
+	loader := ProvideTemplateLoader()
 	bus := ProvideEventBus()
 	notificationService := ProvideNotificationService(db, bus)
 	gitService := ProvideGitService(config)

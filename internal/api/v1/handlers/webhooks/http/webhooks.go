@@ -18,14 +18,14 @@ type webhookResponse struct {
 	URL         string `json:"url"`
 }
 
-type ListInput struct {
+type WebhookListInput struct {
 	PID string `path:"pid"`
 }
-type ListOutput struct {
+type WebhookListOutput struct {
 	Body []webhookResponse
 }
 
-type CreateInput struct {
+type WebhookCreateInput struct {
 	PID  string `path:"pid"`
 	Body struct {
 		Name             string                    `json:"name" minLength:"1"`
@@ -39,19 +39,19 @@ type CreateInput struct {
 		FieldOverrides   string                    `json:"field_overrides,omitempty"`
 	}
 }
-type CreateOutput struct {
+type WebhookCreateOutput struct {
 	Body webhookResponse
 }
 
-type GetInput struct {
+type WebhookGetInput struct {
 	PID string `path:"pid"`
 	ID  string `path:"id"`
 }
-type GetOutput struct {
+type WebhookGetOutput struct {
 	Body webhookResponse
 }
 
-type UpdateInput struct {
+type WebhookUpdateInput struct {
 	PID  string `path:"pid"`
 	ID   string `path:"id"`
 	Body struct {
@@ -61,34 +61,34 @@ type UpdateInput struct {
 		FieldOverrides *string `json:"field_overrides,omitempty"`
 	}
 }
-type UpdateOutput struct {
+type WebhookUpdateOutput struct {
 	Body webhookResponse
 }
 
-type RotateSecretInput struct {
+type WebhookRotateSecretInput struct {
 	PID string `path:"pid"`
 	ID  string `path:"id"`
 }
-type RotateSecretOutput struct {
+type WebhookRotateSecretOutput struct {
 	Body struct {
 		Secret string `json:"secret"`
 	}
 }
 
-type DeleteInput struct {
+type WebhookDeleteInput struct {
 	PID string `path:"pid"`
 	ID  string `path:"id"`
 }
 
-type DeliveriesInput struct {
+type WebhookDeliveriesInput struct {
 	PID string `path:"pid"`
 	ID  string `path:"id"`
 }
-type DeliveriesOutput struct {
+type WebhookDeliveriesOutput struct {
 	Body []models.WebhookDelivery
 }
 
-func (h *Handler) List(ctx context.Context, input *ListInput) (*ListOutput, error) {
+func (h *Handler) List(ctx context.Context, input *WebhookListInput) (*WebhookListOutput, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -100,10 +100,10 @@ func (h *Handler) List(ctx context.Context, input *ListInput) (*ListOutput, erro
 	for i, wh := range webhooks {
 		resp[i] = webhookResponse{Webhook: wh, URL: helpers.BuildURL(ctx, wh.ID)}
 	}
-	return &ListOutput{Body: resp}, nil
+	return &WebhookListOutput{Body: resp}, nil
 }
 
-func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput, error) {
+func (h *Handler) Create(ctx context.Context, input *WebhookCreateInput) (*WebhookCreateOutput, error) {
 	user, err := h.webhooks.CheckProjectAccess(ctx, input.PID)
 	if err != nil {
 		return nil, err
@@ -131,24 +131,20 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*CreateOutput
 	if err := h.webhooks.Create(ctx, &wh); err != nil {
 		return nil, fmt.Errorf("create webhook: %w", err)
 	}
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditWebhookCreate,
-			ResourceID: wh.ID,
-			Success:    true,
-			Details:    "name=" + wh.Name + " project=" + input.PID,
-		},
-	)
-	return &CreateOutput{
-		Body: webhookResponse{
-			Webhook:     wh,
-			SecretPlain: rawSecret,
-			URL:         helpers.BuildURL(ctx, wh.ID),
-		},
-	}, nil
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditWebhookCreate,
+		ResourceID: wh.ID,
+		Success:    true,
+		Details:    "name=" + wh.Name + " project=" + input.PID,
+	})
+	return &WebhookCreateOutput{Body: webhookResponse{
+		Webhook:     wh,
+		SecretPlain: rawSecret,
+		URL:         helpers.BuildURL(ctx, wh.ID),
+	}}, nil
 }
 
-func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {
+func (h *Handler) Get(ctx context.Context, input *WebhookGetInput) (*WebhookGetOutput, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -156,10 +152,10 @@ func (h *Handler) Get(ctx context.Context, input *GetInput) (*GetOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &GetOutput{Body: webhookResponse{Webhook: *wh, URL: helpers.BuildURL(ctx, wh.ID)}}, nil
+	return &WebhookGetOutput{Body: webhookResponse{Webhook: *wh, URL: helpers.BuildURL(ctx, wh.ID)}}, nil
 }
 
-func (h *Handler) Update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (h *Handler) Update(ctx context.Context, input *WebhookUpdateInput) (*WebhookUpdateOutput, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -184,10 +180,10 @@ func (h *Handler) Update(ctx context.Context, input *UpdateInput) (*UpdateOutput
 		return nil, fmt.Errorf("update webhook: %w", err)
 	}
 	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditWebhookUpdate, ResourceID: wh.ID, Success: true})
-	return &UpdateOutput{Body: webhookResponse{Webhook: *wh, URL: helpers.BuildURL(ctx, wh.ID)}}, nil
+	return &WebhookUpdateOutput{Body: webhookResponse{Webhook: *wh, URL: helpers.BuildURL(ctx, wh.ID)}}, nil
 }
 
-func (h *Handler) RotateSecret(ctx context.Context, input *RotateSecretInput) (*RotateSecretOutput, error) {
+func (h *Handler) RotateSecret(ctx context.Context, input *WebhookRotateSecretInput) (*WebhookRotateSecretOutput, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -207,12 +203,12 @@ func (h *Handler) RotateSecret(ctx context.Context, input *RotateSecretInput) (*
 		return nil, fmt.Errorf("save secret: %w", err)
 	}
 	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditWebhookRotate, ResourceID: wh.ID, Success: true})
-	out := &RotateSecretOutput{}
+	out := &WebhookRotateSecretOutput{}
 	out.Body.Secret = rawSecret
 	return out, nil
 }
 
-func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, error) {
+func (h *Handler) Delete(ctx context.Context, input *WebhookDeleteInput) (*struct{}, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -223,18 +219,16 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteInput) (*struct{}, er
 	if err := h.webhooks.Delete(ctx, wh); err != nil {
 		return nil, fmt.Errorf("delete webhook: %w", err)
 	}
-	h.log.Audit(
-		ctx, logger.AuditEntry{
-			Action:     logger.AuditWebhookDelete,
-			ResourceID: wh.ID,
-			Success:    true,
-			Details:    "name=" + wh.Name,
-		},
-	)
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditWebhookDelete,
+		ResourceID: wh.ID,
+		Success:    true,
+		Details:    "name=" + wh.Name,
+	})
 	return nil, nil
 }
 
-func (h *Handler) Deliveries(ctx context.Context, input *DeliveriesInput) (*DeliveriesOutput, error) {
+func (h *Handler) Deliveries(ctx context.Context, input *WebhookDeliveriesInput) (*WebhookDeliveriesOutput, error) {
 	if _, err := h.webhooks.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}
@@ -242,5 +236,5 @@ func (h *Handler) Deliveries(ctx context.Context, input *DeliveriesInput) (*Deli
 	if err != nil {
 		return nil, err
 	}
-	return &DeliveriesOutput{Body: deliveries}, nil
+	return &WebhookDeliveriesOutput{Body: deliveries}, nil
 }

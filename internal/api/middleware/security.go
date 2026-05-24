@@ -1,46 +1,59 @@
 package middleware
 
 import (
+	"net/http"
+	"os"
 	"strings"
 
-	"github.com/labstack/echo/v5"
+	"github.com/go-chi/cors"
 )
 
-// SecurityHeaders sets HTTP security headers equivalent to helmet.js.
-// Should be applied globally before all routes.
-func SecurityHeaders() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			h := c.Response().Header()
+// ── CORS ──────────────────────────────────────────────────────────────────────
 
-			// Prevent MIME type sniffing
+// CORS configures allowed origins from CORS_ORIGINS env var.
+// Falls back to localhost:5173/5174 for local development.
+func CORS() func(http.Handler) http.Handler {
+	return cors.Handler(cors.Options{
+		AllowedOrigins:   allowedOrigins(),
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "Cookie"},
+		AllowCredentials: true,
+	})
+}
+
+func allowedOrigins() []string {
+	if env := os.Getenv("CORS_ORIGINS"); env != "" {
+		return strings.Split(env, ",")
+	}
+	return []string{"http://localhost:5173", "http://localhost:5174"}
+}
+
+// ── Security Headers ──────────────────────────────────────────────────────────
+
+// SecurityHeaders sets HTTP security headers equivalent to helmet.js.
+// Apply globally before all routes.
+func SecurityHeaders() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+
 			h.Set("X-Content-Type-Options", "nosniff")
-			// Prevent clickjacking
 			h.Set("X-Frame-Options", "DENY")
-			// XSS protection (legacy browsers)
 			h.Set("X-XSS-Protection", "1; mode=block")
-			// Force HTTPS (only set in production — dev uses HTTP)
-			// Uncomment when TLS is terminated at the app level:
-			// h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-			// Referrer policy
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			// Permissions policy — disable browser features we don't need
 			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
-			// Content Security Policy
-			// Swagger UI needs scripts, styles and images — relax CSP for that route only.
-			if strings.HasPrefix(c.Request().URL.Path, "/swagger") {
-				h.Set(
-					"Content-Security-Policy",
-					"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
-				)
+			// Uncomment when TLS is terminated at app level:
+			// h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+			if strings.HasPrefix(r.URL.Path, "/swagger") {
+				h.Set("Content-Security-Policy",
+					"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
 			} else {
-				// Tidefly is an API — no HTML served, so we lock it down hard.
 				h.Set("Content-Security-Policy", "default-src 'none'")
 			}
-			// Remove server fingerprint
 			h.Del("Server")
 
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

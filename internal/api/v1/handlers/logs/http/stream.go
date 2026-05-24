@@ -5,45 +5,42 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/labstack/echo/v5"
 )
 
-func (h *Handler) StreamAppLogs(c *echo.Context) error {
-	level := c.QueryParam("level")
-	component := c.QueryParam("component")
+func (h *Handler) StreamAppLogs(w http.ResponseWriter, r *http.Request) {
+	level := r.URL.Query().Get("level")
+	component := r.URL.Query().Get("component")
 
-	resp := c.Response()
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	lastID := h.logs.LatestAppLogID()
-
 	heartbeat := time.NewTicker(15 * time.Second)
 	poll := time.NewTicker(2 * time.Second)
 	defer heartbeat.Stop()
 	defer poll.Stop()
 
 	sendEvent := func(event, data string) {
-		_, _ = fmt.Fprintf(resp, "event: %s\ndata: %s\n\n", event, data)
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
 		flusher.Flush()
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-heartbeat.C:
-			_, _ = fmt.Fprintf(resp, ": heartbeat\n\n")
+			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case <-poll.C:
 			newLogs, err := h.logs.PollAppLogs(lastID, level, component)

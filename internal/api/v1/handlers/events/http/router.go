@@ -1,9 +1,11 @@
 package http
 
 import (
-	"github.com/labstack/echo/v5"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func (h *Handler) RegisterRoutes(e *echo.Echo, echoAuth, echoInject echo.MiddlewareFunc) {
-	e.GET("/api/v1/events/stream", h.Stream, echoAuth, echoInject)
+func (h *Handler) RegisterSSERoutes(r chi.Router, sseAuth func(http.Handler) http.Handler) {
+	r.With(sseAuth).Get("/api/v1/events/stream", h.Stream)
 }

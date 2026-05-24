@@ -8,18 +8,13 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/hibiken/asynq"
-	"github.com/labstack/echo/v5"
-	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
-	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/jobs"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/api/adapter"
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
 	v1 "github.com/tidefly-oss/tidefly-plane/internal/api/v1"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
@@ -28,10 +23,17 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/template"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/webhook"
 	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
+	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/caddy"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
+	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/logwatcher"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
 type App struct {
@@ -77,9 +79,13 @@ func NewApp(
 	bus *eventbus.Bus,
 	ingressAdapter ingress.Adapter,
 ) *App {
-	return &App{
-		cfg: cfg, log: log, rt: rt, db: db,
-		jwtSvc: jwtSvc, tokenStore: tokenStore,
+	app := &App{
+		cfg:         cfg,
+		log:         log,
+		rt:          rt,
+		db:          db,
+		jwtSvc:      jwtSvc,
+		tokenStore:  tokenStore,
 		caddy:       caddy,
 		templateLd:  templateLd,
 		notifSvc:    notifSvc,
@@ -94,6 +100,23 @@ func NewApp(
 		bus:         bus,
 		ingress:     ingressAdapter,
 	}
+
+	// Wire notification pipeline into logger so app errors + audit failures
+	// generate real-time in-app notifications.
+	log.SetNotifier(
+		func(ctx context.Context, sourceID, sourceName string, severity models.NotificationSeverity, msg string) error {
+			return notifSvc.Upsert(ctx, sourceID, sourceName, severity, msg)
+		},
+		func(title, message, level string) {
+			notifierSvc.Send(context.Background(), notification.Event{
+				Title:   title,
+				Message: message,
+				Level:   level,
+			})
+		},
+	)
+
+	return app
 }
 
 func (a *App) Run(ctx context.Context) error {
@@ -115,8 +138,8 @@ func (a *App) Run(ctx context.Context) error {
 
 	a.startBackgroundServices(eg, ctx)
 
-	e := a.buildEcho()
-	eg.Go(func() error { return a.serveHTTP(ctx, e) })
+	r := a.buildRouter()
+	eg.Go(func() error { return a.serveHTTP(ctx, r) })
 
 	return eg.Wait()
 }
@@ -145,12 +168,12 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 	a.log.Info("app", "WebSocket event bus started")
 }
 
-func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
+func (a *App) serveHTTP(ctx context.Context, r http.Handler) error {
 	addr := ":" + a.cfg.App.Port
 	a.log.Info("app", fmt.Sprintf("starting tidefly-plane on %s (env: %s)", addr, a.cfg.App.Env))
 	a.log.Info("app", fmt.Sprintf("OpenAPI docs: http://localhost%s/docs", addr))
 
-	srv := &http.Server{Addr: addr, Handler: e}
+	srv := &http.Server{Addr: addr, Handler: r}
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -165,14 +188,16 @@ func (a *App) serveHTTP(ctx context.Context, e *echo.Echo) error {
 	return nil
 }
 
-func (a *App) buildEcho() *echo.Echo {
-	e := echo.New()
-	e.Use(middleware.Recover(a.log))
-	e.Use(middleware.RequestID())
-	e.Use(middleware.CORS())
-	e.Use(middleware.SecurityHeaders())
-	e.Use(middleware.GuardDocs(a.db))
-	e.Use(middleware.RequestLogger(
+func (a *App) buildRouter() chi.Router {
+	r := chi.NewRouter()
+
+	r.Use(chimiddleware.RealIP)
+	r.Use(middleware.Recover(a.log))
+	r.Use(middleware.RequestID())
+	r.Use(middleware.CORS())
+	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.GuardDocs(a.db))
+	r.Use(middleware.RequestLogger(
 		a.log, middleware.RequestLoggerOptions{
 			SlowThreshold: time.Duration(a.cfg.Logger.SlowQueryMS) * time.Millisecond,
 		},
@@ -200,11 +225,11 @@ func (a *App) buildEcho() *echo.Echo {
 		{Name: "Services", Description: "Manifest-based service management"},
 	}
 
-	humaAPI := adapter.NewEchoV5Adapter(e, humaConfig)
+	humaAPI := humachi.New(r, humaConfig)
 	humaAPI.UseMiddleware(middleware.InjectHumaContext())
 
 	v1.Register(
-		humaAPI, e, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
+		humaAPI, r, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
 		a.asynq, a.notifierSvc, a.metrics,
 		a.caService,
@@ -213,5 +238,5 @@ func (a *App) buildEcho() *echo.Echo {
 		a.ingress,
 	)
 
-	return e
+	return r
 }

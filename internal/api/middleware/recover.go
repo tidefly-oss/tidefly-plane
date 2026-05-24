@@ -2,21 +2,22 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
 
-	"github.com/labstack/echo/v5"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
-func Recover(log *logger.Logger) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) (err error) {
+// Recover catches panics, logs them and returns HTTP 500.
+func Recover(log *logger.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
-				if r := recover(); r != nil {
-					log.Error("recover", "panic", fmt.Errorf("%v", r))
-					err = echo.NewHTTPError(500, "internal server error")
+				if rec := recover(); rec != nil {
+					log.Error("recover", "panic", fmt.Errorf("%v", rec))
+					http.Error(w, `{"message":"internal server error"}`, http.StatusInternalServerError)
 				}
 			}()
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

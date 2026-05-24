@@ -4,11 +4,11 @@ import "github.com/tidefly-oss/tidefly-plane/internal/models"
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
-type RegisterInput struct {
+type AgentRegisterInput struct {
 	Body struct {
-		Token        string `json:"token" required:"true"`
-		WorkerID     string `json:"worker_id" required:"true"`
-		Name         string `json:"name" required:"true"`
+		Token        string `json:"token"                 required:"true"`
+		WorkerID     string `json:"worker_id"             required:"true"`
+		Name         string `json:"name"                  required:"true"`
 		Description  string `json:"description,omitempty"`
 		AgentVersion string `json:"agent_version,omitempty"`
 		OS           string `json:"os,omitempty"`
@@ -17,7 +17,7 @@ type RegisterInput struct {
 	}
 }
 
-type RegisterOutput struct {
+type AgentRegisterOutput struct {
 	Body struct {
 		WorkerID  string `json:"worker_id"`
 		CertPEM   string `json:"cert_pem"`
@@ -29,13 +29,13 @@ type RegisterOutput struct {
 
 // ── RenewCert ─────────────────────────────────────────────────────────────────
 
-type RenewCertInput struct {
+type AgentRenewCertInput struct {
 	Body struct {
 		WorkerID string `json:"worker_id" required:"true"`
 	}
 }
 
-type RenewCertOutput struct {
+type AgentRenewCertOutput struct {
 	Body struct {
 		CertPEM   string `json:"cert_pem"`
 		KeyPEM    string `json:"key_pem"`
@@ -46,13 +46,13 @@ type RenewCertOutput struct {
 
 // ── CreateToken ───────────────────────────────────────────────────────────────
 
-type CreateTokenInput struct {
+type AgentCreateTokenInput struct {
 	Body struct {
 		Label string `json:"label,omitempty"`
 	}
 }
 
-type CreateTokenOutput struct {
+type AgentCreateTokenOutput struct {
 	Body struct {
 		Token     string `json:"token"`
 		ExpiresAt string `json:"expires_at"`
@@ -62,32 +62,34 @@ type CreateTokenOutput struct {
 
 // ── ListTokens ────────────────────────────────────────────────────────────────
 
-type ListTokensInput struct{}
-
-type ListTokensOutput struct {
+type AgentListTokensInput struct{}
+type AgentListTokensOutput struct {
 	Body []models.WorkerRegistrationToken
 }
 
 // ── ListWorkers ───────────────────────────────────────────────────────────────
 
-type ListWorkersInput struct{}
-
-type ListWorkersOutput struct {
+type AgentListWorkersInput struct{}
+type AgentListWorkersOutput struct {
 	Body []models.WorkerNode
 }
 
 // ── RevokeWorker ──────────────────────────────────────────────────────────────
 
-type RevokeWorkerInput struct {
+type AgentRevokeWorkerInput struct {
 	ID string `path:"id"`
 }
-
-type RevokeWorkerOutput struct{}
+type AgentRevokeWorkerOutput struct{}
 
 // ── DeleteWorker ──────────────────────────────────────────────────────────────
 
-type DeleteWorkerInput struct {
+type AgentDeleteWorkerInput struct {
 	ID string `path:"id"`
 }
+type AgentDeleteWorkerOutput struct{}
 
-type DeleteWorkerOutput struct{}
+// ── ListWorkerContainers ──────────────────────────────────────────────────────
+
+type AgentListWorkerContainersInput struct {
+	ID string `path:"id"`
+}

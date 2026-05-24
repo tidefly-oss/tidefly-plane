@@ -6,75 +6,72 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v5"
+	"github.com/go-chi/chi/v5"
+
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
 )
 
 // WorkerContainerLogs streams logs from a container running on a worker
 // via the gRPC tunnel, forwarded as SSE to the browser.
-// GET /api/v1/agent/workers/:id/containers/:containerID/logs
-func (h *Handler) WorkerContainerLogs(c *echo.Context) error {
-	workerID := c.Param("id")
-	containerID := c.Param("containerID")
+// GET /api/v1/agent/workers/{id}/containers/{containerID}/logs
+func (h *Handler) WorkerContainerLogs(w http.ResponseWriter, r *http.Request) {
+	workerID := chi.URLParam(r, "id")
+	containerID := chi.URLParam(r, "containerID")
 
-	tail, _ := strconv.ParseInt(c.QueryParam("tail"), 10, 32)
+	tail, _ := strconv.ParseInt(r.URL.Query().Get("tail"), 10, 32)
 	if tail == 0 {
 		tail = 100
 	}
-	follow := c.QueryParam("follow") != "false"
+	follow := r.URL.Query().Get("follow") != "false"
 
-	resp := c.Response()
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-	resp.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, ok := resp.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 
 	if !h.agentClient.IsConnected(workerID) {
 		data, _ := json.Marshal(map[string]string{"error": "worker not connected"})
-		_, _ = fmt.Fprintf(resp, "event: error\ndata: %s\n\n", data)
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
 		flusher.Flush()
-		return nil
+		return
 	}
 
-	// Use agent client to stream logs via gRPC tunnel
-	agentClient := h.agentClient
-	logCh, err := agentClient.StreamLogs(ctx, workerID, containerID, follow, int32(tail))
+	logCh, err := h.agentClient.StreamLogs(ctx, workerID, containerID, follow, int32(tail))
 	if err != nil {
 		data, _ := json.Marshal(map[string]string{"error": err.Error()})
-		_, _ = fmt.Fprintf(resp, "event: error\ndata: %s\n\n", data)
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
 		flusher.Flush()
-		return nil
+		return
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case msg, ok := <-logCh:
 			if !ok {
-				_, _ = fmt.Fprintf(resp, "event: done\ndata: {}\n\n")
+				_, _ = fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 				flusher.Flush()
-				return nil
+				return
 			}
 			streamType := "stdout"
 			if msg.IsStderr {
 				streamType = "stderr"
 			}
-			data, _ := json.Marshal(
-				map[string]string{
-					"stream": streamType,
-					"line":   msg.Line,
-				},
-			)
-			_, _ = fmt.Fprintf(resp, "event: log\ndata: %s\n\n", data)
+			data, _ := json.Marshal(map[string]string{
+				"stream": streamType,
+				"line":   msg.Line,
+			})
+			_, _ = fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
 			flusher.Flush()
 		}
 	}

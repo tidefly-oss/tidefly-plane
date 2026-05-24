@@ -74,7 +74,7 @@ func ProvideLogger(cfg *config.Config) (*applogger.Logger, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return log, func() { log.Sync() }, nil
+	return log, func() {}, nil
 }
 
 func ProvideDatabase(cfg *config.Config, log *applogger.Logger) (*gorm.DB, func(), error) {
@@ -154,8 +154,8 @@ func ProvideCaddyIngress(caddy *caddysvc.Client) ingress.Adapter {
 	return caddyingress.New(caddy)
 }
 
-func ProvideTemplateLoader(cfg *config.Config) (*template.Loader, error) {
-	return template.NewLoader(cfg.Templates.Dir, cfg.Templates.RepoURL)
+func ProvideTemplateLoader() *template.Loader {
+	return template.NewLoader()
 }
 
 func ProvideEventBus() *eventbus.Bus {

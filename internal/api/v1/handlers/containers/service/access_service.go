@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
@@ -21,8 +20,8 @@ func NewAccessService(db *gorm.DB) *AccessService {
 	return &AccessService{repo: repository.NewFilterRepository(db)}
 }
 
-func (s *AccessService) CheckContainerAccess(c *echo.Context, labels map[string]string) error {
-	return middleware.CheckContainerAccess(c, s.repo.DB(), labels)
+func (s *AccessService) CheckContainerAccess(ctx context.Context, labels map[string]string) error {
+	return middleware.CheckContainerAccess(ctx, s.repo.DB(), labels)
 }
 
 func (s *AccessService) FilterContainers(ctx context.Context, list []runtime.Container) ([]runtime.Container, error) {

@@ -28,7 +28,10 @@ type GetTemplateOutput struct {
 }
 
 func (h *Handler) ListTemplates(_ context.Context, _ *ListTemplatesInput) (*ListTemplatesOutput, error) {
-	list := h.loader.List()
+	list, err := h.loader.List()
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("templates unavailable: " + err.Error())
+	}
 	summaries := make([]template.Summary, 0, len(list))
 	for _, t := range list {
 		summaries = append(summaries, t.ToSummary())

@@ -1,17 +1,20 @@
 package http
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/labstack/echo/v5"
+	"github.com/go-chi/chi/v5"
+
 	"github.com/tidefly-oss/tidefly-plane/internal/api/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/api/shared"
 )
 
 func (h *Handler) RegisterRoutes(
 	api huma.API,
-	e *echo.Echo,
+	r chi.Router,
 	mw huma.Middlewares,
-	echoAuth, echoInject echo.MiddlewareFunc,
+	sseAuth func(http.Handler) http.Handler,
 ) {
 	// ── Huma ──────────────────────────────────────────────────────────────────
 	huma.Register(api, shared.Op("containers-list", "GET", "/api/v1/containers", "List containers", "Containers", mw...), h.List)
@@ -22,10 +25,10 @@ func (h *Handler) RegisterRoutes(
 	huma.Register(api, shared.Op("containers-get-resources", "GET", "/api/v1/containers/{id}/resources", "Get resource limits", "Containers", mw...), h.GetResources)
 	huma.Register(api, shared.Op("containers-update-resources", "PATCH", "/api/v1/containers/{id}/resources", "Update resource limits", "Containers", mw...), h.UpdateResources)
 
-	// ── Echo SSE/WS ───────────────────────────────────────────────────────────
-	e.GET("/api/v1/containers/:id/logs", h.Logs, echoAuth, echoInject)
-	e.GET("/api/v1/containers/:id/stats", h.Stats, echoAuth, echoInject)
-	e.GET("/api/v1/containers/:id/exec", h.Exec, echoAuth, echoInject)
+	// ── SSE / WebSocket ───────────────────────────────────────────────────────
+	r.With(sseAuth).Get("/api/v1/containers/{id}/logs", h.Logs)
+	r.With(sseAuth).Get("/api/v1/containers/{id}/stats", h.Stats)
+	r.With(sseAuth).Get("/api/v1/containers/{id}/exec", h.Exec)
 }
 
 var _ = middleware.CheckContainerAccess

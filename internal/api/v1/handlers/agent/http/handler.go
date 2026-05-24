@@ -30,26 +30,22 @@ func New(db *gorm.DB, caService *ca.Service, agentClient *agentsvc.Client, bus *
 	}
 }
 
-func (h *Handler) Register(_ context.Context, input *RegisterInput) (*RegisterOutput, error) {
+func (h *Handler) Register(_ context.Context, input *AgentRegisterInput) (*AgentRegisterOutput, error) {
 	if h.workers.ExistsByID(input.Body.WorkerID) {
 		return nil, huma.Error409Conflict("worker already registered")
 	}
-
 	token, err := h.caService.ConsumeRegistrationToken(input.Body.Token, input.Body.WorkerID)
 	if err != nil {
 		return nil, huma.Error401Unauthorized(err.Error())
 	}
-
 	issued, certPEM, keyPEM, err := h.caService.IssueWorkerCert(input.Body.WorkerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to issue certificate")
 	}
-
 	caCertPEM, err := h.caService.GetCACertPEM()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to retrieve CA cert")
 	}
-
 	worker := &models.WorkerNode{
 		ID:                 input.Body.WorkerID,
 		Name:               input.Body.Name,
@@ -64,8 +60,7 @@ func (h *Handler) Register(_ context.Context, input *RegisterInput) (*RegisterOu
 	if err := h.workers.Create(worker); err != nil {
 		return nil, huma.Error500InternalServerError("failed to create worker record")
 	}
-
-	out := &RegisterOutput{}
+	out := &AgentRegisterOutput{}
 	out.Body.WorkerID = input.Body.WorkerID
 	out.Body.CertPEM = certPEM
 	out.Body.KeyPEM = keyPEM
@@ -74,22 +69,19 @@ func (h *Handler) Register(_ context.Context, input *RegisterInput) (*RegisterOu
 	return out, nil
 }
 
-func (h *Handler) RenewCert(_ context.Context, input *RenewCertInput) (*RenewCertOutput, error) {
+func (h *Handler) RenewCert(_ context.Context, input *AgentRenewCertInput) (*AgentRenewCertOutput, error) {
 	if _, err := h.workers.FindActive(input.Body.WorkerID); err != nil {
 		return nil, huma.Error404NotFound("worker not found")
 	}
-
 	issued, certPEM, keyPEM, err := h.caService.IssueWorkerCert(input.Body.WorkerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to issue certificate")
 	}
-
 	caCertPEM, err := h.caService.GetCACertPEM()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to retrieve CA cert")
 	}
-
-	out := &RenewCertOutput{}
+	out := &AgentRenewCertOutput{}
 	out.Body.CertPEM = certPEM
 	out.Body.KeyPEM = keyPEM
 	out.Body.CACertPEM = caCertPEM
@@ -97,47 +89,43 @@ func (h *Handler) RenewCert(_ context.Context, input *RenewCertInput) (*RenewCer
 	return out, nil
 }
 
-func (h *Handler) CreateToken(ctx context.Context, input *CreateTokenInput) (*CreateTokenOutput, error) {
+func (h *Handler) CreateToken(ctx context.Context, input *AgentCreateTokenInput) (*AgentCreateTokenOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-
 	token, err := h.caService.CreateRegistrationToken(claims.UserID, input.Body.Label)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to create token")
 	}
-
-	out := &CreateTokenOutput{}
+	out := &AgentCreateTokenOutput{}
 	out.Body.Token = token.Token
 	out.Body.ExpiresAt = token.ExpiresAt.Format(time.RFC3339)
 	out.Body.Label = token.Label
 	return out, nil
 }
 
-func (h *Handler) ListTokens(ctx context.Context, _ *ListTokensInput) (*ListTokensOutput, error) {
+func (h *Handler) ListTokens(ctx context.Context, _ *AgentListTokensInput) (*AgentListTokensOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
 	}
-
 	tokens, err := h.caService.ListRegistrationTokens(claims.UserID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list tokens")
 	}
-
-	return &ListTokensOutput{Body: tokens}, nil
+	return &AgentListTokensOutput{Body: tokens}, nil
 }
 
-func (h *Handler) ListWorkers(_ context.Context, _ *ListWorkersInput) (*ListWorkersOutput, error) {
+func (h *Handler) ListWorkers(_ context.Context, _ *AgentListWorkersInput) (*AgentListWorkersOutput, error) {
 	workers, err := h.workers.List()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list workers")
 	}
-	return &ListWorkersOutput{Body: workers}, nil
+	return &AgentListWorkersOutput{Body: workers}, nil
 }
 
-func (h *Handler) RevokeWorker(ctx context.Context, input *RevokeWorkerInput) (*RevokeWorkerOutput, error) {
+func (h *Handler) RevokeWorker(ctx context.Context, input *AgentRevokeWorkerInput) (*AgentRevokeWorkerOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
@@ -153,10 +141,10 @@ func (h *Handler) RevokeWorker(ctx context.Context, input *RevokeWorkerInput) (*
 		Topic:   eventbus.TopicWorkers,
 		Payload: eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "revoked"},
 	})
-	return &RevokeWorkerOutput{}, nil
+	return &AgentRevokeWorkerOutput{}, nil
 }
 
-func (h *Handler) DeleteWorker(ctx context.Context, input *DeleteWorkerInput) (*DeleteWorkerOutput, error) {
+func (h *Handler) DeleteWorker(ctx context.Context, input *AgentDeleteWorkerInput) (*AgentDeleteWorkerOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma.Error401Unauthorized("unauthorized")
@@ -173,5 +161,5 @@ func (h *Handler) DeleteWorker(ctx context.Context, input *DeleteWorkerInput) (*
 		Topic:   eventbus.TopicWorkers,
 		Payload: eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "deleted"},
 	})
-	return &DeleteWorkerOutput{}, nil
+	return &AgentDeleteWorkerOutput{}, nil
 }
