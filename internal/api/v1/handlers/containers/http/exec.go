@@ -93,5 +93,7 @@ func (h *Handler) Exec(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	q.Set("id", id)
 	r.URL.RawQuery = q.Encode()
-	h.execMel.HandleRequest(w, r)
+	if err := h.execMel.HandleRequest(w, r); err != nil {
+		h.log.Errorw("containers", "exec websocket upgrade failed", "error", err)
+	}
 }

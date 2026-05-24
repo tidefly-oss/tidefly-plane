@@ -74,8 +74,7 @@ func RateLimit(rate int, window time.Duration) func(http.Handler) http.Handler {
 	rl := newRateLimiter(rate, window)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := chimiddleware.GetReqID(r.Context())
-			// Use X-Real-IP / X-Forwarded-For if available (set by chi RealIP middleware)
+			var ip string
 			if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
 				ip = realIP
 			} else {

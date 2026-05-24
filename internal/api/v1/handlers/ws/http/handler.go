@@ -85,5 +85,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"invalid token"}`, http.StatusUnauthorized)
 		return
 	}
-	h.bus.Melody().HandleRequest(w, r)
+	if err := h.bus.Melody().HandleRequest(w, r); err != nil {
+		h.log.Errorw("ws", "websocket upgrade failed", "error", err)
+	}
 }
