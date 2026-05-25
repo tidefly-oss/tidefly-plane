@@ -1,10 +1,13 @@
 package middleware
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -40,6 +43,15 @@ func (w *wrappedWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack implements http.Hijacker to support WebSocket upgrades.
+func (w *wrappedWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("responsewriter does not implement http.Hijacker")
+	}
+	return h.Hijack()
 }
 
 func (w *wrappedWriter) Write(b []byte) (int, error) {

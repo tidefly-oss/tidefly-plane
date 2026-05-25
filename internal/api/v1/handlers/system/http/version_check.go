@@ -112,8 +112,12 @@ func (h *Handler) getContainerVersion(ctx context.Context, containerName string)
 	if err != nil {
 		return versionUnknown
 	}
+	// Prefer label over image tag
+	if v, ok := details.Labels["org.opencontainers.image.version"]; ok && v != "" {
+		return v
+	}
 	parts := strings.SplitN(details.Image, ":", 2)
-	if len(parts) == 2 {
+	if len(parts) == 2 && parts[1] != "latest" {
 		return parts[1]
 	}
 	return versionUnknown
