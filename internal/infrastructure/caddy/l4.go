@@ -14,36 +14,32 @@ func (c *Client) AddTCPRoute(ctx context.Context, routeID, upstream string, list
 	if !c.cfg.Enabled {
 		return nil
 	}
-
 	listen := fmt.Sprintf(":%d", listenPort)
-
 	route := map[string]any{
-		"@id":    routeID,
-		"listen": []string{listen},
+		caddyKeyID: routeID,
+		"listen":   []string{listen},
 		"routes": []map[string]any{
 			{
-				"handle": []map[string]any{
+				caddyKeyHandle: []map[string]any{
 					{
-						"handler": "tls",
+						caddyHandlerKey: "tls",
 						// Use Caddy's internal CA — no ACME needed for TCP
 						"connection_policies": []map[string]any{
 							{},
 						},
 					},
 					{
-						"handler":   "proxy",
-						"upstreams": []map[string]string{{"dial": upstream}},
+						caddyHandlerKey:   "proxy",
+						caddyKeyUpstreams: []map[string]string{{caddyKeyDial: upstream}},
 					},
 				},
 			},
 		},
 	}
-
 	// Try PATCH first (update existing)
 	if err := c.patch(ctx, fmt.Sprintf("/id/%s", routeID), route); err == nil {
 		return nil
 	}
-
 	// Create new L4 server entry
 	serverKey := fmt.Sprintf("tidefly-tcp-%d", listenPort)
 	return c.put(ctx, fmt.Sprintf("/config/apps/layer4/servers/%s", serverKey), route)

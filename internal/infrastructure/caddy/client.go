@@ -13,7 +13,13 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 )
 
-const caddyHandlerKey = "handler"
+const (
+	caddyHandlerKey   = "handler"
+	caddyKeyID        = "@id"
+	caddyKeyHandle    = "handle"
+	caddyKeyDial      = "dial"
+	caddyKeyUpstreams = "upstreams"
+)
 
 // Client speaks to the Caddy Admin API.
 // All routing is configured via API — no Caddyfile needed.
@@ -41,14 +47,14 @@ func (c *Client) Config() config.CaddyConfig {
 // AddHTTPRoute registers an HTTP(S) route for a deployed container.
 func (c *Client) AddHTTPRoute(ctx context.Context, routeID, host, upstream string) error {
 	route := map[string]any{
-		"@id": routeID,
+		caddyKeyID: routeID,
 		"match": []map[string]any{
 			{"host": []string{host}},
 		},
-		"handle": []map[string]any{
+		caddyKeyHandle: []map[string]any{
 			{
-				caddyHandlerKey: "reverse_proxy",
-				"upstreams":     []map[string]string{{"dial": upstream}},
+				caddyHandlerKey:   "reverse_proxy",
+				caddyKeyUpstreams: []map[string]string{{caddyKeyDial: upstream}},
 			},
 		},
 		"terminal": true,
@@ -306,17 +312,17 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 
 	// API Route — /api/* → Backend
 	apiRoute := map[string]any{
-		"@id": "tidefly-plane-dashboard-api",
+		caddyKeyID: "tidefly-plane-dashboard-api",
 		"match": []map[string]any{
 			{
 				"host": []string{host},
 				"path": []string{"/api/*"},
 			},
 		},
-		"handle": []map[string]any{
+		caddyKeyHandle: []map[string]any{
 			{
-				caddyHandlerKey: "reverse_proxy",
-				"upstreams":     []map[string]string{{"dial": "tidefly_backend:8181"}},
+				caddyHandlerKey:   "reverse_proxy",
+				caddyKeyUpstreams: []map[string]string{{caddyKeyDial: "tidefly_backend:8181"}},
 			},
 		},
 		"terminal": true,
@@ -324,17 +330,17 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 
 	// Docs Route — /docs* + /openapi* → Backend
 	docsRoute := map[string]any{
-		"@id": "tidefly-plane-dashboard-docs",
+		caddyKeyID: "tidefly-plane-dashboard-docs",
 		"match": []map[string]any{
 			{
 				"host": []string{host},
 				"path": []string{"/docs*", "/openapi*"},
 			},
 		},
-		"handle": []map[string]any{
+		caddyKeyHandle: []map[string]any{
 			{
-				caddyHandlerKey: "reverse_proxy",
-				"upstreams":     []map[string]string{{"dial": "tidefly_backend:8181"}},
+				caddyHandlerKey:   "reverse_proxy",
+				caddyKeyUpstreams: []map[string]string{{caddyKeyDial: "tidefly_backend:8181"}},
 			},
 		},
 		"terminal": true,
@@ -342,14 +348,14 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 
 	// UI Route — /* → UI
 	uiRoute := map[string]any{
-		"@id": "tidefly-plane-dashboard",
+		caddyKeyID: "tidefly-plane-dashboard",
 		"match": []map[string]any{
 			{"host": []string{host}},
 		},
-		"handle": []map[string]any{
+		caddyKeyHandle: []map[string]any{
 			{
-				caddyHandlerKey: "reverse_proxy",
-				"upstreams":     []map[string]string{{"dial": "tidefly_ui:3000"}},
+				caddyHandlerKey:   "reverse_proxy",
+				caddyKeyUpstreams: []map[string]string{{caddyKeyDial: "tidefly_ui:3000"}},
 			},
 		},
 		"terminal": true,
