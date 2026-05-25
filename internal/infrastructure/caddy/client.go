@@ -54,12 +54,10 @@ func (c *Client) AddHTTPRoute(ctx context.Context, routeID, host, upstream strin
 		"terminal": true,
 	}
 
-	// Try PATCH on existing route first (update)
 	if err := c.patch(ctx, fmt.Sprintf("/id/%s", routeID), route); err == nil {
 		return nil
 	}
 
-	// Get current route count to find next index
 	count, err := c.routeCount(ctx)
 	if err != nil {
 		count = 0
@@ -99,7 +97,6 @@ func (c *Client) UpdateRoute(ctx context.Context, routeID, host, upstream string
 
 // ── TLS ───────────────────────────────────────────────────────────────────────
 
-// ConfigureTLS sets up Let's Encrypt ACME for public domains.
 func (c *Client) ConfigureTLS(ctx context.Context) error {
 	tlsConfig := map[string]any{
 		"automation": map[string]any{
@@ -119,7 +116,6 @@ func (c *Client) ConfigureTLS(ctx context.Context) error {
 	return c.post(ctx, "/config/apps/tls", tlsConfig)
 }
 
-// ConfigureInternalTLS sets up Caddy's built-in CA for internal services.
 func (c *Client) ConfigureInternalTLS(ctx context.Context) error {
 	tlsConfig := map[string]any{
 		"automation": map[string]any{
@@ -138,7 +134,6 @@ func (c *Client) ConfigureInternalTLS(ctx context.Context) error {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
-// Bootstrap initializes the Caddy HTTP server — called once on backend startup.
 func (c *Client) Bootstrap(ctx context.Context) error {
 	serverConfig := map[string]any{
 		"apps": map[string]any{
@@ -180,12 +175,10 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// RouteID generates a stable route ID for a container.
 func RouteID(containerName string) string {
 	return "tidefly-plane-" + sanitizeName(containerName)
 }
 
-// Domain generates the public domain for a container.
 func Domain(cfg config.CaddyConfig, name string) string {
 	if !cfg.Enabled || cfg.BaseDomain == "" {
 		return ""
@@ -213,11 +206,7 @@ func (c *Client) post(ctx context.Context, path string, body any) error {
 	if err != nil {
 		return fmt.Errorf("caddy marshal: %w", err)
 	}
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPost,
-		c.adminURL+path,
-		bytes.NewReader(data),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.adminURL+path, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("caddy request: %w", err)
 	}
@@ -226,26 +215,19 @@ func (c *Client) post(ctx context.Context, path string, body any) error {
 	if err != nil {
 		return fmt.Errorf("caddy post: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(resp.Body)
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("caddy post %s: status %d", path, resp.StatusCode)
 	}
 	return nil
 }
 
-// put makes a PUT request to the Caddy Admin API.
 func (c *Client) put(ctx context.Context, path string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("caddy marshal: %w", err)
 	}
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPut,
-		c.adminURL+path,
-		bytes.NewReader(data),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.adminURL+path, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("caddy request: %w", err)
 	}
@@ -254,9 +236,7 @@ func (c *Client) put(ctx context.Context, path string, body any) error {
 	if err != nil {
 		return fmt.Errorf("caddy put: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(resp.Body)
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("caddy put %s: status %d", path, resp.StatusCode)
 	}
@@ -274,9 +254,7 @@ func (c *Client) patch(ctx context.Context, path string, body any) error {
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(resp.Body)
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("caddy patch %s: status %d", path, resp.StatusCode)
 	}
@@ -295,9 +273,7 @@ func (c *Client) routeCount(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(resp.Body)
 	var routes []json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
 		return 0, err
@@ -309,6 +285,18 @@ func (c *Client) SetBaseDomain(domain string) {
 	c.cfg.BaseDomain = domain
 }
 
+// upsertRoute tries PATCH first, falls back to PUT at the next route index.
+func (c *Client) upsertRoute(ctx context.Context, id string, route map[string]any) error {
+	if err := c.patch(ctx, "/id/"+id, route); err == nil {
+		return nil
+	}
+	count, _ := c.routeCount(ctx)
+	if err := c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), route); err != nil {
+		return fmt.Errorf("upsert route %s: %w", id, err)
+	}
+	return nil
+}
+
 func (c *Client) RegisterDashboard(ctx context.Context) error {
 	if !c.cfg.Enabled || c.cfg.BaseDomain == "" {
 		return nil
@@ -316,13 +304,31 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 
 	host := "dashboard." + c.cfg.BaseDomain
 
-	// API Route zuerst — /api/* → Backend
+	// API Route — /api/* → Backend
 	apiRoute := map[string]any{
 		"@id": "tidefly-plane-dashboard-api",
 		"match": []map[string]any{
 			{
 				"host": []string{host},
 				"path": []string{"/api/*"},
+			},
+		},
+		"handle": []map[string]any{
+			{
+				caddyHandlerKey: "reverse_proxy",
+				"upstreams":     []map[string]string{{"dial": "tidefly_backend:8181"}},
+			},
+		},
+		"terminal": true,
+	}
+
+	// Docs Route — /docs* + /openapi* → Backend
+	docsRoute := map[string]any{
+		"@id": "tidefly-plane-dashboard-docs",
+		"match": []map[string]any{
+			{
+				"host": []string{host},
+				"path": []string{"/docs*", "/openapi*"},
 			},
 		},
 		"handle": []map[string]any{
@@ -349,19 +355,22 @@ func (c *Client) RegisterDashboard(ctx context.Context) error {
 		"terminal": true,
 	}
 
-	if err := c.patch(ctx, "/id/tidefly-plane-dashboard-api", apiRoute); err != nil {
-		count, _ := c.routeCount(ctx)
-		if err := c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), apiRoute); err != nil {
-			return fmt.Errorf("dashboard api route: %w", err)
-		}
+	if err := c.upsertRoute(ctx, "tidefly-plane-dashboard-api", apiRoute); err != nil {
+		return fmt.Errorf("dashboard api route: %w", err)
 	}
-
-	if err := c.patch(ctx, "/id/tidefly-plane-dashboard", uiRoute); err != nil {
-		count, _ := c.routeCount(ctx)
-		if err := c.put(ctx, fmt.Sprintf("/config/apps/http/servers/tidefly-plane/routes/%d", count), uiRoute); err != nil {
-			return fmt.Errorf("dashboard ui route: %w", err)
-		}
+	if err := c.upsertRoute(ctx, "tidefly-plane-dashboard-docs", docsRoute); err != nil {
+		return fmt.Errorf("dashboard docs route: %w", err)
+	}
+	if err := c.upsertRoute(ctx, "tidefly-plane-dashboard", uiRoute); err != nil {
+		return fmt.Errorf("dashboard ui route: %w", err)
 	}
 
 	return nil
+}
+
+// RemoveDashboard removes all dashboard routes from Caddy.
+func (c *Client) RemoveDashboard(ctx context.Context) {
+	_ = c.RemoveRoute(ctx, "tidefly-plane-dashboard-api")
+	_ = c.RemoveRoute(ctx, "tidefly-plane-dashboard-docs")
+	_ = c.RemoveRoute(ctx, "tidefly-plane-dashboard")
 }
