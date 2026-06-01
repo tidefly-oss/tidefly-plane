@@ -11,10 +11,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
 	github.com/hibiken/asynq v0.26.0
-	github.com/minio/minio-go/v7 v7.1.0
+	github.com/minio/minio-go/v7 v7.2.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/redis/go-redis/v9 v9.19.0
+	github.com/redis/go-redis/v9 v9.20.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spf13/viper v1.21.0
 	golang.org/x/crypto v0.52.0
@@ -33,7 +33,6 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
@@ -54,6 +53,7 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	gopkg.in/ini.v1 v1.67.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
@@ -70,7 +70,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/getkin/kin-openapi v0.138.0 // indirect
-	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-chi/cors v1.2.2
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
