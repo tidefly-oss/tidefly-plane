@@ -20,6 +20,7 @@ const (
 	componentPlane = "plane"
 	componentUI    = "ui"
 	componentAgent = "agent"
+	componentCaddy = "caddy"
 	versionUnknown = "unknown"
 )
 
@@ -112,7 +113,6 @@ func (h *Handler) getContainerVersion(ctx context.Context, containerName string)
 	if err != nil {
 		return versionUnknown
 	}
-	// Prefer label over image tag
 	if v, ok := details.Labels["org.opencontainers.image.version"]; ok && v != "" {
 		return v
 	}
@@ -139,6 +139,9 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 		}},
 		{name: componentAgent, repo: "tidefly-agent", currentFn: func() string {
 			return h.getContainerVersion(ctx, "tidefly_agent")
+		}},
+		{name: componentCaddy, repo: "tidefly-caddy", currentFn: func() string {
+			return h.getContainerVersion(ctx, "tidefly_caddy")
 		}},
 	}
 	results := make([]ComponentVersion, len(components))
@@ -218,8 +221,6 @@ func versionSegment(parts []string, i int) int {
 }
 
 func currentVersion() string { return version.Version }
-
-// ── Version HTTP handler ──────────────────────────────────────────────────────
 
 type VersionInput struct{}
 type VersionOutput struct {

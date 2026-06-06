@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -18,7 +20,11 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
-const systemUpdateID = "system-update"
+const (
+	systemUpdateID  = "system-update"
+	caddyAdminURL   = "http://tidefly_caddy:2019"
+	caddyHealthWait = 30 * time.Second
+)
 
 type UpdateInput struct{}
 
@@ -32,6 +38,7 @@ type UpdateOutput struct {
 var componentImages = map[string]string{
 	componentPlane: "tidefly/tidefly-plane",
 	componentUI:    "tidefly/tidefly-ui",
+	componentCaddy: "tidefly/tidefly-caddy",
 }
 
 func containerName(component string) string {
@@ -44,6 +51,8 @@ func containerName(component string) string {
 		return "tidefly_backend"
 	case componentUI:
 		return "tidefly_ui"
+	case componentCaddy:
+		return "tidefly_caddy"
 	}
 	return ""
 }
@@ -76,14 +85,7 @@ func (h *Handler) UpdateSelf(ctx context.Context, _ *UpdateInput) (*UpdateOutput
 		defer cancel()
 		if err := h.pullAndRestartAll(bgCtx, toUpdate); err != nil {
 			h.log.Errorw("self_update", "update failed", "error", err.Error())
-			h.bus.Publish(eventbus.Event{
-				Type:  eventbus.EventDeployFailed,
-				Topic: eventbus.TopicDeploy,
-				Payload: eventbus.DeployFailedPayload{
-					DeployID: systemUpdateID,
-					Error:    err.Error(),
-				},
-			})
+			h.publishFailed(err.Error())
 		}
 	}()
 
@@ -136,7 +138,20 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	}
 	wg.Wait()
 
-	// ── Recreate containers in order (UI first, then Plane) ───────────────
+	// ── Update Caddy first (with config backup/restore) ───────────────────
+	for _, c := range components {
+		if c.Name != componentCaddy {
+			continue
+		}
+		imageName := fmt.Sprintf("%s:%s", componentImages[componentCaddy], c.Latest)
+		if err := h.updateCaddy(ctx, cli, imageName); err != nil {
+			h.publishFailed(fmt.Sprintf("failed to update caddy: %s", err.Error()))
+			return err
+		}
+		h.publishProgress("restarted", "tidefly_caddy updated and running")
+	}
+
+	// ── Recreate UI then Plane ────────────────────────────────────────────
 	restartOrder := []string{componentUI, componentPlane}
 	for _, name := range restartOrder {
 		var comp *ComponentVersion
@@ -174,35 +189,120 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	return nil
 }
 
+// updateCaddy backs up the current Caddy config, recreates the container
+// with the new image, waits for it to be healthy, then restores the config.
+func (h *Handler) updateCaddy(ctx context.Context, cli *dockerclient.Client, newImage string) error {
+	h.publishProgress("restarting", "backing up Caddy config")
+
+	// ── Backup config ─────────────────────────────────────────────────────
+	cfg, err := h.backupCaddyConfig(ctx)
+	if err != nil {
+		h.log.Warnw("self_update", "caddy config backup failed — continuing without restore", "error", err)
+	}
+
+	// ── Recreate container ────────────────────────────────────────────────
+	h.publishProgress("restarting", "recreating tidefly_caddy")
+	if err := h.recreateContainer(ctx, cli, "tidefly_caddy", newImage); err != nil {
+		return fmt.Errorf("recreate caddy: %w", err)
+	}
+
+	// ── Wait for Caddy admin API to be ready ──────────────────────────────
+	h.publishProgress("restarting", "waiting for Caddy to be ready")
+	if err := h.waitCaddyHealthy(ctx, caddyHealthWait); err != nil {
+		return fmt.Errorf("caddy health wait: %w", err)
+	}
+
+	// ── Restore config ────────────────────────────────────────────────────
+	if cfg != nil {
+		h.publishProgress("restarting", "restoring Caddy config")
+		if err := h.restoreCaddyConfig(ctx, cfg); err != nil {
+			h.log.Warnw("self_update", "caddy config restore failed", "error", err)
+		}
+	}
+
+	return nil
+}
+
+func (h *Handler) backupCaddyConfig(ctx context.Context) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, caddyAdminURL+"/config/", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("caddy config backup: status %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
+}
+
+func (h *Handler) restoreCaddyConfig(ctx context.Context, cfg []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, caddyAdminURL+"/load", bytes.NewReader(cfg))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("caddy config restore: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (h *Handler) waitCaddyHealthy(ctx context.Context, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, caddyAdminURL+"/", nil)
+		if err == nil {
+			resp, err := client.Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					return nil
+				}
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("caddy not ready after %s", timeout)
+}
+
 // recreateContainer stops, removes, recreates and starts a container with a new image
 // while preserving all existing config (env, volumes, ports, networks, labels).
 func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Client, containerName, newImage string) error {
 	h.publishProgress("restarting", "recreating "+containerName)
 
-	// ── Inspect existing container ────────────────────────────────────────
 	info, err := cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return fmt.Errorf("inspect %s: %w", containerName, err)
 	}
 
-	// ── Stop ──────────────────────────────────────────────────────────────
 	timeout := 10
 	if err := cli.ContainerStop(ctx, containerName, dockercontainer.StopOptions{Timeout: &timeout}); err != nil {
 		h.log.Warnw("self_update", "stop container failed", "container", containerName, "error", err)
 	}
 
-	// ── Remove ────────────────────────────────────────────────────────────
 	if err := cli.ContainerRemove(ctx, containerName, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("remove %s: %w", containerName, err)
 	}
 
-	// ── Build new config from old ─────────────────────────────────────────
 	containerCfg := info.Config
 	containerCfg.Image = newImage
-
 	hostCfg := info.HostConfig
 
-	// ── Rebuild network config ────────────────────────────────────────────
 	networkCfg := &dockernetwork.NetworkingConfig{
 		EndpointsConfig: make(map[string]*dockernetwork.EndpointSettings),
 	}
@@ -212,13 +312,11 @@ func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Clien
 		}
 	}
 
-	// ── Create ────────────────────────────────────────────────────────────
 	created, err := cli.ContainerCreate(ctx, containerCfg, hostCfg, networkCfg, nil, containerName)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", containerName, err)
 	}
 
-	// ── Connect to additional networks ────────────────────────────────────
 	for netName, endpoint := range info.NetworkSettings.Networks {
 		if netName == hostCfg.NetworkMode.NetworkName() {
 			continue
@@ -230,12 +328,10 @@ func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Clien
 		}
 	}
 
-	// ── Start ─────────────────────────────────────────────────────────────
 	if err := cli.ContainerStart(ctx, created.ID, dockercontainer.StartOptions{}); err != nil {
 		return fmt.Errorf("start %s: %w", containerName, err)
 	}
 
-	// ── Cleanup old image ─────────────────────────────────────────────────
 	go func() {
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
