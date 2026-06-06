@@ -109,6 +109,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	mux.HandleFunc(TaskServiceCleanup, s.svcHandler.HandleServiceCleanup)
 	mux.HandleFunc(TaskRuntimeHealthCheck, s.handler.HandleRuntimeHealthCheck)
+	mux.HandleFunc(TaskRuntimeCleanup, s.handler.HandleRuntimeCleanup)
 	mux.HandleFunc(TaskLogsRetention, s.handler.HandleLogsRetention)
 	mux.HandleFunc(TaskMetricsCollect, s.handler.HandleMetricsCollect)
 
