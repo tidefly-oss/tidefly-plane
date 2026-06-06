@@ -10,7 +10,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/hibiken/asynq"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -191,7 +190,6 @@ func (a *App) serveHTTP(ctx context.Context, r http.Handler) error {
 func (a *App) buildRouter() chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.Recover(a.log))
 	r.Use(middleware.RequestID())
 	r.Use(middleware.CORS())
