@@ -54,7 +54,6 @@ var knownPorts = map[string]int{
 	"rabbitmq":        5672,
 }
 
-// ResolvedManifest is the fully-resolved, validated manifest ready for the adapter.
 type ResolvedManifest struct {
 	Name      string
 	Namespace string
@@ -68,33 +67,18 @@ type ResolvedManifest struct {
 	Alerts      ResolvedAlerts
 	Maintenance ResolvedMaintenance
 
-	// Build is non-nil when the image needs to be built from source.
 	Build *ResolvedBuild
 }
 
-// ResolvedBuild carries everything needed to build the image at deploy time.
 type ResolvedBuild struct {
-	// Tag is the local image tag the built image will be pushed to.
-	Tag string
-
-	// IsGit — true when Context is a git URL.
-	IsGit bool
-
-	// GitURL and Branch — set when IsGit is true.
-	GitURL string
-	Branch string
-
-	// DockerfilePath within the build context. Default: "Dockerfile".
-	DockerfilePath string
-
-	// DockerfileInline — set when the Dockerfile is embedded in the manifest.
+	Tag              string
+	IsGit            bool
+	GitURL           string
+	Branch           string
+	DockerfilePath   string
 	DockerfileInline string
-
-	// BuildArgs — passed to docker build --build-arg.
-	BuildArgs map[string]string
-
-	// Target — multi-stage build target.
-	Target string
+	BuildArgs        map[string]string
+	Target           string
 }
 
 type ResolvedContainer struct {
@@ -112,6 +96,8 @@ type ResolvedExpose struct {
 }
 
 type ResolvedHealth struct {
+	// Test is a raw Docker healthcheck command — takes priority over HTTP/TCP.
+	Test         []string
 	HTTP         string
 	TCP          bool
 	Interval     string
@@ -147,7 +133,6 @@ type ResolvedMaintenance struct {
 	RestartCron string
 }
 
-// Resolve validates and fills defaults for a ServiceManifest.
 func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	if err := validate(m); err != nil {
 		return nil, err
@@ -155,7 +140,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 
 	r := &ResolvedManifest{}
 
-	// ── Metadata ──────────────────────────────────────────────────────────────
 	r.Name = m.Metadata.Name
 	r.Namespace = or(m.Metadata.Namespace, defaults.Namespace)
 	r.Labels = m.Metadata.Labels
@@ -164,7 +148,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	}
 	r.Labels["tidefly.service"] = r.Name
 
-	// ── Container + Build ─────────────────────────────────────────────────────
 	image := m.Spec.Container.Image
 	if b := m.Spec.Container.Build; b != nil {
 		resolved, err := resolveBuild(r.Name, b)
@@ -172,7 +155,7 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 			return nil, err
 		}
 		r.Build = resolved
-		image = resolved.Tag // runtime image = the built tag
+		image = resolved.Tag
 	}
 
 	r.Container = ResolvedContainer{
@@ -182,7 +165,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 		Resources: m.Spec.Container.Resources,
 	}
 
-	// ── Expose ────────────────────────────────────────────────────────────────
 	expose := ResolvedExpose{TLS: defaults.TLS}
 	if m.Spec.Expose != nil {
 		expose.Port = m.Spec.Expose.Port
@@ -195,7 +177,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	}
 	r.Expose = expose
 
-	// ── Health ────────────────────────────────────────────────────────────────
 	health := ResolvedHealth{
 		Interval:     defaults.Interval,
 		Timeout:      defaults.Timeout,
@@ -203,21 +184,25 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 		StartupGrace: defaults.StartupGrace,
 	}
 	if m.Spec.Health != nil {
+		// Raw test command takes priority
+		health.Test = m.Spec.Health.Test
 		health.HTTP = m.Spec.Health.HTTP
 		health.TCP = m.Spec.Health.TCP
 		health.Interval = or(m.Spec.Health.Interval, defaults.Interval)
 		health.Timeout = or(m.Spec.Health.Timeout, defaults.Timeout)
-		health.StartupGrace = or(m.Spec.Health.StartupGrace, defaults.StartupGrace)
+		// StartPeriod is an alias for StartupGrace (Docker Compose compat)
+		startupGrace := or(m.Spec.Health.StartupGrace, m.Spec.Health.StartPeriod)
+		health.StartupGrace = or(startupGrace, defaults.StartupGrace)
 		if m.Spec.Health.Retries > 0 {
 			health.Retries = m.Spec.Health.Retries
 		}
 	}
-	if health.HTTP == "" {
+	// Only fall back to TCP if no explicit test or HTTP is set
+	if len(health.Test) == 0 && health.HTTP == "" {
 		health.TCP = true
 	}
 	r.Health = health
 
-	// ── Scaling ───────────────────────────────────────────────────────────────
 	scaling := ResolvedScaling{
 		Replicas:     defaults.Replicas,
 		Restart:      defaults.Restart,
@@ -254,10 +239,8 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	}
 	r.Scaling = scaling
 
-	// ── DependsOn ─────────────────────────────────────────────────────────────
 	r.DependsOn = m.Spec.DependsOn
 
-	// ── Alerts ────────────────────────────────────────────────────────────────
 	alerts := ResolvedAlerts{OnCrash: true}
 	if m.Spec.Alerts != nil {
 		alerts.OnCrash = m.Spec.Alerts.OnCrash
@@ -266,7 +249,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	}
 	r.Alerts = alerts
 
-	// ── Maintenance ───────────────────────────────────────────────────────────
 	if m.Spec.Maintenance != nil {
 		r.Maintenance.RestartCron = m.Spec.Maintenance.RestartCron
 	}
@@ -274,7 +256,6 @@ func Resolve(m *ServiceManifest) (*ResolvedManifest, error) {
 	return r, nil
 }
 
-// resolveBuild converts a BuildSpec into a ResolvedBuild.
 func resolveBuild(serviceName string, b *BuildSpec) (*ResolvedBuild, error) {
 	tag := fmt.Sprintf("localhost/tidefly/%s:latest", serviceName)
 
@@ -296,7 +277,6 @@ func resolveBuild(serviceName string, b *BuildSpec) (*ResolvedBuild, error) {
 	return rb, nil
 }
 
-// validate checks required fields and allowed values.
 func validate(m *ServiceManifest) error {
 	if m.APIVersion != "tidefly/v1" {
 		return fmt.Errorf("manifest: unsupported apiVersion %q — expected \"tidefly/v1\"", m.APIVersion)
@@ -308,7 +288,6 @@ func validate(m *ServiceManifest) error {
 		return fmt.Errorf("manifest: metadata.name is required")
 	}
 
-	// Either image or build must be set
 	hasImage := m.Spec.Container.Image != ""
 	hasBuild := m.Spec.Container.Build != nil
 	if !hasImage && !hasBuild {
@@ -318,7 +297,6 @@ func validate(m *ServiceManifest) error {
 		return fmt.Errorf("manifest: spec.container.image and spec.container.build are mutually exclusive")
 	}
 
-	// Validate build spec
 	if hasBuild {
 		b := m.Spec.Container.Build
 		hasInline := b.DockerfileInline != ""

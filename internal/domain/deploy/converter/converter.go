@@ -1,3 +1,4 @@
+// Package converter transforms various input formats (manifest, image, compose, dockerfile, git) into resolved service manifests.
 package converter
 
 import (

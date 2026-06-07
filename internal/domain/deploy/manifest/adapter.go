@@ -1,3 +1,4 @@
+// Package manifest defines the Tidefly service manifest schema, resolver, and adapter.
 package manifest
 
 import (
@@ -8,27 +9,21 @@ import (
 )
 
 // ToContainerSpec converts a ResolvedManifest into a runtime.ContainerSpec.
-// This is the bridge between the manifest layer and Docker/Podman.
-// The image must already be built before this is called — Build is resolved upstream.
 func ToContainerSpec(r *ResolvedManifest, networkName string, isPodman bool) runtime.ContainerSpec {
 	image := qualifyImageManifest(r.Container.Image, isPodman)
 
-	// ── Env ───────────────────────────────────────────────────────────────────
 	env := make([]string, 0, len(r.Container.Env))
 	for _, e := range r.Container.Env {
 		env = append(env, e.Name+"="+e.Value)
 	}
 
-	// ── Volumes ───────────────────────────────────────────────────────────────
 	volumes := make([]runtime.VolumeMount, 0, len(r.Container.Volumes))
 	for _, v := range r.Container.Volumes {
 		volumes = append(volumes, runtime.VolumeMount{Name: v.Name, Mount: v.MountPath})
 	}
 
-	// ── Healthcheck ───────────────────────────────────────────────────────────
 	hc := toHealthcheck(r.Health, r.Expose.Port)
 
-	// ── Labels ────────────────────────────────────────────────────────────────
 	labels := make(map[string]string, len(r.Labels))
 	for k, v := range r.Labels {
 		labels[k] = v
@@ -38,7 +33,6 @@ func ToContainerSpec(r *ResolvedManifest, networkName string, isPodman bool) run
 	}
 	labels["tidefly.port"] = itoa(r.Expose.Port)
 
-	// Store build source info in labels for redeploy
 	if r.Build != nil {
 		if r.Build.IsGit {
 			labels["tidefly.source"] = "git"
@@ -57,7 +51,7 @@ func ToContainerSpec(r *ResolvedManifest, networkName string, isPodman bool) run
 		Name:        r.Name,
 		Image:       image,
 		Env:         env,
-		Ports:       nil, // traffic via Caddy only
+		Ports:       nil,
 		Volumes:     volumes,
 		Labels:      labels,
 		Healthcheck: hc,
@@ -72,14 +66,20 @@ func toHealthcheck(h ResolvedHealth, port int) *runtime.Healthcheck {
 	startPeriod := parseDurationManifest(h.StartupGrace)
 
 	var test []string
-	if h.HTTP != "" {
+
+	switch {
+	case len(h.Test) > 0:
+		// Raw Docker healthcheck command — use as-is
+		test = h.Test
+	case h.HTTP != "":
 		url := "http://localhost"
 		if port > 0 {
 			url = "http://localhost:" + itoa(port)
 		}
 		url += h.HTTP
 		test = []string{"CMD-SHELL", "wget -qO- " + url + " || exit 1"}
-	} else {
+	default:
+		// Default: TCP check on exposed port
 		test = []string{"CMD-SHELL", "nc -z localhost " + itoa(port) + " || exit 1"}
 	}
 

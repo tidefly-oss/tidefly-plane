@@ -1,3 +1,4 @@
+// Package deploy handles service deployment, container creation, and teardown.
 package deploy
 
 import (
