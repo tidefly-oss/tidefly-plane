@@ -255,3 +255,11 @@ func (d *Runtime) ContainerLogs(ctx context.Context, id string, opts runtime.Log
 		},
 	)
 }
+
+// RenameContainer renames a container by ID or name.
+func (d *Runtime) RenameContainer(ctx context.Context, id, newName string) error {
+	if err := d.client.ContainerRename(ctx, id, newName); err != nil {
+		return fmt.Errorf("docker rename container %q → %q: %w", id, newName, err)
+	}
+	return nil
+}

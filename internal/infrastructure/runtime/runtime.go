@@ -1,3 +1,4 @@
+// Package runtime defines the container runtime abstraction and types used across Tidefly.
 package runtime
 
 import (

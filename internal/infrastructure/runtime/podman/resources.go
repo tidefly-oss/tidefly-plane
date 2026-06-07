@@ -16,8 +16,8 @@ func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	var inspect struct {
 		HostConfig *struct {
 			NanoCpus      *int64  `json:"NanoCpus"`
-			CpuQuota      *int64  `json:"CpuQuota"`
-			CpuPeriod     *uint64 `json:"CpuPeriod"`
+			CPUQuota      *int64  `json:"CpuQuota"`
+			CPUPeriod     *uint64 `json:"CpuPeriod"`
 			Memory        *int64  `json:"Memory"`
 			MemorySwap    *int64  `json:"MemorySwap"`
 			RestartPolicy *struct {
@@ -44,12 +44,12 @@ func (p *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	// ── Podman-native fields ──────────────────────────────────────────────────
 	if hc.NanoCpus != nil && *hc.NanoCpus > 0 {
 		cfg.CPUCores = float64(*hc.NanoCpus) / 1e9
-	} else if hc.CpuQuota != nil && *hc.CpuQuota > 0 {
+	} else if hc.CPUQuota != nil && *hc.CPUQuota > 0 {
 		period := int64(100_000)
-		if hc.CpuPeriod != nil && *hc.CpuPeriod > 0 {
-			period = int64(*hc.CpuPeriod)
+		if hc.CPUPeriod != nil && *hc.CPUPeriod > 0 {
+			period = int64(*hc.CPUPeriod)
 		}
-		cfg.CPUCores = float64(*hc.CpuQuota) / float64(period)
+		cfg.CPUCores = float64(*hc.CPUQuota) / float64(period)
 	}
 
 	if hc.Memory != nil && *hc.Memory > 0 {

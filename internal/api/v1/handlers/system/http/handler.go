@@ -1,3 +1,5 @@
+// Package http provides HTTP handlers for system-level endpoints including
+// version checks, self-update, and runtime information.
 package http
 
 import (

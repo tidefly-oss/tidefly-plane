@@ -24,6 +24,7 @@ const (
 	systemUpdateID  = "system-update"
 	caddyAdminURL   = "http://tidefly_caddy:2019"
 	caddyHealthWait = 30 * time.Second
+	containerHealth = 60 * time.Second
 )
 
 type UpdateInput struct{}
@@ -138,7 +139,7 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	}
 	wg.Wait()
 
-	// ── Update Caddy first (with config backup/restore) ───────────────────
+	// ── Update Caddy first (config backup/restore) ────────────────────────
 	for _, c := range components {
 		if c.Name != componentCaddy {
 			continue
@@ -151,9 +152,9 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		h.publishProgress("restarted", "tidefly_caddy updated and running")
 	}
 
-	// ── Recreate UI then Plane ────────────────────────────────────────────
-	restartOrder := []string{componentUI, componentPlane}
-	for _, name := range restartOrder {
+	// ── Blue-Green for UI then Plane ──────────────────────────────────────
+	blueGreenOrder := []string{componentUI, componentPlane}
+	for _, name := range blueGreenOrder {
 		var comp *ComponentVersion
 		for i := range components {
 			if components[i].Name == name {
@@ -174,11 +175,11 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		}
 		imageName := fmt.Sprintf("%s:%s", img, comp.Latest)
 
-		if err := h.recreateContainer(ctx, cli, cn, imageName); err != nil {
-			h.publishFailed(fmt.Sprintf("failed to recreate %s: %s", cn, err.Error()))
+		if err := h.blueGreenUpdate(ctx, cli, cn, imageName); err != nil {
+			h.publishFailed(fmt.Sprintf("failed to update %s: %s", cn, err.Error()))
 			continue
 		}
-		h.publishProgress("restarted", cn+" updated and running")
+		h.publishProgress("restarted", cn+" updated with zero downtime")
 	}
 
 	h.bus.Publish(eventbus.Event{
@@ -189,37 +190,150 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	return nil
 }
 
-// updateCaddy backs up the current Caddy config, recreates the container
-// with the new image, waits for it to be healthy, then restores the config.
-func (h *Handler) updateCaddy(ctx context.Context, cli *dockerclient.Client, newImage string) error {
-	h.publishProgress("restarting", "backing up Caddy config")
+// blueGreenUpdate performs a zero-downtime update:
+// 1. Start new container as <name>_green
+// 2. Wait until healthy
+// 3. Stop + remove old container
+// 4. Rename new container to original name
+func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client, name, newImage string) error {
+	greenName := name + "_green"
+	h.publishProgress("restarting", fmt.Sprintf("starting %s (blue-green)", greenName))
 
-	// ── Backup config ─────────────────────────────────────────────────────
-	cfg, err := h.backupCaddyConfig(ctx)
+	// ── Inspect old container for config ─────────────────────────────────
+	info, err := cli.ContainerInspect(ctx, name)
 	if err != nil {
-		h.log.Warnw("self_update", "caddy config backup failed — continuing without restore", "error", err)
+		return fmt.Errorf("inspect %s: %w", name, err)
 	}
 
-	// ── Recreate container ────────────────────────────────────────────────
+	// ── Remove stale green if exists ──────────────────────────────────────
+	_ = cli.ContainerRemove(ctx, greenName, dockercontainer.RemoveOptions{Force: true})
+
+	// ── Create green container with new image ─────────────────────────────
+	containerCfg := info.Config
+	containerCfg.Image = newImage
+	hostCfg := info.HostConfig
+
+	networkCfg := &dockernetwork.NetworkingConfig{
+		EndpointsConfig: make(map[string]*dockernetwork.EndpointSettings),
+	}
+	for netName, endpoint := range info.NetworkSettings.Networks {
+		networkCfg.EndpointsConfig[netName] = &dockernetwork.EndpointSettings{
+			Aliases: endpoint.Aliases,
+		}
+	}
+
+	created, err := cli.ContainerCreate(ctx, containerCfg, hostCfg, networkCfg, nil, greenName)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", greenName, err)
+	}
+
+	// Connect additional networks
+	for netName, endpoint := range info.NetworkSettings.Networks {
+		if netName == hostCfg.NetworkMode.NetworkName() {
+			continue
+		}
+		if err := cli.NetworkConnect(ctx, endpoint.NetworkID, created.ID, &dockernetwork.EndpointSettings{
+			Aliases: endpoint.Aliases,
+		}); err != nil {
+			h.log.Warnw("self_update", "network connect failed", "network", netName, "error", err)
+		}
+	}
+
+	// ── Start green ───────────────────────────────────────────────────────
+	if err := cli.ContainerStart(ctx, created.ID, dockercontainer.StartOptions{}); err != nil {
+		_ = cli.ContainerRemove(ctx, created.ID, dockercontainer.RemoveOptions{Force: true})
+		return fmt.Errorf("start %s: %w", greenName, err)
+	}
+
+	// ── Wait for green to be healthy ──────────────────────────────────────
+	h.publishProgress("restarting", fmt.Sprintf("waiting for %s to be healthy", greenName))
+	if err := h.waitContainerHealthy(ctx, cli, created.ID, containerHealth); err != nil {
+		_ = cli.ContainerStop(ctx, created.ID, dockercontainer.StopOptions{})
+		_ = cli.ContainerRemove(ctx, created.ID, dockercontainer.RemoveOptions{Force: true})
+		return fmt.Errorf("%s unhealthy, rolled back: %w", greenName, err)
+	}
+
+	// ── Stop + remove old container ───────────────────────────────────────
+	h.publishProgress("restarting", fmt.Sprintf("stopping old %s", name))
+	timeout := 10
+	_ = cli.ContainerStop(ctx, name, dockercontainer.StopOptions{Timeout: &timeout})
+	if err := cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true}); err != nil {
+		h.log.Warnw("self_update", "remove old container failed", "container", name, "error", err)
+	}
+
+	// ── Rename green → original name ──────────────────────────────────────
+	if err := cli.ContainerRename(ctx, created.ID, name); err != nil {
+		return fmt.Errorf("rename %s → %s: %w", greenName, name, err)
+	}
+
+	// ── Cleanup dangling images ───────────────────────────────────────────
+	go func() {
+		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = cli.ImagesPrune(cleanCtx, dockerfilters.NewArgs(dockerfilters.Arg("dangling", "true")))
+	}()
+
+	return nil
+}
+
+func (h *Handler) waitContainerHealthy(ctx context.Context, cli *dockerclient.Client, id string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		inspect, err := cli.ContainerInspect(ctx, id)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		// No healthcheck defined — just check running
+		if inspect.State.Health == nil {
+			if inspect.State.Running {
+				return nil
+			}
+		} else {
+			switch inspect.State.Health.Status {
+			case "healthy":
+				return nil
+			case "unhealthy":
+				return fmt.Errorf("container reported unhealthy")
+			}
+		}
+		if !inspect.State.Running {
+			return fmt.Errorf("container exited during startup")
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("container not healthy after %s", timeout)
+}
+
+// updateCaddy backs up Caddy config, recreates with new image, restores config.
+func (h *Handler) updateCaddy(ctx context.Context, cli *dockerclient.Client, newImage string) error {
+	h.publishProgress("restarting", "backing up Caddy config")
+	cfg, err := h.backupCaddyConfig(ctx)
+	if err != nil {
+		h.log.Warnw("self_update", "caddy config backup failed", "error", err)
+	}
+
 	h.publishProgress("restarting", "recreating tidefly_caddy")
 	if err := h.recreateContainer(ctx, cli, "tidefly_caddy", newImage); err != nil {
 		return fmt.Errorf("recreate caddy: %w", err)
 	}
 
-	// ── Wait for Caddy admin API to be ready ──────────────────────────────
 	h.publishProgress("restarting", "waiting for Caddy to be ready")
 	if err := h.waitCaddyHealthy(ctx, caddyHealthWait); err != nil {
 		return fmt.Errorf("caddy health wait: %w", err)
 	}
 
-	// ── Restore config ────────────────────────────────────────────────────
 	if cfg != nil {
 		h.publishProgress("restarting", "restoring Caddy config")
 		if err := h.restoreCaddyConfig(ctx, cfg); err != nil {
 			h.log.Warnw("self_update", "caddy config restore failed", "error", err)
 		}
 	}
-
 	return nil
 }
 
@@ -280,20 +394,15 @@ func (h *Handler) waitCaddyHealthy(ctx context.Context, timeout time.Duration) e
 	return fmt.Errorf("caddy not ready after %s", timeout)
 }
 
-// recreateContainer stops, removes, recreates and starts a container with a new image
-// while preserving all existing config (env, volumes, ports, networks, labels).
+// recreateContainer is used for Caddy only — stops, removes, recreates with new image.
 func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Client, containerName, newImage string) error {
-	h.publishProgress("restarting", "recreating "+containerName)
-
 	info, err := cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return fmt.Errorf("inspect %s: %w", containerName, err)
 	}
 
 	timeout := 10
-	if err := cli.ContainerStop(ctx, containerName, dockercontainer.StopOptions{Timeout: &timeout}); err != nil {
-		h.log.Warnw("self_update", "stop container failed", "container", containerName, "error", err)
-	}
+	_ = cli.ContainerStop(ctx, containerName, dockercontainer.StopOptions{Timeout: &timeout})
 
 	if err := cli.ContainerRemove(ctx, containerName, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("remove %s: %w", containerName, err)

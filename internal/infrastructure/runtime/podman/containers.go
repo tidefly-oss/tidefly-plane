@@ -140,8 +140,8 @@ func (p *Runtime) GetContainer(ctx context.Context, id string) (*runtime.Contain
 				MaximumRetryCount *int    `json:"MaximumRetryCount"`
 			} `json:"RestartPolicy"`
 			NanoCpus   *int64  `json:"NanoCpus"`
-			CpuQuota   *int64  `json:"CpuQuota"`
-			CpuPeriod  *uint64 `json:"CpuPeriod"`
+			CPUQuota   *int64  `json:"CpuQuota"`
+			CPUPeriod  *uint64 `json:"CpuPeriod"`
 			Memory     *int64  `json:"Memory"`
 			MemorySwap *int64  `json:"MemorySwap"`
 		} `json:"HostConfig"`
@@ -529,6 +529,17 @@ func parseEntrypoint(raw json.RawMessage) []string {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil && s != "" {
 		return []string{s}
+	}
+	return nil
+}
+
+// RenameContainer renames a container using the Podman REST API.
+func (p *Runtime) RenameContainer(ctx context.Context, id, newName string) error {
+	q := url.Values{}
+	q.Set("name", newName)
+	_, _, err := p.c.post(ctx, "/libpod/containers/"+escPath(id)+"/rename", q, nil)
+	if err != nil {
+		return fmt.Errorf("podman rename container %q → %q: %w", id, newName, err)
 	}
 	return nil
 }

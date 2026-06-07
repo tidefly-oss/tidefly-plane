@@ -1,3 +1,4 @@
+// Package docker implements the Runtime interface using the Docker Engine API.
 package docker
 
 import (
