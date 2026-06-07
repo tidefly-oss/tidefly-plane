@@ -9,6 +9,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
 const TaskServiceHeal = "service:heal"
@@ -93,6 +94,21 @@ func (s *Server) handleContainerEvent(event runtime.ContainerEvent) {
 
 		// Derive service name — blue/green containers are named "svc-blue" / "svc-green"
 		serviceName := deriveServiceName(event.Name)
+
+		if s.handler.notifSvc != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				// Check settings before notifying
+				var settings models.SystemSettings
+				if err := s.handler.db.WithContext(ctx).First(&settings).Error; err == nil &&
+					settings.NotifyOnContainerDown {
+					msg := fmt.Sprintf("container %q stopped (reason: %s)", event.Name, event.Type)
+					_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, models.SeverityError, msg)
+				}
+			}()
+		}
 
 		s.log.Info("jobs", fmt.Sprintf(
 			"event watcher: %s on %q (service=%q) — enqueuing heal",

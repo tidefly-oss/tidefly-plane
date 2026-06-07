@@ -1,3 +1,4 @@
+// Package jobs implements background job handlers, schedulers, and the container event watcher.
 package jobs
 
 import (
