@@ -1,3 +1,4 @@
+// Package middleware provides HTTP and Huma middleware for authentication, authorization, and request enrichment.
 package middleware
 
 import (
@@ -6,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/auth"
 )
 
@@ -14,10 +14,13 @@ import (
 
 type humaUserKey struct{}
 type humaCtxKey struct{}
+type humaIPKey struct{}
+type humaUserAgentKey struct{}
 
 // ── Huma Middleware ───────────────────────────────────────────────────────────
 
 // RequireAuthHuma validates JWT from Authorization header for Huma routes.
+// Also injects IP and User-Agent into the context for audit logging.
 func RequireAuthHuma(api huma.API, jwtSvc *auth.Service) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		token := extractBearerToken(ctx.Header("Authorization"))
@@ -30,7 +33,24 @@ func RequireAuthHuma(api huma.API, jwtSvc *auth.Service) func(huma.Context, func
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "invalid or expired token", nil)
 			return
 		}
+
+		// Resolve real IP — prefer X-Real-IP set by Caddy, fall back to RemoteAddr
+		ip := ctx.Header("X-Real-IP")
+		if ip == "" {
+			ip = ctx.Header("X-Forwarded-For")
+			if idx := strings.IndexByte(ip, ','); idx != -1 {
+				ip = strings.TrimSpace(ip[:idx])
+			}
+		}
+		if ip == "" {
+			ip = ctx.RemoteAddr()
+		}
+
+		ua := ctx.Header("User-Agent")
+
 		newCtx := context.WithValue(ctx.Context(), humaUserKey{}, claims)
+		newCtx = context.WithValue(newCtx, humaIPKey{}, ip)
+		newCtx = context.WithValue(newCtx, humaUserAgentKey{}, ua)
 		next(huma.WithContext(ctx, newCtx))
 	}
 }
@@ -41,8 +61,19 @@ func UserFromHumaCtx(ctx context.Context) *auth.Claims {
 	return claims
 }
 
-// InjectHumaContext stores the huma.Context inside the stdlib context
-// so service-layer code can retrieve it if needed.
+// IPFromCtx returns the client IP injected by RequireAuthHuma.
+func IPFromCtx(ctx context.Context) string {
+	ip, _ := ctx.Value(humaIPKey{}).(string)
+	return ip
+}
+
+// UserAgentFromCtx returns the User-Agent injected by RequireAuthHuma.
+func UserAgentFromCtx(ctx context.Context) string {
+	ua, _ := ctx.Value(humaUserAgentKey{}).(string)
+	return ua
+}
+
+// InjectHumaContext stores the huma.Context inside the stdlib context.
 func InjectHumaContext() func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		newCtx := context.WithValue(ctx.Context(), humaCtxKey{}, ctx)
@@ -54,6 +85,15 @@ func InjectHumaContext() func(huma.Context, func(huma.Context)) {
 func HumaContextFrom(ctx context.Context) huma.Context {
 	hc, _ := ctx.Value(humaCtxKey{}).(huma.Context)
 	return hc
+}
+
+// ── SSE / WebSocket Middleware (stdlib) ───────────────────────────────────────
+
+func extractBearerToken(header string) string {
+	if strings.HasPrefix(header, "Bearer ") {
+		return header[7:]
+	}
+	return ""
 }
 
 // ── SSE / WebSocket Middleware (stdlib) ───────────────────────────────────────
@@ -82,15 +122,18 @@ func RequireAuthSSE(jwtSvc *auth.Service) func(http.Handler) http.Handler {
 	}
 }
 
-// ── internal ──────────────────────────────────────────────────────────────────
+// ── ContextEnricher implementation ───────────────────────────────────────────
 
-func extractBearerToken(header string) string {
-	if header == "" {
-		return ""
+// Enricher implements logger.ContextEnricher using the injected context keys.
+type Enricher struct{}
+
+func NewEnricher() *Enricher { return &Enricher{} }
+
+func (e *Enricher) IP(ctx context.Context) string        { return IPFromCtx(ctx) }
+func (e *Enricher) UserAgent(ctx context.Context) string { return UserAgentFromCtx(ctx) }
+func (e *Enricher) UserEmail(ctx context.Context) string {
+	if claims := UserFromHumaCtx(ctx); claims != nil {
+		return claims.Email
 	}
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-		return ""
-	}
-	return strings.TrimSpace(parts[1])
+	return ""
 }

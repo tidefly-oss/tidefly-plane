@@ -1,3 +1,4 @@
+// Package v1 wires and registers all API v1 HTTP handlers and routes.
 package v1
 
 import (

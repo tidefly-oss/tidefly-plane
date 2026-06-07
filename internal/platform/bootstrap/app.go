@@ -1,3 +1,4 @@
+// Package bootstrap wires together all application dependencies and starts the Tidefly platform.
 package bootstrap
 
 import (
@@ -114,6 +115,10 @@ func NewApp(
 			})
 		},
 	)
+
+	// Wire context enricher so audit logs automatically capture IP, UserAgent, UserEmail
+	// from the request context without requiring changes to individual handlers.
+	applogger.SetContextEnricher(middleware.NewEnricher())
 
 	return app
 }

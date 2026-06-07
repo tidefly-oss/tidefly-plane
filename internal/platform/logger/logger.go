@@ -1,3 +1,4 @@
+// Package logger provides structured logging, audit logging, and notification integration for Tidefly.
 package logger
 
 import (
@@ -298,7 +299,42 @@ type AuditEntry struct {
 	Success    bool
 }
 
+// auditIPKey and auditUAKey are the context keys injected by middleware.RequireAuthHuma.
+// Defined here as unexported types to avoid import cycles — middleware sets them via
+// the same key types exported from the middleware package.
+// We read them via a shared interface: middleware.IPFromCtx / middleware.UserAgentFromCtx.
+// To avoid the import cycle we accept an optional ContextEnricher.
+
+// ContextEnricher extracts request metadata from a context.
+// Implemented by the middleware package and injected at app startup.
+type ContextEnricher interface {
+	IP(ctx context.Context) string
+	UserAgent(ctx context.Context) string
+	UserEmail(ctx context.Context) string
+}
+
+var globalEnricher ContextEnricher
+
+// SetContextEnricher wires the middleware enricher into the logger.
+// Called once at app startup to avoid import cycles.
+func SetContextEnricher(e ContextEnricher) {
+	globalEnricher = e
+}
+
 func (l *Logger) Audit(ctx context.Context, entry AuditEntry) {
+	// Auto-fill IP, UserAgent, UserEmail from context if not explicitly set
+	if globalEnricher != nil {
+		if entry.IPAddress == "" {
+			entry.IPAddress = globalEnricher.IP(ctx)
+		}
+		if entry.UserAgent == "" {
+			entry.UserAgent = globalEnricher.UserAgent(ctx)
+		}
+		if entry.UserEmail == "" {
+			entry.UserEmail = globalEnricher.UserEmail(ctx)
+		}
+	}
+
 	if l.db != nil {
 		go func() {
 			l.db.Create(&models.AuditLog{
@@ -317,6 +353,7 @@ func (l *Logger) Audit(ctx context.Context, entry AuditEntry) {
 		slog.String("action", string(entry.Action)),
 		slog.String("user_id", entry.UserID),
 		slog.String("user_email", entry.UserEmail),
+		slog.String("ip", entry.IPAddress),
 		slog.String("resource_id", entry.ResourceID),
 		slog.Bool("success", entry.Success),
 	)
