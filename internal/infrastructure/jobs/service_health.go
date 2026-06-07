@@ -8,6 +8,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/manifest"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
@@ -50,14 +51,16 @@ func (h *ServiceJobHandler) HandleServiceHeal(ctx context.Context, t *asynq.Task
 		if err := h.agentClient.SendHeal(ctx, svc.WorkerID, svc.Name, p.Reason, deployCmd); err != nil {
 			h.log.Error("jobs", fmt.Sprintf("worker self-heal failed for %q", p.ServiceName), err)
 			h.db.Model(&svc).Update("status", models.ServiceStatusFailed)
+			h.notifyHealFailed(p.ServiceName, err)
 			return fmt.Errorf("worker self-heal %q: %w", p.ServiceName, err)
 		}
 		h.db.Model(&svc).Update("status", models.ServiceStatusRunning)
 		h.log.Info("jobs", fmt.Sprintf("self-heal: %q recovered on worker %s", p.ServiceName, svc.WorkerID))
+		h.notifyHealRecovered(p.ServiceName)
 		return nil
 	}
 
-	// Local heal
+	// Local — check if already recovered
 	containers, err := h.rt.ListContainers(ctx, true)
 	if err == nil {
 		for _, ct := range containers {
@@ -71,12 +74,48 @@ func (h *ServiceJobHandler) HandleServiceHeal(ctx context.Context, t *asynq.Task
 	if err := h.restartService(ctx, &svc); err != nil {
 		h.log.Error("jobs", fmt.Sprintf("self-heal failed for %q", p.ServiceName), err)
 		h.db.Model(&svc).Update("status", models.ServiceStatusFailed)
+		h.notifyHealFailed(p.ServiceName, err)
 		return fmt.Errorf("self-heal %q: %w", p.ServiceName, err)
 	}
 
 	h.db.Model(&svc).Update("status", models.ServiceStatusRunning)
 	h.log.Info("jobs", fmt.Sprintf("self-heal: %q recovered (reason=%s)", p.ServiceName, p.Reason))
+	h.notifyHealRecovered(p.ServiceName)
 	return nil
+}
+
+// notifyHealFailed sends ERROR notification — user must investigate.
+func (h *ServiceJobHandler) notifyHealFailed(serviceName string, err error) {
+	if h.notifSvc == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		msg := fmt.Sprintf("self-heal FAILED for %q: %s — manual intervention required", serviceName, err.Error())
+		_ = h.notifSvc.Upsert(ctx, "heal:failed:"+serviceName, serviceName, models.SeverityError, msg)
+		// Also send external notification — user must act
+		if h.notifier != nil {
+			h.notifier.Send(ctx, notification.Event{
+				Title:   fmt.Sprintf("[ERROR] Service %q is down", serviceName),
+				Message: msg,
+				Level:   "error",
+			})
+		}
+	}()
+}
+
+// notifyHealRecovered logs recovery to DB as INFO for audit trail.
+func (h *ServiceJobHandler) notifyHealRecovered(serviceName string) {
+	if h.notifSvc == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		msg := fmt.Sprintf("service %q recovered automatically via self-healing", serviceName)
+		_ = h.notifSvc.Upsert(ctx, "heal:recovered:"+serviceName, serviceName, models.SeverityInfo, msg)
+	}()
 }
 
 func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asynq.Task) error {
@@ -132,7 +171,6 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 			continue
 		}
 
-		// Worker node — health managed by agent
 		if svc.WorkerID != "" {
 			if h.agentClient != nil && !h.agentClient.IsConnected(svc.WorkerID) {
 				h.log.Warn("jobs", fmt.Sprintf("self-heal: worker %s offline for service %q", svc.WorkerID, svc.Name))
@@ -140,7 +178,6 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 			continue
 		}
 
-		// Local
 		status, exists := running[svc.Name]
 		if exists && !runtime.NeedsRestart(status) {
 			if svc.Status != models.ServiceStatusRunning {
@@ -153,9 +190,11 @@ func (h *ServiceJobHandler) HandleServiceHealthCheck(ctx context.Context, _ *asy
 		if err := h.restartService(ctx, svc); err != nil {
 			h.log.Error("jobs", fmt.Sprintf("self-heal fallback failed for %q", svc.Name), err)
 			h.db.Model(svc).Update("status", models.ServiceStatusFailed)
+			h.notifyHealFailed(svc.Name, err)
 			continue
 		}
 		h.db.Model(svc).Update("status", models.ServiceStatusRunning)
+		h.notifyHealRecovered(svc.Name)
 		healed++
 	}
 

@@ -194,6 +194,10 @@ func (l *Logger) Fatal(component, msg string, err error) {
 	os.Exit(1)
 }
 
+func (l *Logger) WriteHTTPError(status int, method, path string) {
+	l.writeAppLog("ERROR", "http", fmt.Sprintf("%s %s", method, path), fmt.Sprintf("status %d", status), "")
+}
+
 func (l *Logger) ContainerEvent(level, containerID, containerName, msg, errDetail string) {
 	if isInternalContainer(containerName) {
 		return

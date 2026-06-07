@@ -53,6 +53,7 @@ func NewServer(
 	db *gorm.DB,
 	log *logger.Logger,
 	notifySvc *notification.Service,
+	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
 	agentClient *agentsvc.Client,
@@ -92,7 +93,7 @@ func NewServer(
 		metrics:  metricsReg,
 	}
 
-	svcHandler := NewServiceJobHandler(db, rt, ingressAdapter, log, client, agentClient)
+	svcHandler := NewServiceJobHandler(db, rt, ingressAdapter, log, client, agentClient, notifySvc, notifier)
 
 	return &Server{
 		server:     srv,
@@ -181,7 +182,6 @@ func (s *Server) registerSchedules() error {
 
 	retentionTask, err := newTask(
 		TaskLogsRetention, map[string]any{
-			"log_retention_days":          s.cfg.LogRetentionDays,
 			"audit_retention_days":        s.cfg.AuditRetentionDays,
 			"notification_retention_days": s.cfg.NotificationRetentionDays,
 		},

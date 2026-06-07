@@ -104,7 +104,8 @@ func RequestLogger(log *applogger.Logger, opts ...RequestLoggerOptions) func(htt
 			requestID := chimiddleware.GetReqID(r.Context())
 
 			isSlow := opt.SlowThreshold > 0 && duration > opt.SlowThreshold
-			isError := status >= 400
+			isServerError := status >= 500
+			isClientError := status >= 400 && status < 500
 
 			attrs := []any{
 				slog.String("method", r.Method),
@@ -123,7 +124,7 @@ func RequestLogger(log *applogger.Logger, opts ...RequestLoggerOptions) func(htt
 			if isSlow {
 				attrs = append(attrs, slog.Bool("slow_request", true))
 			}
-			if isError || isSlow {
+			if isServerError || isClientError || isSlow {
 				attrs = append(attrs,
 					slog.String("content_type", r.Header.Get("Content-Type")),
 					slog.String("user_agent", r.Header.Get("User-Agent")),
@@ -133,16 +134,22 @@ func RequestLogger(log *applogger.Logger, opts ...RequestLoggerOptions) func(htt
 						truncate(redactBody(reqBody, r.Header.Get("Content-Type")), maxBodySize)))
 				}
 			}
-			if isError && wrapped.buf.Len() > 0 {
+			if (isServerError || isClientError) && wrapped.buf.Len() > 0 {
 				attrs = append(attrs, slog.String("response_body",
 					truncate(redactBody(wrapped.buf.Bytes(), wrapped.Header().Get("Content-Type")), maxBodySize)))
 			}
 
 			msg := r.Method + " " + r.URL.Path
 			sl := log.Slog()
-			if isError {
+			switch {
+			case isServerError:
+				// 5xx — server error, write to DB
 				sl.Error(msg, attrs...)
-			} else {
+				log.WriteHTTPError(status, r.Method, r.URL.Path)
+			case isClientError:
+				// 4xx — client error, log as warn but NOT to DB (expected behavior)
+				sl.Warn(msg, attrs...)
+			default:
 				sl.Info(msg, attrs...)
 			}
 		})
@@ -201,3 +208,5 @@ func isLoggableContentType(ct string) bool {
 	}
 	return false
 }
+
+

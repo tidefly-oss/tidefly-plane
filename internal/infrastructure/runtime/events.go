@@ -24,8 +24,9 @@ type ContainerEvent struct {
 	ContainerID string             `json:"container_id"`
 	Name        string             `json:"name"`
 	Image       string             `json:"image"`
-	Status      ContainerStatus    `json:"status"` // abgeleiteter Status nach dem Event
+	Status      ContainerStatus    `json:"status"`
 	Time        time.Time          `json:"time"`
+	Labels      map[string]string  `json:"labels,omitempty"`
 }
 
 // EventToStatus leitet den Container-Status aus dem Event-Typ ab

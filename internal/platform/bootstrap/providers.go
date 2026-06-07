@@ -188,6 +188,7 @@ func ProvideJobServer(
 	db *gorm.DB,
 	log *applogger.Logger,
 	notifSvc *notification.Service,
+	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
 	agentClient *agentsvc.Client,
@@ -195,7 +196,7 @@ func ProvideJobServer(
 	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
 		return nil, func() {}, nil
 	}
-	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, metricsReg, ingressAdapter, agentClient)
+	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient)
 	if err != nil {
 		return nil, nil, err
 	}

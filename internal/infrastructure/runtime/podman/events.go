@@ -96,6 +96,7 @@ func (p *Runtime) EventStream(ctx context.Context) (<-chan runtime.ContainerEven
 				Image:       evt.Actor.Attributes["image"],
 				Status:      runtime.EventToStatus(evtType),
 				Time:        time.Unix(evt.Time, 0),
+				Labels:      evt.Actor.Attributes,
 			}
 		}
 

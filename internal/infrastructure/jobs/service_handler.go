@@ -11,6 +11,7 @@ import (
 	agentpb "github.com/tidefly-oss/tidefly-plane/internal/api/v1/proto/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/converter"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/manifest"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	agentsvc "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
@@ -108,6 +109,8 @@ type ServiceJobHandler struct {
 	log         serviceLogger
 	client      *asynq.Client
 	agentClient *agentsvc.Client
+	notifSvc    *notification.Service
+	notifier    *notification.Notifier
 }
 
 func NewServiceJobHandler(
@@ -117,6 +120,8 @@ func NewServiceJobHandler(
 	log serviceLogger,
 	client *asynq.Client,
 	agentClient *agentsvc.Client,
+	notifSvc *notification.Service,
+	notifier *notification.Notifier,
 ) *ServiceJobHandler {
 	return &ServiceJobHandler{
 		db:          db,
@@ -125,6 +130,8 @@ func NewServiceJobHandler(
 		log:         log,
 		client:      client,
 		agentClient: agentClient,
+		notifSvc:    notifSvc,
+		notifier:    notifier,
 	}
 }
 

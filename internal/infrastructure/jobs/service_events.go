@@ -40,7 +40,7 @@ func EnqueueServiceHeal(client *asynq.Client, serviceName, containerID, reason s
 			asynq.TaskID(fmt.Sprintf("heal:%s", serviceName)),
 		),
 	)
-	// TaskID conflict means a heal is already queued — that's fine
+	// TaskID conflict means a heal is already queued — expected deduplication
 	if err != nil && strings.Contains(err.Error(), "task ID already exists") {
 		return nil
 	}
@@ -49,7 +49,6 @@ func EnqueueServiceHeal(client *asynq.Client, serviceName, containerID, reason s
 
 // WatchContainerEvents subscribes to the runtime event stream and enqueues
 // a heal task immediately when a managed service container dies or OOMs.
-// Runs as a long-lived goroutine. Reconnects automatically on error.
 func (s *Server) WatchContainerEvents(ctx context.Context) {
 	s.log.Info("jobs", "container event watcher started")
 	for {
@@ -92,37 +91,40 @@ func (s *Server) handleContainerEvent(event runtime.ContainerEvent) {
 			return
 		}
 
-		// Derive service name — blue/green containers are named "svc-blue" / "svc-green"
-		serviceName := deriveServiceName(event.Name)
-
-		if s.handler.notifSvc != nil {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-
-				// Check settings before notifying
-				var settings models.SystemSettings
-				if err := s.handler.db.WithContext(ctx).First(&settings).Error; err == nil &&
-					settings.NotifyOnContainerDown {
-					msg := fmt.Sprintf("container %q stopped (reason: %s)", event.Name, event.Type)
-					_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, models.SeverityError, msg)
-				}
-			}()
+		// Skip Blue-Green slot teardown — expected during deploy
+		if event.Labels["tidefly.slot"] != "" {
+			return
 		}
+
+		serviceName := deriveServiceName(event.Name)
 
 		s.log.Info("jobs", fmt.Sprintf(
 			"event watcher: %s on %q (service=%q) — enqueuing heal",
 			event.Type, event.Name, serviceName,
 		))
 
+		// In-App notification — WARN, not ERROR (Self-Healing will attempt recovery)
+		if s.handler.notifSvc != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				var settings models.SystemSettings
+				if err := s.handler.db.WithContext(ctx).First(&settings).Error; err == nil &&
+					settings.NotifyOnContainerDown {
+					msg := fmt.Sprintf("container %q stopped unexpectedly (reason: %s) — attempting recovery", event.Name, event.Type)
+					_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, models.SeverityWarn, msg)
+				}
+			}()
+		}
+
 		if err := EnqueueServiceHeal(s.client, serviceName, event.ContainerID, string(event.Type)); err != nil {
-			s.log.Info("jobs", fmt.Sprintf("failed to enqueue heal task for %s: %v", serviceName, err))
+			s.log.Info("jobs", fmt.Sprintf("failed to enqueue heal for %s: %v", serviceName, err))
 		}
 	}
 }
 
 // deriveServiceName strips blue/green slot suffixes.
-// "myservice-green" → "myservice", "myservice" → "myservice"
 func deriveServiceName(containerName string) string {
 	for _, suffix := range []string{"-green", "-blue"} {
 		if strings.HasSuffix(containerName, suffix) {
