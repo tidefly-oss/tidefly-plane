@@ -1,3 +1,4 @@
+// Package notification handles in-app notifications and external alerting via Slack, Discord, and email.
 package notification
 
 import (
@@ -122,6 +123,7 @@ func (n *Notifier) sendEmail(ctx context.Context, settings models.SystemSettings
 		"sending email: host=%s port=%d from=%s tls=%v",
 		settings.SMTPHost, settings.SMTPPort, settings.SMTPFrom, settings.SMTPTLSEnabled,
 	))
+
 	addr := fmt.Sprintf("%s:%d", settings.SMTPHost, settings.SMTPPort)
 	body := strings.Join([]string{
 		"From: " + settings.SMTPFrom,
@@ -138,64 +140,140 @@ func (n *Notifier) sendEmail(ctx context.Context, settings models.SystemSettings
 		auth = smtp.PlainAuth("", settings.SMTPUsername, settings.SMTPPassword, settings.SMTPHost)
 	}
 
-	if settings.SMTPTLSEnabled {
-		tlsCfg := &tls.Config{ServerName: settings.SMTPHost}
-		dialer := &tls.Dialer{Config: tlsCfg}
-		conn, err := dialer.DialContext(ctx, "tcp", addr)
-		if err != nil {
+	// Port 465 = direct TLS (SMTPS), port 587 = STARTTLS
+	if settings.SMTPTLSEnabled && settings.SMTPPort == 465 {
+		n.sendEmailDirectTLS(ctx, addr, auth, settings.SMTPHost, settings.SMTPFrom, body)
+	} else {
+		n.sendEmailSTARTTLS(ctx, addr, auth, settings.SMTPHost, settings.SMTPFrom, body, settings.SMTPTLSEnabled)
+	}
+}
+
+// sendEmailDirectTLS connects with direct TLS (port 465 / SMTPS).
+func (n *Notifier) sendEmailDirectTLS(ctx context.Context, addr string, auth smtp.Auth, host, from, body string) {
+	tlsCfg := &tls.Config{ServerName: host}
+	dialer := &tls.Dialer{Config: tlsCfg}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		n.log.Error("notifier", "smtp direct TLS dial failed", err)
+		return
+	}
+	defer func() { _ = conn.Close() }()
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		n.log.Error("notifier", "smtp client creation failed", err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			n.log.Error("notifier", "smtp auth failed", err)
 			return
 		}
-		defer func() { _ = conn.Close() }()
-		client, err := smtp.NewClient(conn, settings.SMTPHost)
-		if err != nil {
-			return
-		}
-		defer func() { _ = client.Close() }()
-		if auth != nil {
-			if err := client.Auth(auth); err != nil {
+	}
+	if err := client.Mail(from); err != nil {
+		n.log.Error("notifier", "smtp MAIL FROM failed", err)
+		return
+	}
+	if err := client.Rcpt(from); err != nil {
+		n.log.Error("notifier", "smtp RCPT TO failed", err)
+		return
+	}
+	w, err := client.Data()
+	if err != nil {
+		n.log.Error("notifier", "smtp DATA failed", err)
+		return
+	}
+	if _, err := fmt.Fprint(w, body); err != nil {
+		n.log.Error("notifier", "smtp write body failed", err)
+		return
+	}
+	if err := w.Close(); err != nil {
+		n.log.Error("notifier", "smtp close writer failed", err)
+		return
+	}
+	if err := client.Quit(); err != nil {
+		n.log.Warnw("notifier", "smtp QUIT failed", "error", err)
+	}
+}
+
+// sendEmailSTARTTLS connects plain then upgrades with STARTTLS (port 587).
+// If tlsEnabled is false, sends plain without TLS.
+func (n *Notifier) sendEmailSTARTTLS(ctx context.Context, addr string, auth smtp.Auth, host, from, body string, tlsEnabled bool) {
+	_ = ctx // smtp.Dial does not support context — use timeout via deadline if needed
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		n.log.Error("notifier", "smtp dial failed", err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	if tlsEnabled {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: host}); err != nil {
+				n.log.Error("notifier", "smtp STARTTLS failed", err)
 				return
 			}
+		} else {
+			n.log.Warnw("notifier", "smtp server does not support STARTTLS", "host", host)
 		}
-		if err := client.Mail(settings.SMTPFrom); err != nil {
+	}
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			n.log.Error("notifier", "smtp auth failed", err)
 			return
 		}
-		if err := client.Rcpt(settings.SMTPFrom); err != nil {
-			return
-		}
-		w, err := client.Data()
-		if err != nil {
-			return
-		}
-		if _, err := fmt.Fprint(w, body); err != nil {
-			return
-		}
-		if err := w.Close(); err != nil {
-			return
-		}
-		_ = client.Quit()
-	} else {
-		if err := smtp.SendMail(addr, auth, settings.SMTPFrom, []string{settings.SMTPFrom}, []byte(body)); err != nil {
-			n.log.Error("notifier", "send email failed", err)
-		}
+	}
+	if err := client.Mail(from); err != nil {
+		n.log.Error("notifier", "smtp MAIL FROM failed", err)
+		return
+	}
+	if err := client.Rcpt(from); err != nil {
+		n.log.Error("notifier", "smtp RCPT TO failed", err)
+		return
+	}
+	w, err := client.Data()
+	if err != nil {
+		n.log.Error("notifier", "smtp DATA failed", err)
+		return
+	}
+	if _, err := fmt.Fprint(w, body); err != nil {
+		n.log.Error("notifier", "smtp write body failed", err)
+		return
+	}
+	if err := w.Close(); err != nil {
+		n.log.Error("notifier", "smtp close writer failed", err)
+		return
+	}
+	if err := client.Quit(); err != nil {
+		n.log.Warnw("notifier", "smtp QUIT failed", "error", err)
 	}
 }
 
 func (n *Notifier) postJSON(ctx context.Context, url string, payload any) {
 	b, err := json.Marshal(payload)
 	if err != nil {
+		n.log.Error("notifier", "marshal payload failed", err)
 		return
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
+		n.log.Error("notifier", "create request failed", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		n.log.Error("notifier", "post JSON failed", err)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		n.log.Warnw("notifier", "webhook returned error status", "status", resp.StatusCode, "url", url)
+	}
 }
 
 func (n *Notifier) missingURL(channel string) error {
