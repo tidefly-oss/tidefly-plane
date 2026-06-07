@@ -92,7 +92,6 @@ type JobsConfig struct {
 	CleanupDanglingImages     bool
 	CleanupUnusedVolumes      bool
 	LogRetentionCron          string
-	LogRetentionDays          int
 	AuditRetentionDays        int
 	NotificationRetentionDays int
 	HealthCheckCron           string

@@ -89,7 +89,6 @@ func ParseConfig() *Config {
 			CleanupDanglingImages:     viper.GetBool("JOBS_CLEANUP_DANGLING_IMAGES"),
 			CleanupUnusedVolumes:      viper.GetBool("JOBS_CLEANUP_UNUSED_VOLUMES"),
 			LogRetentionCron:          viper.GetString("JOBS_LOG_RETENTION_CRON"),
-			LogRetentionDays:          viper.GetInt("JOBS_LOG_RETENTION_DAYS"),
 			AuditRetentionDays:        viper.GetInt("JOBS_AUDIT_RETENTION_DAYS"),
 			NotificationRetentionDays: viper.GetInt("JOBS_NOTIFICATION_RETENTION_DAYS"),
 			HealthCheckCron:           viper.GetString("JOBS_HEALTH_CHECK_CRON"),
