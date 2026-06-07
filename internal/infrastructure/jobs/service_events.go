@@ -116,8 +116,7 @@ func (s *Server) handleContainerEvent(event runtime.ContainerEvent) {
 		))
 
 		if err := EnqueueServiceHeal(s.client, serviceName, event.ContainerID, string(event.Type)); err != nil {
-			s.log.Warnw("jobs", "failed to enqueue heal task",
-				"service", serviceName, "err", err)
+			s.log.Info("jobs", fmt.Sprintf("failed to enqueue heal task for %s: %v", serviceName, err))
 		}
 	}
 }

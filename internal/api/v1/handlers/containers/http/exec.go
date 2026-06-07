@@ -55,7 +55,7 @@ func (h *Handler) setupExecHandlers() {
 		go func() {
 			ctx := s.Request.Context()
 			if err := h.runtime.ExecAttach(ctx, containerID, mc); err != nil {
-				h.log.Warnw("exec attach error", "err", err)
+				h.log.Info("exec", "attach ended: "+err.Error())
 			}
 			execSessions.Delete(s)
 			_ = s.Close()
@@ -75,7 +75,8 @@ func (h *Handler) setupExecHandlers() {
 		execSessions.Delete(s)
 	})
 	h.execMel.HandleError(func(s *melody.Session, err error) {
-		h.log.Warnw("exec ws error", "err", err)
+		// Normal client disconnect — not an error
+		h.log.Info("exec", "client disconnected: "+err.Error())
 	})
 }
 

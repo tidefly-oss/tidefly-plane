@@ -1,3 +1,4 @@
+// Package http provides HTTP and WebSocket handlers for container lifecycle management.
 package http
 
 import (
