@@ -1,3 +1,4 @@
+// Package http provides WebSocket handlers for real-time event streaming.
 package http
 
 import (
@@ -71,7 +72,7 @@ func (h *Handler) setupHandlers() {
 		}
 	})
 	m.HandleError(func(s *melody.Session, err error) {
-		h.log.Warnw("ws error", "err", err)
+		h.log.Info("ws", "client disconnected: "+err.Error())
 	})
 }
 
