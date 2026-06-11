@@ -74,7 +74,6 @@ func (s *Server) handleContainerEvent(event runtime.ContainerEvent) {
 	}
 
 	switch event.Type {
-
 	// ── Informational lifecycle ───────────────────────────────────────────────
 	case runtime.EventCreate:
 		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
