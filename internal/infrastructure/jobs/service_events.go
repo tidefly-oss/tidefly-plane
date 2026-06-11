@@ -2,53 +2,25 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/hibiken/asynq"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 )
 
-const TaskServiceHeal = "service:heal"
-
-// ServiceHealPayload carries the info needed to heal a single service.
-type ServiceHealPayload struct {
-	ServiceName string `json:"service_name"`
-	ContainerID string `json:"container_id"`
-	Reason      string `json:"reason"` // "die" | "oom" | "kill"
-}
-
-// EnqueueServiceHeal enqueues an immediate heal task for a single service.
-// Uses TaskID for deduplication — if a heal is already queued, the second is dropped.
-func EnqueueServiceHeal(client *asynq.Client, serviceName, containerID, reason string) error {
-	data, err := json.Marshal(ServiceHealPayload{
-		ServiceName: serviceName,
-		ContainerID: containerID,
-		Reason:      reason,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = client.Enqueue(
-		asynq.NewTask(TaskServiceHeal, data,
-			asynq.MaxRetry(2),
-			asynq.Timeout(2*time.Minute),
-			asynq.Queue("critical"),
-			asynq.TaskID(fmt.Sprintf("heal:%s", serviceName)),
-		),
-	)
-	// TaskID conflict means a heal is already queued — expected deduplication
-	if err != nil && strings.Contains(err.Error(), "task ID already exists") {
-		return nil
-	}
-	return err
-}
-
-// WatchContainerEvents subscribes to the runtime event stream and enqueues
-// a heal task immediately when a managed service container dies or OOMs.
+// WatchContainerEvents is the single subscriber to the runtime EventStream.
+// It handles three concerns in one place:
+//   - AppLog writes for all lifecycle events
+//   - In-app Notifications for stop/die/kill/oom
+//   - External Notifier (Slack/Discord/email) for oom + failed heal
+//   - Self-heal enqueue for die/kill/oom
+//
+// The EventBus (WebSocket) gets its updates via handler.bus.Publish inside
+// handleContainerEvent, so StartRuntimeWatcher in eventbus/bus.go should be
+// removed once this is confirmed working.
 func (s *Server) WatchContainerEvents(ctx context.Context) {
 	s.log.Info("jobs", "container event watcher started")
 	for {
@@ -57,7 +29,7 @@ func (s *Server) WatchContainerEvents(ctx context.Context) {
 				s.log.Info("jobs", "container event watcher stopped")
 				return
 			}
-			s.log.Warnw("jobs", "event watcher error, reconnecting in 5s", "err", err)
+			s.log.Warnw("jobs", "event watcher disconnected, reconnecting in 5s", "err", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -84,47 +56,141 @@ func (s *Server) watchOnce(ctx context.Context) error {
 	}
 }
 
+// handleContainerEvent processes a single container lifecycle event.
+// Severity matrix:
+//
+//	create / start / restart / stop / destroy / pause / unpause → AppLog INFO/WARN, no external notify
+//	die / kill → AppLog WARN, in-app Notification WARN (if NotifyOnContainerDown), self-heal enqueue
+//	oom        → AppLog ERROR, in-app Notification ERROR, external Notifier, self-heal enqueue
 func (s *Server) handleContainerEvent(event runtime.ContainerEvent) {
+	if event.Name == "" {
+		return
+	}
+
+	// Skip Blue-Green slot teardown events — expected churn during deploy.
+	if event.Labels["tidefly.slot"] != "" &&
+		(event.Type == runtime.EventStop || event.Type == runtime.EventDie || event.Type == runtime.EventDestroy) {
+		return
+	}
+
 	switch event.Type {
-	case runtime.EventDie, runtime.EventOOM, runtime.EventKill:
-		if event.Name == "" {
-			return
-		}
 
-		// Skip Blue-Green slot teardown — expected during deploy
-		if event.Labels["tidefly.slot"] != "" {
-			return
-		}
+	// ── Informational lifecycle ───────────────────────────────────────────────
+	case runtime.EventCreate:
+		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
+			fmt.Sprintf("container created (image: %s)", event.Image), "")
 
-		serviceName := deriveServiceName(event.Name)
+	case runtime.EventStart:
+		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
+			"container started", "")
 
-		s.log.Info("jobs", fmt.Sprintf(
-			"event watcher: %s on %q (service=%q) — enqueuing heal",
-			event.Type, event.Name, serviceName,
-		))
+	case runtime.EventRestart:
+		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
+			"container restarted", "")
 
-		// In-App notification — WARN, not ERROR (Self-Healing will attempt recovery)
-		if s.handler.notifSvc != nil {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
+	case runtime.EventUnpause:
+		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
+			"container unpaused", "")
 
-				var settings models.SystemSettings
-				if err := s.handler.db.WithContext(ctx).First(&settings).Error; err == nil &&
-					settings.NotifyOnContainerDown {
-					msg := fmt.Sprintf("container %q stopped unexpectedly (reason: %s) — attempting recovery", event.Name, event.Type)
-					_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, models.SeverityWarn, msg)
-				}
-			}()
-		}
+	case runtime.EventDestroy:
+		s.handler.log.ContainerEvent("INFO", event.ContainerID, event.Name,
+			"container removed", "")
 
-		if err := EnqueueServiceHeal(s.client, serviceName, event.ContainerID, string(event.Type)); err != nil {
-			s.log.Info("jobs", fmt.Sprintf("failed to enqueue heal for %s: %v", serviceName, err))
-		}
+	case runtime.EventPause:
+		s.handler.log.ContainerEvent("WARN", event.ContainerID, event.Name,
+			"container paused", "")
+
+	// ── Degraded — warn + conditional in-app notification ────────────────────
+	case runtime.EventStop:
+		s.handler.log.ContainerEvent("WARN", event.ContainerID, event.Name,
+			"container stopped", "")
+		s.maybeNotify(event, models.SeverityWarn,
+			fmt.Sprintf("container %q stopped", event.Name))
+
+	case runtime.EventDie:
+		s.handler.log.ContainerEvent("WARN", event.ContainerID, event.Name,
+			"container exited unexpectedly — self-healing queued", "")
+		s.maybeNotify(event, models.SeverityWarn,
+			fmt.Sprintf("container %q exited unexpectedly — attempting recovery", event.Name))
+		s.enqueueHeal(event)
+
+	case runtime.EventKill:
+		s.handler.log.ContainerEvent("WARN", event.ContainerID, event.Name,
+			fmt.Sprintf("container killed (signal: %s) — self-healing queued", event.Labels["signal"]), "")
+		s.maybeNotify(event, models.SeverityWarn,
+			fmt.Sprintf("container %q was killed (signal: %s) — attempting recovery",
+				event.Name, event.Labels["signal"]))
+		s.enqueueHeal(event)
+
+	// ── Critical — error + external notify + heal ─────────────────────────────
+	case runtime.EventOOM:
+		s.handler.log.ContainerEvent("ERROR", event.ContainerID, event.Name,
+			"container out of memory — self-healing queued", "")
+		s.notifyOOM(event)
+		s.enqueueHeal(event)
 	}
 }
 
-// deriveServiceName strips blue/green slot suffixes.
+// maybeNotify upserts an in-app notification only if NotifyOnContainerDown is
+// enabled in system settings. Skips the DB lookup if notifSvc is nil.
+func (s *Server) maybeNotify(event runtime.ContainerEvent, severity models.NotificationSeverity, msg string) {
+	if s.handler.notifSvc == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		var settings models.SystemSettings
+		if err := s.handler.db.WithContext(ctx).First(&settings).Error; err != nil {
+			return
+		}
+		if !settings.NotifyOnContainerDown {
+			return
+		}
+		_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, severity, msg)
+	}()
+}
+
+// notifyOOM always creates an in-app notification AND sends to external channels
+// (Slack/Discord/email) — OOM is always actionable regardless of settings.
+func (s *Server) notifyOOM(event runtime.ContainerEvent) {
+	msg := fmt.Sprintf("container %q ran out of memory — attempting recovery", event.Name)
+
+	if s.handler.notifSvc != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, models.SeverityError, msg)
+		}()
+	}
+
+	if s.svcHandler.notifier != nil {
+		go func() {
+			s.svcHandler.notifier.Send(context.Background(), notification.Event{
+				Title:   fmt.Sprintf("[OOM] %s", event.Name),
+				Message: msg,
+				Level:   "error",
+			})
+		}()
+	}
+}
+
+// enqueueHeal enqueues an immediate self-heal task for the affected service.
+// Blue-Green containers have their slot suffix stripped to find the service name.
+func (s *Server) enqueueHeal(event runtime.ContainerEvent) {
+	serviceName := deriveServiceName(event.Name)
+	s.log.Info("jobs", fmt.Sprintf(
+		"event watcher: %s on %q (service=%q) — enqueuing heal",
+		event.Type, event.Name, serviceName,
+	))
+	if err := EnqueueServiceHeal(s.client, serviceName, event.ContainerID, string(event.Type)); err != nil {
+		s.log.Warnw("jobs", "failed to enqueue heal", "service", serviceName, "err", err)
+	}
+}
+
+// deriveServiceName strips blue/green slot suffixes from container names.
+// "myservice-green" → "myservice", "myservice" → "myservice"
 func deriveServiceName(containerName string) string {
 	for _, suffix := range []string{"-green", "-blue"} {
 		if strings.HasSuffix(containerName, suffix) {

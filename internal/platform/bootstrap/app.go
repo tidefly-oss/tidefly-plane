@@ -167,7 +167,6 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 	eg.Go(func() error { return a.agentSrv.Start(ctx) })
 	a.log.Info("app", fmt.Sprintf("agent gRPC server listening on :%s", a.cfg.App.AgentGRPCPort))
 
-	a.bus.StartRuntimeWatcher(ctx, a.rt, a.log)
 	a.bus.StartMetricsTicker(ctx, a.metrics)
 	a.log.Info("app", "WebSocket event bus started")
 }

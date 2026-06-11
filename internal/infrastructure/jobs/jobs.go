@@ -43,6 +43,7 @@ type Handler struct {
 	log      *logger.Logger
 	cfg      config.JobsConfig
 	notifSvc *notification.Service
+	notifier *notification.Notifier
 	metrics  *metrics.Registry
 }
 
@@ -90,6 +91,7 @@ func NewServer(
 		log:      log,
 		cfg:      jobsCfg,
 		notifSvc: notifySvc,
+		notifier: notifier,
 		metrics:  metricsReg,
 	}
 

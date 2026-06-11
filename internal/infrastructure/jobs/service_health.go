@@ -84,7 +84,7 @@ func (h *ServiceJobHandler) HandleServiceHeal(ctx context.Context, t *asynq.Task
 	return nil
 }
 
-// notifyHealFailed sends ERROR notification — user must investigate.
+// notifyHealFailed sends ERROR notification + external alert — user must intervene.
 func (h *ServiceJobHandler) notifyHealFailed(serviceName string, err error) {
 	if h.notifSvc == nil {
 		return
@@ -94,7 +94,6 @@ func (h *ServiceJobHandler) notifyHealFailed(serviceName string, err error) {
 		defer cancel()
 		msg := fmt.Sprintf("self-heal FAILED for %q: %s — manual intervention required", serviceName, err.Error())
 		_ = h.notifSvc.Upsert(ctx, "heal:failed:"+serviceName, serviceName, models.SeverityError, msg)
-		// Also send external notification — user must act
 		if h.notifier != nil {
 			h.notifier.Send(ctx, notification.Event{
 				Title:   fmt.Sprintf("[ERROR] Service %q is down", serviceName),
@@ -105,7 +104,7 @@ func (h *ServiceJobHandler) notifyHealFailed(serviceName string, err error) {
 	}()
 }
 
-// notifyHealRecovered logs recovery to DB as INFO for audit trail.
+// notifyHealRecovered writes an INFO notification for the audit trail.
 func (h *ServiceJobHandler) notifyHealRecovered(serviceName string) {
 	if h.notifSvc == nil {
 		return
