@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	systemhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/system/http"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
@@ -169,6 +170,10 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 
 	a.bus.StartMetricsTicker(ctx, a.metrics)
 	a.log.Info("app", "WebSocket event bus started")
+
+	// Version cache — sofort warm machen, dann alle 20min refreshen
+	systemhttp.New(a.rt, a.log, a.metrics, a.bus).StartVersionRefresh(ctx)
+	a.log.Info("app", "version refresh started (interval: 20m)")
 }
 
 func (a *App) serveHTTP(ctx context.Context, r http.Handler) error {

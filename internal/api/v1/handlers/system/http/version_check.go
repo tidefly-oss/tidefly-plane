@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	githubAPIBase   = "https://api.github.com/repos/tidefly-oss/%s/releases/latest"
-	versionCacheTTL = 1 * time.Hour
+	githubAPIBase          = "https://api.github.com/repos/tidefly-oss/%s/releases/latest"
+	versionRefreshInterval = 20 * time.Minute
 
 	componentPlane = "plane"
 	componentUI    = "ui"
@@ -40,19 +40,17 @@ type versionInfo struct {
 }
 
 type versionCache struct {
-	mu        sync.RWMutex
-	info      *versionInfo
-	fetchedAt time.Time
+	mu   sync.RWMutex
+	info *versionInfo
 }
 
 var globalVersionCache = &versionCache{}
 
+// get returns cached info, or nil if not yet populated.
+// TTL is managed by the background ticker in StartVersionRefresh.
 func (c *versionCache) get() *versionInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.info == nil || time.Since(c.fetchedAt) > versionCacheTTL {
-		return nil
-	}
 	return c.info
 }
 
@@ -60,7 +58,6 @@ func (c *versionCache) set(info *versionInfo) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.info = info
-	c.fetchedAt = time.Now()
 }
 
 type githubRelease struct {
@@ -124,9 +121,6 @@ func (h *Handler) getContainerVersion(ctx context.Context, containerName string)
 }
 
 func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
-	if cached := globalVersionCache.get(); cached != nil {
-		return cached, nil
-	}
 	type componentDef struct {
 		name      string
 		repo      string
@@ -176,6 +170,33 @@ func (h *Handler) fetchVersionInfo(ctx context.Context) (*versionInfo, error) {
 	info := &versionInfo{Components: results, AnyUpdateAvailable: anyUpdate}
 	globalVersionCache.set(info)
 	return info, nil
+}
+
+// StartVersionRefresh warms the cache immediately and refreshes every 20 minutes.
+// Call once at app startup.
+func (h *Handler) StartVersionRefresh(ctx context.Context) {
+	refresh := func() {
+		fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		if _, err := h.fetchVersionInfo(fetchCtx); err != nil {
+			h.log.Warnw("version", "version refresh failed", "error", err)
+		}
+	}
+
+	go refresh() // sofort beim Start, non-blocking
+
+	go func() {
+		ticker := time.NewTicker(versionRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				refresh()
+			}
+		}
+	}()
 }
 
 func isNewerVersion(latest, current string) bool {
@@ -228,17 +249,22 @@ type VersionOutput struct {
 }
 
 func (h *Handler) Version(ctx context.Context, _ *VersionInput) (*VersionOutput, error) {
-	info, err := h.fetchVersionInfo(ctx)
-	if err != nil {
-		h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
-		return &VersionOutput{Body: versionInfo{
-			Components: []ComponentVersion{{
-				Name:    componentPlane,
-				Current: currentVersion(),
-				Latest:  versionUnknown,
-			}},
-			AnyUpdateAvailable: false,
-		}}, nil
+	info := globalVersionCache.get()
+	if info == nil {
+		// Cache noch nicht warm — einmalig synchron fetchen
+		var err error
+		info, err = h.fetchVersionInfo(ctx)
+		if err != nil {
+			h.log.Warnw("version_check", "failed to fetch version info", "error", err.Error())
+			return &VersionOutput{Body: versionInfo{
+				Components: []ComponentVersion{{
+					Name:    componentPlane,
+					Current: currentVersion(),
+					Latest:  versionUnknown,
+				}},
+				AnyUpdateAvailable: false,
+			}}, nil
+		}
 	}
 	return &VersionOutput{Body: *info}, nil
 }
