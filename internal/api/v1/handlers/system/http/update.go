@@ -97,13 +97,17 @@ func (h *Handler) UpdateSelf(ctx context.Context, _ *UpdateInput) (*UpdateOutput
 }
 
 func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentVersion) error {
+	h.log.Info("self_update", fmt.Sprintf("pullAndRestartAll started for %d components", len(components)))
+
 	cli, err := dockerclient.NewClientWithOpts(
 		dockerclient.FromEnv,
 		dockerclient.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
+		h.log.Error("self_update", "docker client init failed", err)
 		return fmt.Errorf("docker client: %w", err)
 	}
+	h.log.Info("self_update", "docker client initialized")
 	defer func(cli *dockerclient.Client) { _ = cli.Close() }(cli)
 
 	// ── Pull all new images in parallel ──────────────────────────────────
@@ -255,8 +259,7 @@ func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client,
 
 	// ── Stop + remove old container ───────────────────────────────────────
 	h.publishProgress("restarting", fmt.Sprintf("stopping old %s", name))
-	timeout := 10
-	_ = cli.ContainerStop(ctx, name, dockercontainer.StopOptions{Timeout: &timeout})
+	_ = cli.ContainerStop(ctx, name, dockercontainer.StopOptions{Timeout: new(10)})
 	if err := cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		h.log.Warnw("self_update", "remove old container failed", "container", name, "error", err)
 	}
@@ -401,8 +404,7 @@ func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Clien
 		return fmt.Errorf("inspect %s: %w", containerName, err)
 	}
 
-	timeout := 10
-	_ = cli.ContainerStop(ctx, containerName, dockercontainer.StopOptions{Timeout: &timeout})
+	_ = cli.ContainerStop(ctx, containerName, dockercontainer.StopOptions{Timeout: new(10)})
 
 	if err := cli.ContainerRemove(ctx, containerName, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("remove %s: %w", containerName, err)
@@ -451,6 +453,7 @@ func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Clien
 }
 
 func (h *Handler) publishProgress(step, message string) {
+	h.log.Info("self_update", fmt.Sprintf("[%s] %s", step, message))
 	h.bus.Publish(eventbus.Event{
 		Type:  eventbus.EventDeployProgress,
 		Topic: eventbus.TopicDeploy,
