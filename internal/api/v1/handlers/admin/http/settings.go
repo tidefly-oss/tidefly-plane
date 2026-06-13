@@ -22,24 +22,25 @@ func (h *Handler) GetSettings(_ context.Context, _ *GetSettingsInput) (*GetSetti
 }
 
 type UpdateSettingsBody struct {
-	InstanceName          *string `json:"instance_name,omitempty"`
-	InstanceURL           *string `json:"instance_url,omitempty"`
-	RegistrationMode      *string `json:"registration_mode,omitempty"`
-	CaddyBaseDomain       *string `json:"caddy_base_domain,omitempty"`
-	SMTPHost              *string `json:"smtp_host,omitempty"`
-	SMTPPort              *int    `json:"smtp_port,omitempty"`
-	SMTPUsername          *string `json:"smtp_username,omitempty"`
-	SMTPPassword          *string `json:"smtp_password,omitempty"`
-	SMTPFrom              *string `json:"smtp_from,omitempty"`
-	SMTPTLSEnabled        *bool   `json:"smtp_tls_enabled,omitempty"`
-	SessionTimeoutHours   *int    `json:"session_timeout_hours,omitempty"`
-	NotificationsEnabled  *bool   `json:"notifications_enabled,omitempty"`
-	SlackWebhookURL       *string `json:"slack_webhook_url,omitempty"`
-	DiscordWebhookURL     *string `json:"discord_webhook_url,omitempty"`
-	NotifyOnDeploy        *bool   `json:"notify_on_deploy,omitempty"`
-	NotifyOnContainerDown *bool   `json:"notify_on_container_down,omitempty"`
-	NotifyOnWebhookFail   *bool   `json:"notify_on_webhook_fail,omitempty"`
-	APIDocsEnabled        *bool   `json:"api_docs_enabled,omitempty"`
+	InstanceName                 *string `json:"instance_name,omitempty"`
+	InstanceURL                  *string `json:"instance_url,omitempty"`
+	RegistrationMode             *string `json:"registration_mode,omitempty"`
+	CaddyBaseDomain              *string `json:"caddy_base_domain,omitempty"`
+	SMTPHost                     *string `json:"smtp_host,omitempty"`
+	SMTPPort                     *int    `json:"smtp_port,omitempty"`
+	SMTPUsername                 *string `json:"smtp_username,omitempty"`
+	SMTPPassword                 *string `json:"smtp_password,omitempty"`
+	SMTPFrom                     *string `json:"smtp_from,omitempty"`
+	SMTPTLSEnabled               *bool   `json:"smtp_tls_enabled,omitempty"`
+	SessionTimeoutHours          *int    `json:"session_timeout_hours,omitempty"`
+	NotificationsEnabled         *bool   `json:"notifications_enabled,omitempty"`
+	ExternalNotificationsEnabled *bool   `json:"external_notifications_enabled,omitempty"`
+	SlackWebhookURL              *string `json:"slack_webhook_url,omitempty"`
+	DiscordWebhookURL            *string `json:"discord_webhook_url,omitempty"`
+	NotifyOnDeploy               *bool   `json:"notify_on_deploy,omitempty"`
+	NotifyOnContainerDown        *bool   `json:"notify_on_container_down,omitempty"`
+	NotifyOnWebhookFail          *bool   `json:"notify_on_webhook_fail,omitempty"`
+	APIDocsEnabled               *bool   `json:"api_docs_enabled,omitempty"`
 }
 
 type UpdateSettingsInput struct {
@@ -53,24 +54,25 @@ type UpdateSettingsOutput struct {
 func (h *Handler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
 	s, err := h.settings.Update(
 		service.SettingsUpdateInput{
-			InstanceName:          input.Body.InstanceName,
-			InstanceURL:           input.Body.InstanceURL,
-			RegistrationMode:      input.Body.RegistrationMode,
-			CaddyBaseDomain:       input.Body.CaddyBaseDomain,
-			SMTPHost:              input.Body.SMTPHost,
-			SMTPPort:              input.Body.SMTPPort,
-			SMTPUsername:          input.Body.SMTPUsername,
-			SMTPPassword:          input.Body.SMTPPassword,
-			SMTPFrom:              input.Body.SMTPFrom,
-			SMTPTLSEnabled:        input.Body.SMTPTLSEnabled,
-			SessionTimeoutHours:   input.Body.SessionTimeoutHours,
-			NotificationsEnabled:  input.Body.NotificationsEnabled,
-			SlackWebhookURL:       input.Body.SlackWebhookURL,
-			DiscordWebhookURL:     input.Body.DiscordWebhookURL,
-			NotifyOnDeploy:        input.Body.NotifyOnDeploy,
-			NotifyOnContainerDown: input.Body.NotifyOnContainerDown,
-			NotifyOnWebhookFail:   input.Body.NotifyOnWebhookFail,
-			APIDocsEnabled:        input.Body.APIDocsEnabled,
+			InstanceName:                 input.Body.InstanceName,
+			InstanceURL:                  input.Body.InstanceURL,
+			RegistrationMode:             input.Body.RegistrationMode,
+			CaddyBaseDomain:              input.Body.CaddyBaseDomain,
+			SMTPHost:                     input.Body.SMTPHost,
+			SMTPPort:                     input.Body.SMTPPort,
+			SMTPUsername:                 input.Body.SMTPUsername,
+			SMTPPassword:                 input.Body.SMTPPassword,
+			SMTPFrom:                     input.Body.SMTPFrom,
+			SMTPTLSEnabled:               input.Body.SMTPTLSEnabled,
+			SessionTimeoutHours:          input.Body.SessionTimeoutHours,
+			NotificationsEnabled:         input.Body.NotificationsEnabled,
+			ExternalNotificationsEnabled: input.Body.ExternalNotificationsEnabled,
+			SlackWebhookURL:              input.Body.SlackWebhookURL,
+			DiscordWebhookURL:            input.Body.DiscordWebhookURL,
+			NotifyOnDeploy:               input.Body.NotifyOnDeploy,
+			NotifyOnContainerDown:        input.Body.NotifyOnContainerDown,
+			NotifyOnWebhookFail:          input.Body.NotifyOnWebhookFail,
+			APIDocsEnabled:               input.Body.APIDocsEnabled,
 		},
 	)
 	h.log.Audit(

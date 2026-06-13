@@ -12,24 +12,25 @@ import (
 )
 
 type SettingsUpdateInput struct {
-	InstanceName          *string
-	InstanceURL           *string
-	RegistrationMode      *string
-	CaddyBaseDomain       *string
-	SMTPHost              *string
-	SMTPPort              *int
-	SMTPUsername          *string
-	SMTPPassword          *string
-	SMTPFrom              *string
-	SMTPTLSEnabled        *bool
-	SessionTimeoutHours   *int
-	NotificationsEnabled  *bool
-	SlackWebhookURL       *string
-	DiscordWebhookURL     *string
-	NotifyOnDeploy        *bool
-	NotifyOnContainerDown *bool
-	NotifyOnWebhookFail   *bool
-	APIDocsEnabled        *bool
+	InstanceName                 *string
+	InstanceURL                  *string
+	RegistrationMode             *string
+	CaddyBaseDomain              *string
+	SMTPHost                     *string
+	SMTPPort                     *int
+	SMTPUsername                 *string
+	SMTPPassword                 *string
+	SMTPFrom                     *string
+	SMTPTLSEnabled               *bool
+	SessionTimeoutHours          *int
+	NotificationsEnabled         *bool
+	ExternalNotificationsEnabled *bool
+	SlackWebhookURL              *string
+	DiscordWebhookURL            *string
+	NotifyOnDeploy               *bool
+	NotifyOnContainerDown        *bool
+	NotifyOnWebhookFail          *bool
+	APIDocsEnabled               *bool
 }
 
 type SettingsService struct {
@@ -66,6 +67,7 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	helpers.ApplyIfSet(&settings.SMTPTLSEnabled, input.SMTPTLSEnabled)
 	helpers.ApplyIfSet(&settings.SessionTimeoutHours, input.SessionTimeoutHours)
 	helpers.ApplyIfSet(&settings.NotificationsEnabled, input.NotificationsEnabled)
+	helpers.ApplyIfSet(&settings.ExternalNotificationsEnabled, input.ExternalNotificationsEnabled)
 	helpers.ApplyIfSet(&settings.SlackWebhookURL, input.SlackWebhookURL)
 	helpers.ApplyIfSet(&settings.DiscordWebhookURL, input.DiscordWebhookURL)
 	helpers.ApplyIfSet(&settings.NotifyOnDeploy, input.NotifyOnDeploy)
