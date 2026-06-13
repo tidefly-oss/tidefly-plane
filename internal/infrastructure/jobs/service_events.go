@@ -148,6 +148,19 @@ func (s *Server) maybeNotify(event runtime.ContainerEvent, severity models.Notif
 			return
 		}
 		_ = s.handler.notifSvc.Upsert(ctx, event.ContainerID, event.Name, severity, msg)
+
+		// Extern — only when ExternalNotificationsEnabled
+		if s.svcHandler.notifier != nil && settings.ExternalNotificationsEnabled {
+			level := "warning"
+			if severity == models.SeverityError || severity == models.SeverityFatal {
+				level = "error"
+			}
+			s.svcHandler.notifier.Send(ctx, notification.Event{
+				Title:   fmt.Sprintf("[%s] %s", strings.ToUpper(string(severity)), event.Name),
+				Message: msg,
+				Level:   level,
+			})
+		}
 	}()
 }
 
@@ -192,8 +205,8 @@ func (s *Server) enqueueHeal(event runtime.ContainerEvent) {
 // "myservice-green" → "myservice", "myservice" → "myservice"
 func deriveServiceName(containerName string) string {
 	for _, suffix := range []string{"-green", "-blue"} {
-		if strings.HasSuffix(containerName, suffix) {
-			return strings.TrimSuffix(containerName, suffix)
+		if before, ok := strings.CutSuffix(containerName, suffix); ok {
+			return before
 		}
 	}
 	return containerName

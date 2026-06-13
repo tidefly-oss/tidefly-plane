@@ -8,6 +8,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/converter"
 	"github.com/tidefly-oss/tidefly-plane/internal/domain/deploy/manifest"
+	"github.com/tidefly-oss/tidefly-plane/internal/domain/notification"
 	caddyingress "github.com/tidefly-oss/tidefly-plane/internal/infrastructure/ingress/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
@@ -130,8 +131,21 @@ func (h *ServiceJobHandler) HandleServiceDeploy(ctx context.Context, t *asynq.Ta
 		h.log.Error("jobs", fmt.Sprintf("failed to persist service %s", svc.ID), err)
 	}
 
+	if h.notifier != nil {
+		var settings models.SystemSettings
+		if err := h.db.WithContext(ctx).First(&settings).Error; err == nil &&
+			settings.ExternalNotificationsEnabled && settings.NotifyOnDeploy {
+			h.notifier.Send(ctx, notification.Event{
+				Title:   fmt.Sprintf("[Deploy] %s", svc.Name),
+				Message: fmt.Sprintf("Service %q successfully deployed (url: %s)", svc.Name, publicURL),
+				Level:   "info",
+			})
+		}
+	}
+
 	h.log.Info("jobs", fmt.Sprintf("service deploy complete: id=%s name=%s", p.ServiceID, svc.Name))
 	return nil
+
 }
 
 func (h *ServiceJobHandler) HandleServiceRedeploy(ctx context.Context, t *asynq.Task) error {

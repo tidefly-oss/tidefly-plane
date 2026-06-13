@@ -38,7 +38,7 @@ func (n *Notifier) Send(ctx context.Context, event Event) {
 	if err := n.db.WithContext(ctx).First(&settings).Error; err != nil {
 		return
 	}
-	if !settings.NotificationsEnabled {
+	if !settings.ExternalNotificationsEnabled {
 		return
 	}
 	if settings.SlackWebhookURL != "" {

@@ -114,24 +114,25 @@ func (pm *ProjectMember) BeforeCreate(*gorm.DB) error {
 // ── SystemSettings ────────────────────────────────────────────────────────────
 
 type SystemSettings struct {
-	ID                    uint      `gorm:"primaryKey;autoIncrement"`
-	InstanceName          string    `gorm:"size:255;default:'Tidefly'" json:"instance_name"`
-	InstanceURL           string    `gorm:"size:500"                   json:"instance_url"`
-	RegistrationMode      string    `gorm:"size:50;default:'invite'"   json:"registration_mode"`
-	SMTPHost              string    `gorm:"size:255"                   json:"smtp_host"`
-	SMTPPort              int       `gorm:"default:587"                json:"smtp_port"`
-	SMTPUsername          string    `gorm:"size:255"                   json:"smtp_username"`
-	SMTPPassword          string    `gorm:"size:255"                   json:"-"`
-	SMTPFrom              string    `gorm:"size:255"                   json:"smtp_from"`
-	SMTPTLSEnabled        bool      `gorm:"default:true"               json:"smtp_tls_enabled"`
-	SessionTimeoutHours   int       `gorm:"default:24"                 json:"session_timeout_hours"`
-	NotificationsEnabled  bool      `gorm:"default:false"              json:"notifications_enabled"`
-	SlackWebhookURL       string    `gorm:"size:500"                   json:"slack_webhook_url"`
-	DiscordWebhookURL     string    `gorm:"size:500"                   json:"discord_webhook_url"`
-	NotifyOnDeploy        bool      `gorm:"default:true"               json:"notify_on_deploy"`
-	NotifyOnContainerDown bool      `gorm:"default:true"               json:"notify_on_container_down"`
-	NotifyOnWebhookFail   bool      `gorm:"default:true"               json:"notify_on_webhook_fail"`
-	CaddyBaseDomain       string    `gorm:"size:255"                   json:"caddy_base_domain"`
-	APIDocsEnabled        bool      `gorm:"default:true"               json:"api_docs_enabled"`
-	UpdatedAt             time.Time `                                  json:"updated_at"`
+	ID                           uint      `gorm:"primaryKey;autoIncrement"`
+	InstanceName                 string    `gorm:"size:255;default:'Tidefly'" json:"instance_name"`
+	InstanceURL                  string    `gorm:"size:500"                   json:"instance_url"`
+	RegistrationMode             string    `gorm:"size:50;default:'invite'"   json:"registration_mode"`
+	SMTPHost                     string    `gorm:"size:255"                   json:"smtp_host"`
+	SMTPPort                     int       `gorm:"default:587"                json:"smtp_port"`
+	SMTPUsername                 string    `gorm:"size:255"                   json:"smtp_username"`
+	SMTPPassword                 string    `gorm:"size:255"                   json:"-"`
+	SMTPFrom                     string    `gorm:"size:255"                   json:"smtp_from"`
+	SMTPTLSEnabled               bool      `gorm:"default:true"               json:"smtp_tls_enabled"`
+	SessionTimeoutHours          int       `gorm:"default:24"                 json:"session_timeout_hours"`
+	NotificationsEnabled         bool      `gorm:"default:false"              json:"notifications_enabled"`
+	ExternalNotificationsEnabled bool      `gorm:"default:false"              json:"external_notifications_enabled"`
+	SlackWebhookURL              string    `gorm:"size:500"                   json:"slack_webhook_url"`
+	DiscordWebhookURL            string    `gorm:"size:500"                   json:"discord_webhook_url"`
+	NotifyOnDeploy               bool      `gorm:"default:true"               json:"notify_on_deploy"`
+	NotifyOnContainerDown        bool      `gorm:"default:true"               json:"notify_on_container_down"`
+	NotifyOnWebhookFail          bool      `gorm:"default:true"               json:"notify_on_webhook_fail"`
+	CaddyBaseDomain              string    `gorm:"size:255"                   json:"caddy_base_domain"`
+	APIDocsEnabled               bool      `gorm:"default:true"               json:"api_docs_enabled"`
+	UpdatedAt                    time.Time `                                  json:"updated_at"`
 }
