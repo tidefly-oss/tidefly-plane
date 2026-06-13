@@ -145,7 +145,6 @@ func (h *ServiceJobHandler) HandleServiceDeploy(ctx context.Context, t *asynq.Ta
 
 	h.log.Info("jobs", fmt.Sprintf("service deploy complete: id=%s name=%s", p.ServiceID, svc.Name))
 	return nil
-
 }
 
 func (h *ServiceJobHandler) HandleServiceRedeploy(ctx context.Context, t *asynq.Task) error {
