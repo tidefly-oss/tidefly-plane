@@ -1,17 +1,21 @@
+// Package models defines all GORM database models for tidefly-plane.
 package models
 
 import (
 	"time"
 )
 
-// WebhookTriggerType defines what action a webhooks performs on trigger.
+// WebhookTriggerType defines what action a webhook performs on trigger.
 type WebhookTriggerType string
 
 const (
 	// WebhookTriggerRedeploy pulls the latest image and recreates the existing service.
 	WebhookTriggerRedeploy WebhookTriggerType = "redeploy"
-	// WebhookTriggerDeploy runs a full services from a template + Git source.
-	WebhookTriggerDeploy WebhookTriggerType = "services"
+	// WebhookTriggerDeploy runs a full deploy from a template + Git source.
+	WebhookTriggerDeploy WebhookTriggerType = "deploy"
+	// WebhookTriggerUpdateNotify marks a service as update_available without deploying.
+	// Used by the tidefly-templates repo to notify instances that a template has changed.
+	WebhookTriggerUpdateNotify WebhookTriggerType = "update_notify"
 )
 
 // WebhookStatus is the result of the last trigger.
@@ -23,7 +27,7 @@ const (
 	WebhookStatusFailed  WebhookStatus = "failed"
 )
 
-// Webhook represents a project-scoped inbound webhooks that triggers a services.
+// Webhook represents a project-scoped inbound webhook that triggers a service action.
 //
 // Public receiver:  POST /webhooks/:id          (no auth, HMAC verified)
 // Management API:   /api/v1/projects/:pid/webhooks
@@ -50,7 +54,7 @@ type Webhook struct {
 	Branch string `json:"branch"`
 
 	// Provider hint for signature header selection.
-	// "github" | "gitlab" | "gitea" | "bitbucket" | "generic"
+	// "github" | "gitlab" | "gitea" | "bitbucket" | "generic" | "tidefly"
 	Provider string `gorm:"not null;default:'generic'" json:"provider"`
 
 	// Trigger type
@@ -61,11 +65,11 @@ type Webhook struct {
 	ServiceID *string `gorm:"index" json:"service_id,omitempty"`
 
 	// ── Deploy trigger ─────────────────────────────────────────────────────
-	// Run a full services from Git source + template.
+	// Run a full deploy from Git source + template.
 	GitIntegrationID *string `gorm:"index" json:"git_integration_id,omitempty"`
 	RepoURL          string  `json:"repo_url,omitempty"`
 	TemplateSlug     string  `json:"template_slug,omitempty"`
-	// FieldOverrides are merged into the template fields on services.
+	// FieldOverrides are merged into the template fields on deploy.
 	// Stored as JSON: {"PORT": "3000", "IMAGE_TAG": "{{.branch}}"}
 	// Supports {{.branch}}, {{.commit}}, {{.tag}} placeholders.
 	FieldOverrides string `gorm:"type:text" json:"field_overrides,omitempty"`
@@ -77,7 +81,7 @@ type Webhook struct {
 	TriggerCount    int64         `gorm:"default:0" json:"trigger_count"`
 }
 
-// WebhookDelivery is an append-only log of every inbound webhooks request.
+// WebhookDelivery is an append-only log of every inbound webhook request.
 type WebhookDelivery struct {
 	ID        string    `gorm:"primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
@@ -85,7 +89,7 @@ type WebhookDelivery struct {
 
 	// Request snapshot
 	Provider  string `json:"provider"`
-	EventType string `json:"event_type"` // e.g. "push", "tag"
+	EventType string `json:"event_type"` // e.g. "push", "tag", "update_notify"
 	Branch    string `json:"branch"`
 	Commit    string `json:"commit"`
 	CommitMsg string `json:"commit_msg"`

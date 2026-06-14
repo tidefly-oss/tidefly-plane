@@ -1,3 +1,4 @@
+// Package models defines all GORM database models for tidefly-plane.
 package models
 
 import "time"
@@ -15,8 +16,10 @@ type ContainerMeta struct {
 	ServiceID *string `gorm:"type:uuid;index;default:null" json:"service_id,omitempty"`
 
 	// DeployStrategy controls how redeployments are rolled out.
-	// One of: "rolling" | "recreate" | "blue-green". Default: "rolling".
-	DeployStrategy string `gorm:"type:varchar(32);default:'rolling'" json:"deploy_strategy"`
+	// One of: "blue-green" | "rolling" | "recreate". Default: "blue-green".
+	// Blue-green is always safe regardless of replica count — rolling
+	// requires 2+ replicas for true zero-downtime.
+	DeployStrategy string `gorm:"type:varchar(32);default:'blue-green'" json:"deploy_strategy"`
 
 	// AutoscalingEnabled — when true the autoscale job manages replica count.
 	AutoscalingEnabled bool `gorm:"default:false" json:"autoscaling_enabled"`

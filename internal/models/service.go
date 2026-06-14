@@ -1,3 +1,4 @@
+// Package models defines all GORM database models for tidefly-plane.
 package models
 
 import (
@@ -17,6 +18,15 @@ const (
 	ServiceStatusFailed     ServiceStatus = "failed"
 )
 
+// UpdateSource identifies how a service's update_available flag was set.
+type UpdateSource string
+
+const (
+	UpdateSourceRegistry UpdateSource = "registry" // digest check against Docker Hub / GHCR
+	UpdateSourceGit      UpdateSource = "git"      // GitHub/GitLab push webhook
+	UpdateSourceTemplate UpdateSource = "template" // tidefly-templates repo webhook
+)
+
 // Service represents a deployed manifest-based service managed by Tidefly.
 // ManifestJSON is the source of truth for desired state — it is re-resolved
 // on every update/redeploy without requiring the user to re-submit.
@@ -34,9 +44,21 @@ type Service struct {
 	ManifestJSON    string `gorm:"type:text;default:''"   json:"manifest_json,omitempty"`
 
 	// Deployment metadata
-	PublicURL      string `gorm:"type:text;default:''" json:"public_url,omitempty"`
-	LastError      string `gorm:"type:text;default:''" json:"last_error,omitempty"`
+	PublicURL      string `gorm:"type:text;default:''"          json:"public_url,omitempty"`
+	LastError      string `gorm:"type:text;default:''"          json:"last_error,omitempty"`
 	ActiveSlotName string `gorm:"column:active_slot;default:''" json:"-"`
+
+	// ── Update tracking ────────────────────────────────────────────────────
+	// UpdateAvailable is set to true by the update_checker job or a webhook.
+	// Reset to false after a successful update deploy.
+	UpdateAvailable bool `gorm:"not null;default:false"       json:"update_available"`
+	// RemoteDigest is the latest known digest from the registry (registry source only).
+	// Empty for git/template sources.
+	RemoteDigest string `gorm:"type:varchar(128);default:''" json:"remote_digest,omitempty"`
+	// UpdateSource identifies what triggered the update_available flag.
+	UpdateSource UpdateSource `gorm:"type:varchar(32);default:''"  json:"update_source,omitempty"`
+	// UpdateCheckedAt is the timestamp of the last successful digest check.
+	UpdateCheckedAt *time.Time `gorm:"index"                        json:"update_checked_at,omitempty"`
 
 	CreatedAt   time.Time           `json:"created_at"`
 	UpdatedAt   time.Time           `json:"updated_at"`

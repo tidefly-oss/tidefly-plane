@@ -125,6 +125,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc(TaskServiceHealthCheck, s.svcHandler.HandleServiceHealthCheck)
 	mux.HandleFunc(TaskServiceAutoscale, s.svcHandler.HandleServiceAutoscale)
 	mux.HandleFunc(TaskServiceHeal, s.svcHandler.HandleServiceHeal)
+	mux.HandleFunc(TaskUpdateCheck, s.handler.HandleUpdateCheck)
 
 	if err := s.registerSchedules(); err != nil {
 		return fmt.Errorf("jobs: register schedules: %w", err)
@@ -229,6 +230,17 @@ func (s *Server) registerSchedules() error {
 		asynq.Queue("critical"), asynq.MaxRetry(0), asynq.Timeout(25*time.Second),
 	); err != nil {
 		return fmt.Errorf("register autoscale: %w", err)
+	}
+
+	updateCheckTask, err := newTask(TaskUpdateCheck, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := s.scheduler.Register(
+		"@every 6h", updateCheckTask,
+		asynq.Queue("low"), asynq.MaxRetry(1), asynq.Timeout(5*time.Minute),
+	); err != nil {
+		return fmt.Errorf("register update check: %w", err)
 	}
 
 	return nil
