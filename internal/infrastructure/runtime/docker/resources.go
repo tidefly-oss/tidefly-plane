@@ -6,9 +6,6 @@ import (
 
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (d *Runtime) UpdateResources(
@@ -31,7 +28,6 @@ func (d *Runtime) UpdateResources(
 		needsRestart = true
 	}
 
-	// ── Docker-native fields ──────────────────────────────────────────────────
 	updateConfig := dockercontainer.UpdateConfig{}
 	resources := dockercontainer.Resources{}
 
@@ -77,45 +73,19 @@ func (d *Runtime) UpdateResources(
 		result.Applied = append(result.Applied, fmt.Sprintf("restart=%s", cfg.RestartPolicy))
 	}
 
+	if cfg.DeployStrategy != "" {
+		result.Applied = append(result.Applied, fmt.Sprintf("strategy=%s", cfg.DeployStrategy))
+	}
+	if cfg.Autoscaling != nil && cfg.Autoscaling.Enabled {
+		result.Applied = append(result.Applied, "autoscaling=on")
+	}
+
 	updateConfig.Resources = resources
 
 	if _, err := d.client.ContainerUpdate(ctx, containerID, updateConfig); err != nil {
 		return nil, fmt.Errorf("update container resources: %w", err)
 	}
 
-	// ── Tidefly-specific fields → ContainerMeta (upsert) ─────────────────────
-	if d.db != nil {
-		meta := models.ContainerMeta{
-			ContainerID:        containerID,
-			AutoscalingEnabled: cfg.Autoscaling != nil && cfg.Autoscaling.Enabled,
-			Replicas:           cfg.Replicas,
-		}
-		if meta.Replicas == 0 {
-			meta.Replicas = 1
-		}
-		if cfg.DeployStrategy != "" {
-			meta.DeployStrategy = cfg.DeployStrategy
-		} else {
-			meta.DeployStrategy = "rolling"
-		}
-		if cfg.Autoscaling != nil && cfg.Autoscaling.Enabled {
-			result.Applied = append(result.Applied, "autoscaling=on")
-		}
-		if cfg.DeployStrategy != "" {
-			result.Applied = append(result.Applied, fmt.Sprintf("strategy=%s", cfg.DeployStrategy))
-		}
-		if err := d.db.WithContext(ctx).
-			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "container_id"}},
-				DoUpdates: clause.AssignmentColumns([]string{"deploy_strategy", "autoscaling_enabled", "replicas", "updated_at"}),
-			}).
-			Create(&meta).Error; err != nil {
-			// Non-fatal — log but don't fail the whole update
-			_ = err
-		}
-	}
-
-	// ── Restart if memory was reduced ─────────────────────────────────────────
 	if needsRestart && info.State.Running {
 		if err := d.client.ContainerRestart(
 			ctx, containerID, dockercontainer.StopOptions{Timeout: new(10)},
@@ -137,7 +107,6 @@ func (d *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	hc := info.HostConfig
 	cfg := &runtime.ResourceConfig{}
 
-	// ── Docker-native fields ──────────────────────────────────────────────────
 	if hc.NanoCPUs > 0 {
 		cfg.CPUCores = float64(hc.NanoCPUs) / 1e9
 	}
@@ -152,30 +121,10 @@ func (d *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	cfg.RestartPolicy = string(hc.RestartPolicy.Name)
 	cfg.MaxRetries = hc.RestartPolicy.MaximumRetryCount
 
-	// ── Tidefly-specific fields from ContainerMeta ───────────────────────────
-	if d.db != nil {
-		var meta models.ContainerMeta
-		if err := d.db.WithContext(ctx).
-			Where("container_id = ?", containerID).
-			First(&meta).Error; err == nil {
-			cfg.DeployStrategy = meta.DeployStrategy
-			cfg.Replicas = meta.Replicas
-			if meta.AutoscalingEnabled {
-				cfg.Autoscaling = &runtime.AutoscalingConfig{Enabled: true}
-			}
-		} else if err != gorm.ErrRecordNotFound {
-			// Unexpected DB error — non-fatal, return what we have from Docker
-			_ = err
-		}
-	}
-
-	// Defaults
-	if cfg.DeployStrategy == "" {
-		cfg.DeployStrategy = "rolling"
-	}
-	if cfg.Replicas == 0 {
-		cfg.Replicas = 1
-	}
+	// deploy_strategy, replicas and autoscaling are enriched by the HTTP handler
+	// layer from services.manifest_json — not from the runtime layer.
+	cfg.DeployStrategy = "blue-green"
+	cfg.Replicas = 1
 
 	return cfg, nil
 }
