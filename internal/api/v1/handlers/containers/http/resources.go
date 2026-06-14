@@ -31,12 +31,12 @@ type ContainerAutoscalingConfig struct {
 type ContainerUpdateResourcesInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		CPUCores       float64                     `json:"cpu_cores"                minimum:"0"`
-		MemoryMB       int64                       `json:"memory_mb"                minimum:"0"`
-		MemorySwapMB   int64                       `json:"memory_swap_mb"           minimum:"-1"`
-		RestartPolicy  string                      `json:"restart_policy,omitempty" enum:"no,always,on-failure,unless-stopped"`
-		MaxRetries     int                         `json:"max_retries"              minimum:"0"`
-		Replicas       int                         `json:"replicas,omitempty"       minimum:"1"`
+		CPUCores       float64                     `json:"cpu_cores"                 minimum:"0"`
+		MemoryMB       int64                       `json:"memory_mb"                 minimum:"0"`
+		MemorySwapMB   int64                       `json:"memory_swap_mb"            minimum:"-1"`
+		RestartPolicy  string                      `json:"restart_policy,omitempty"  enum:"no,always,on-failure,unless-stopped"`
+		MaxRetries     int                         `json:"max_retries"               minimum:"0"`
+		Replicas       int                         `json:"replicas,omitempty"        minimum:"1"`
 		DeployStrategy string                      `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
 		Autoscaling    *ContainerAutoscalingConfig `json:"autoscaling,omitempty"`
 	}
@@ -58,10 +58,41 @@ func (h *Handler) GetResources(ctx context.Context, input *ContainerGetResources
 	if err := middleware.CheckContainerAccess(ctx, h.db, details.Labels); err != nil {
 		return nil, err
 	}
+
 	cfg, err := h.runtime.GetResources(ctx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get resources: %w", err)
 	}
+
+	// Enrich deploy_strategy + replicas + autoscaling from service manifest
+	// (source of truth) via tidefly.service-id label.
+	if serviceID := details.Labels["tidefly.service-id"]; serviceID != "" {
+		var svc models.Service
+		if err := h.db.WithContext(ctx).
+			Select("manifest_json").
+			Where("id = ?", serviceID).
+			First(&svc).Error; err == nil && svc.ManifestJSON != "" {
+			var raw manifest.ServiceManifest
+			if err := json.Unmarshal([]byte(svc.ManifestJSON), &raw); err == nil && raw.Spec.Scaling != nil {
+				if raw.Spec.Scaling.Strategy != "" {
+					cfg.DeployStrategy = raw.Spec.Scaling.Strategy
+				}
+				if raw.Spec.Scaling.Replicas > 0 {
+					cfg.Replicas = raw.Spec.Scaling.Replicas
+				}
+				if as := raw.Spec.Scaling.Autoscaling; as != nil {
+					cfg.Autoscaling = &runtime.AutoscalingConfig{
+						Enabled: as.Enabled,
+						Metric:  as.Metric,
+						Target:  float64(as.Target),
+						Min:     as.Min,
+						Max:     as.Max,
+					}
+				}
+			}
+		}
+	}
+
 	return &ContainerGetResourcesOutput{Body: cfg}, nil
 }
 

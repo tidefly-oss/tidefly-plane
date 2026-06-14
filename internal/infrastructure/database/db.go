@@ -43,6 +43,10 @@ func Connect(databaseURL string, isDev bool) (*gorm.DB, error) {
 
 // AutoMigrate runs on startup — additive only, no data loss.
 func AutoMigrate(database *gorm.DB) error {
+	// Drop container_meta — superseded by services.manifest_json as source of truth.
+	// deploy_strategy and replicas are now read directly from manifest_json.
+	_ = database.Migrator().DropTable("container_meta")
+
 	return database.AutoMigrate(
 		// Auth & Users
 		&models.User{},
@@ -54,7 +58,6 @@ func AutoMigrate(database *gorm.DB) error {
 		// Containers & Services
 		&models.Service{},
 		&models.ServiceCredential{},
-		&models.ContainerMeta{},
 		&models.Stack{},
 		// Git
 		&models.GitIntegration{},

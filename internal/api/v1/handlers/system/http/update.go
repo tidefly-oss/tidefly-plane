@@ -231,6 +231,12 @@ func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client,
 	containerCfg.Image = newImage
 	hostCfg := info.HostConfig
 
+	// Remove host port bindings for the green container — it runs alongside
+	// the old container so host ports would conflict. Caddy reaches it via
+	// container name on the Docker network, not via host ports.
+	hostCfg.PortBindings = nil
+	hostCfg.PublishAllPorts = false
+
 	networkCfg := &dockernetwork.NetworkingConfig{
 		EndpointsConfig: make(map[string]*dockernetwork.EndpointSettings),
 	}

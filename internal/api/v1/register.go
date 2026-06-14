@@ -13,6 +13,7 @@ import (
 	authhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/auth/http"
 	backuphttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/backup/http"
 	containerhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/containers/http"
+	dashboardhttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/dashboard/http"
 	githttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/git/http"
 	imageshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/images/http"
 	logshttp "github.com/tidefly-oss/tidefly-plane/internal/api/v1/handlers/logs/http"
@@ -89,6 +90,7 @@ func Register(
 	templateshttp.New(templateLoader).RegisterRoutes(api, mw)
 	volumeshttp.New(rt, deployer, db, log, bus).RegisterRoutes(api, mw, adminMw)
 	serviceshttp.New(db, deployer, asynqClient, log, gitSvc, templateLoader, rt, ingressAdapter).RegisterRoutes(api, mw)
+	dashboardhttp.New(rt, db, log, notifSvc).RegisterRoutes(api, mw)
 
 	// ── REST + SSE ────────────────────────────────────────────────────────────
 	agenthttp.New(db, caService, agentClient, bus).RegisterRoutes(api, r, mw, adminMw, sseAuth)
