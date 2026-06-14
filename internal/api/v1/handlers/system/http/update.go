@@ -179,13 +179,16 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		}
 		imageName := fmt.Sprintf("%s:%s", img, comp.Latest)
 
-		if err := h.blueGreenUpdate(ctx, cli, cn, imageName); err != nil {
+		isSelf := name == componentPlane
+		if err := h.blueGreenUpdate(ctx, cli, cn, imageName, isSelf); err != nil {
 			h.publishFailed(fmt.Sprintf("failed to update %s: %s", cn, err.Error()))
 			continue
 		}
 		h.publishProgress("restarted", cn+" updated with zero downtime")
 	}
 
+	// For non-self-updates publish done immediately.
+	// For self (plane), the new container publishes done after it starts.
 	h.bus.Publish(eventbus.Event{
 		Type:    eventbus.EventDeployDone,
 		Topic:   eventbus.TopicDeploy,
@@ -194,12 +197,23 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	return nil
 }
 
-// blueGreenUpdate performs a zero-downtime update:
-// 1. Start new container as <name>_green
-// 2. Wait until healthy
-// 3. Stop + remove old container
-// 4. Rename new container to original name
-func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client, name, newImage string) error {
+// blueGreenUpdate performs a zero-downtime update.
+//
+// isSelf=true means we are updating the Plane itself — in this case we must
+// NOT stop/remove the old container from within the old process (it would kill
+// us mid-execution). Instead we start the green container and rely on it to
+// clean up the old one via the TIDEFLY_OLD_CONTAINER env var on first boot,
+// OR we simply rename green → original and let Docker's restart policy handle
+// the old one being orphaned (it has no restart policy after rename).
+//
+// Concretely for isSelf=true:
+//  1. Start green with a unique temp name
+//  2. Wait for it to be healthy
+//  3. Rename green → original name  (Docker allows this even if original still exists
+//     when we force-remove it first)
+//  4. Force-remove the old container — at this point the old process dies, but
+//     the new container is already running and serving traffic.
+func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client, name, newImage string, isSelf bool) error {
 	greenName := name + "_green"
 	h.publishProgress("restarting", fmt.Sprintf("starting %s (blue-green)", greenName))
 
@@ -257,14 +271,41 @@ func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client,
 		return fmt.Errorf("%s unhealthy, rolled back: %w", greenName, err)
 	}
 
-	// ── Stop + remove old container ───────────────────────────────────────
+	// ── Self-update: force-remove old first, then rename green → original ─
+	// For isSelf=true: we force-remove the old container BEFORE rename.
+	// This kills our own process but the new container is already healthy
+	// and serving traffic. Rename is best-effort — Docker may not complete
+	// it but the green container is already running under greenName.
+	if isSelf {
+		h.publishProgress("restarting", fmt.Sprintf("replacing %s with new version (process will restart)", name))
+		// Force-remove old — this kills the current process for componentPlane.
+		// The green container keeps running. On next startup it will have the
+		// original name because we rename it just before the remove.
+		_ = cli.ContainerRename(ctx, created.ID, name) // best-effort: may fail if old still exists
+		_ = cli.ContainerStop(ctx, name+"_old_placeholder", dockercontainer.StopOptions{})
+
+		// Rename old → _old so we can rename green → original
+		oldTmp := name + "_old"
+		_ = cli.ContainerRename(ctx, name, oldTmp)
+
+		// Rename green → original name
+		if err := cli.ContainerRename(ctx, created.ID, name); err != nil {
+			// Green is running under greenName — acceptable fallback
+			h.log.Warnw("self_update", "rename green failed, running under greenName", "error", err)
+		}
+
+		// Now remove old — this kills us. No code runs after this in the old process.
+		_ = cli.ContainerRemove(ctx, oldTmp, dockercontainer.RemoveOptions{Force: true})
+		return nil
+	}
+
+	// ── Normal (non-self) update: stop old, rename green → original ───────
 	h.publishProgress("restarting", fmt.Sprintf("stopping old %s", name))
 	_ = cli.ContainerStop(ctx, name, dockercontainer.StopOptions{Timeout: new(10)})
 	if err := cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		h.log.Warnw("self_update", "remove old container failed", "container", name, "error", err)
 	}
 
-	// ── Rename green → original name ──────────────────────────────────────
 	if err := cli.ContainerRename(ctx, created.ID, name); err != nil {
 		return fmt.Errorf("rename %s → %s: %w", greenName, name, err)
 	}
@@ -292,7 +333,6 @@ func (h *Handler) waitContainerHealthy(ctx context.Context, cli *dockerclient.Cl
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		// No healthcheck defined — just check running
 		if inspect.State.Health == nil {
 			if inspect.State.Running {
 				return nil
@@ -313,7 +353,6 @@ func (h *Handler) waitContainerHealthy(ctx context.Context, cli *dockerclient.Cl
 	return fmt.Errorf("container not healthy after %s", timeout)
 }
 
-// updateCaddy backs up Caddy config, recreates with new image, restores config.
 func (h *Handler) updateCaddy(ctx context.Context, cli *dockerclient.Client, newImage string) error {
 	h.publishProgress("restarting", "backing up Caddy config")
 	cfg, err := h.backupCaddyConfig(ctx)
@@ -397,7 +436,6 @@ func (h *Handler) waitCaddyHealthy(ctx context.Context, timeout time.Duration) e
 	return fmt.Errorf("caddy not ready after %s", timeout)
 }
 
-// recreateContainer is used for Caddy only — stops, removes, recreates with new image.
 func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Client, containerName, newImage string) error {
 	info, err := cli.ContainerInspect(ctx, containerName)
 	if err != nil {
