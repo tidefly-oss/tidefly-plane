@@ -13,7 +13,7 @@ type listOutput struct {
 	Body []integrationResponse
 }
 
-type createInput struct {
+type gitCreateInput struct {
 	Body struct {
 		Name     string `json:"name"               minLength:"1" maxLength:"255"`
 		Provider string `json:"provider"           enum:"github,gitlab,gitea-forgejo,bitbucket"`
@@ -58,7 +58,7 @@ func (h *Handler) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	return &listOutput{Body: toIntegrationResponses(integrations, user.ID)}, nil
 }
 
-func (h *Handler) create(ctx context.Context, input *createInput) (*createOutput, error) {
+func (h *Handler) create(ctx context.Context, input *gitCreateInput) (*createOutput, error) {
 	user := currentUser(ctx)
 	if user == nil {
 		return nil, huma401("unauthorized")

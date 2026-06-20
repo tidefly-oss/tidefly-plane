@@ -21,7 +21,7 @@ func (d *Runtime) ListImages(ctx context.Context) ([]runtime.Image, error) {
 	if all, err := d.client.ContainerList(ctx, container.ListOptions{All: true}); err == nil {
 		for _, ct := range all {
 			if ct.Labels[runtime.LabelInternal] == runtime.LabelTrue {
-				internalImages[strings.TrimPrefix(ct.Image, "docker.io/")] = true
+				internalImages[normalizeImageRef(ct.Image)] = true
 			}
 		}
 	}
@@ -60,9 +60,15 @@ func hasRealTag(tags []string) bool {
 	return false
 }
 
+func normalizeImageRef(ref string) string {
+	ref = strings.TrimPrefix(ref, "docker.io/library/")
+	ref = strings.TrimPrefix(ref, "docker.io/")
+	return ref
+}
+
 func isInternalImage(tags []string, internal map[string]bool) bool {
 	for _, t := range tags {
-		if internal[t] {
+		if internal[t] || internal[normalizeImageRef(t)] {
 			return true
 		}
 	}

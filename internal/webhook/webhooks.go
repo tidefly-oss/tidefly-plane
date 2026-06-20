@@ -23,7 +23,7 @@ type listOutput struct {
 	Body []webhookResponse
 }
 
-type createInput struct {
+type webhookCreateInput struct {
 	PID  string `path:"pid"`
 	Body struct {
 		Name             string                    `json:"name" minLength:"1"`
@@ -51,7 +51,7 @@ type getOutput struct {
 	Body webhookResponse
 }
 
-type updateInput struct {
+type webhookUpdateInput struct {
 	PID  string `path:"pid"`
 	ID   string `path:"id"`
 	Body struct {
@@ -106,7 +106,7 @@ func (h *Handler) list(ctx context.Context, input *listInput) (*listOutput, erro
 	return &listOutput{Body: resp}, nil
 }
 
-func (h *Handler) create(ctx context.Context, input *createInput) (*createOutput, error) {
+func (h *Handler) create(ctx context.Context, input *webhookCreateInput) (*createOutput, error) {
 	user, err := h.store.CheckProjectAccess(ctx, input.PID)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (h *Handler) get(ctx context.Context, input *getInput) (*getOutput, error) 
 	return &getOutput{Body: webhookResponse{Webhook: *wh, URL: BuildURL(ctx, wh.ID)}}, nil
 }
 
-func (h *Handler) update(ctx context.Context, input *updateInput) (*updateOutput, error) {
+func (h *Handler) update(ctx context.Context, input *webhookUpdateInput) (*updateOutput, error) {
 	if _, err := h.store.CheckProjectAccess(ctx, input.PID); err != nil {
 		return nil, err
 	}

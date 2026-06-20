@@ -116,7 +116,7 @@ func New(
 }
 
 func (w *Watcher) Run(ctx context.Context) {
-	w.log.Info("logwatcher", "container log watcher started")
+	w.log.Info("logmon", "container log watcher started")
 	w.reconcile(ctx)
 
 	ticker := time.NewTicker(w.cfg.PollInterval)
@@ -125,7 +125,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			w.log.Info("logwatcher", "container log watcher stopping")
+			w.log.Info("logmon", "container log watcher stopping")
 			w.stopAll()
 			return
 		case <-ticker.C:
@@ -137,7 +137,7 @@ func (w *Watcher) Run(ctx context.Context) {
 func (w *Watcher) reconcile(ctx context.Context) {
 	containers, err := w.rt.ListContainers(ctx, true)
 	if err != nil {
-		w.log.Warn("logwatcher", fmt.Sprintf("failed to list containers for log watching: %v", err))
+		w.log.Warn("logmon", fmt.Sprintf("failed to list containers for log watching: %v", err))
 		return
 	}
 

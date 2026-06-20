@@ -13,7 +13,7 @@ import (
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
-type registerInput struct {
+type workerRegisterInput struct {
 	Body struct {
 		Token        string `json:"token"                   required:"true"`
 		WorkerID     string `json:"worker_id"               required:"true"`
@@ -36,8 +36,8 @@ type registerOutput struct {
 	}
 }
 
-func (h *Handler) register(_ context.Context, input *registerInput) (*registerOutput, error) {
-	_, bundle, err := h.svc.Register(RegisterInput{
+func (h *Handler) register(_ context.Context, input *workerRegisterInput) (*registerOutput, error) {
+	_, bundle, err := h.svc.Register(WorkerRegisterInput{
 		Token:        input.Body.Token,
 		WorkerID:     input.Body.WorkerID,
 		Name:         input.Body.Name,

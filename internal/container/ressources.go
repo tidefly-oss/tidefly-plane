@@ -20,7 +20,7 @@ type getResourcesOutput struct {
 	Body *runtime.ResourceConfig
 }
 
-type autoscalingConfig struct {
+type containerAutoscalingConfig struct {
 	Enabled bool    `json:"enabled"`
 	Min     int     `json:"min" minimum:"1"`
 	Max     int     `json:"max" minimum:"1"`
@@ -38,7 +38,7 @@ type updateResourcesInput struct {
 		MaxRetries     int                `json:"max_retries"               minimum:"0"`
 		Replicas       int                `json:"replicas,omitempty"        minimum:"1"`
 		DeployStrategy string             `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
-		Autoscaling    *autoscalingConfig `json:"autoscaling,omitempty"`
+		Autoscaling    *containerAutoscalingConfig `json:"autoscaling,omitempty"`
 	}
 }
 

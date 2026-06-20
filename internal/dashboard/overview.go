@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/tidefly-oss/tidefly-plane/internal/access"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
@@ -21,19 +22,16 @@ type overviewBody struct {
 	Images        []runtime.Image        `json:"images"`
 	Networks      []runtime.Network      `json:"networks"`
 	Volumes       []runtime.Volume       `json:"volumes"`
-	Settings      *models.SystemSettings `json:"settings,omitempty"` // admin only
+	Settings      *models.SystemSettings `json:"settings,omitempty"`
 }
 
-// Overview aggregates all data needed for the initial dashboard page load.
-// Runs all DB/runtime queries concurrently and returns in a single response.
-// Replaces: /auth/me, /projects, /notifications,
-//
-//	/containers?all=true, /images, /networks, /volumes, /admin/settings
 func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, error) {
 	claims := middleware.UserFromHumaCtx(ctx)
 	if claims == nil {
 		return nil, huma401("unauthorized")
 	}
+
+	isAdmin := claims.Role == string(models.RoleAdmin)
 
 	var (
 		mu       sync.Mutex
@@ -58,6 +56,16 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 		mu.Unlock()
 	}
 
+	// Preload allowed networks for non-admins (used by container/network/volume filter)
+	var allowed map[string]struct{}
+	if !isAdmin {
+		var err error
+		allowed, err = access.NewStore(h.db).AllowedNetworks(claims.UserID)
+		if err != nil {
+			return nil, huma500("failed to load access data")
+		}
+	}
+
 	// ── User ──────────────────────────────────────────────────────────────────
 	wg.Add(1)
 	go func() {
@@ -78,7 +86,7 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 		defer wg.Done()
 		var p []models.Project
 		q := h.db.WithContext(ctx)
-		if claims.Role != string(models.RoleAdmin) {
+		if !isAdmin {
 			q = q.Joins("JOIN project_members pm ON pm.project_id = projects.id AND pm.user_id = ?", claims.UserID)
 		}
 		if err := q.Find(&p).Error; err != nil {
@@ -113,12 +121,22 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 			setErr(err)
 			return
 		}
+		filtered := make([]runtime.Container, 0, len(cs))
+		for _, c := range cs {
+			if access.IsInternal(c.Labels) {
+				continue
+			}
+			if isAdmin || access.NetworkAllowed(c.Networks, allowed) {
+				filtered = append(filtered, c)
+			}
+		}
 		mu.Lock()
-		containers = cs
+		containers = filtered
 		mu.Unlock()
 	}()
 
 	// ── Images ────────────────────────────────────────────────────────────────
+	// Internal image filtering is handled inside ListImages (via container labels).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -141,8 +159,21 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 			setErr(err)
 			return
 		}
+		filtered := make([]runtime.Network, 0, len(nets))
+		for _, n := range nets {
+			if !access.IsManaged(n.Labels) || n.Name == access.NetworkProxy {
+				continue
+			}
+			if isAdmin {
+				filtered = append(filtered, n)
+				continue
+			}
+			if _, ok := allowed[n.Name]; ok {
+				filtered = append(filtered, n)
+			}
+		}
 		mu.Lock()
-		networks = nets
+		networks = filtered
 		mu.Unlock()
 	}()
 
@@ -155,19 +186,61 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 			setErr(err)
 			return
 		}
+		if isAdmin {
+			filtered := make([]runtime.Volume, 0, len(vols))
+			for _, v := range vols {
+				if access.IsManaged(v.Labels) {
+					filtered = append(filtered, v)
+				}
+			}
+			mu.Lock()
+			volumes = filtered
+			mu.Unlock()
+			return
+		}
+		cs, err := h.runtime.ListContainers(ctx, true)
+		if err != nil {
+			mu.Lock()
+			volumes = []runtime.Volume{}
+			mu.Unlock()
+			return
+		}
+		allowedVols := make(map[string]struct{})
+		for _, ct := range cs {
+			if access.IsInternal(ct.Labels) || !access.NetworkAllowed(ct.Networks, allowed) {
+				continue
+			}
+			details, err := h.runtime.GetContainer(ctx, ct.ID)
+			if err != nil {
+				continue
+			}
+			for _, m := range details.Mounts {
+				if m.Source != "" {
+					allowedVols[m.Source] = struct{}{}
+				}
+			}
+		}
+		filtered := make([]runtime.Volume, 0, len(vols))
+		for _, v := range vols {
+			if access.IsManaged(v.Labels) {
+				if _, ok := allowedVols[v.Name]; ok {
+					filtered = append(filtered, v)
+				}
+			}
+		}
 		mu.Lock()
-		volumes = vols
+		volumes = filtered
 		mu.Unlock()
 	}()
 
 	// ── Settings (admin only) ─────────────────────────────────────────────────
-	if claims.Role == string(models.RoleAdmin) {
+	if isAdmin {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			var s models.SystemSettings
 			if err := h.db.WithContext(ctx).First(&s).Error; err != nil {
-				return // non-fatal
+				return
 			}
 			mu.Lock()
 			settings = &s

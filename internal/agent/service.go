@@ -17,7 +17,7 @@ var (
 	ErrCertIssueFailed  = errors.New("failed to issue certificate")
 )
 
-type RegisterInput struct {
+type WorkerRegisterInput struct {
 	Token        string
 	WorkerID     string
 	Name         string
@@ -44,7 +44,7 @@ func NewService(store *Store, caService *ca.Service) *Service {
 	return &Service{store: store, caService: caService}
 }
 
-func (s *Service) Register(input RegisterInput) (*models.WorkerNode, *CertBundle, error) {
+func (s *Service) Register(input WorkerRegisterInput) (*models.WorkerNode, *CertBundle, error) {
 	if s.store.ExistsByID(input.WorkerID) {
 		return nil, nil, ErrWorkerExists
 	}

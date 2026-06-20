@@ -52,7 +52,7 @@ func (h *Handler) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	}
 	managed := make([]runtime.Network, 0, len(list))
 	for _, n := range list {
-		if access.IsManaged(n.Labels) {
+		if access.IsManaged(n.Labels) && n.Name != access.NetworkProxy {
 			managed = append(managed, n)
 		}
 	}

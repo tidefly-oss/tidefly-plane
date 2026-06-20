@@ -15,12 +15,14 @@ type listOutput struct {
 	Body []models.Project
 }
 
+type createBody struct {
+	Name        string `json:"name"                  minLength:"1" maxLength:"128"`
+	Description string `json:"description,omitempty" maxLength:"512"`
+	Color       string `json:"color,omitempty"       minLength:"4" maxLength:"9"`
+}
+
 type createInput struct {
-	Body struct {
-		Name        string `json:"name"                  minLength:"1" maxLength:"128"`
-		Description string `json:"description,omitempty" maxLength:"512"`
-		Color       string `json:"color,omitempty"       minLength:"4" maxLength:"9"`
-	}
+	Body createBody
 }
 
 type createOutput struct {
@@ -35,13 +37,15 @@ type getOutput struct {
 	Body *models.Project
 }
 
+type updateBody struct {
+	Name        string `json:"name,omitempty"        minLength:"1" maxLength:"128"`
+	Description string `json:"description,omitempty" maxLength:"512"`
+	Color       string `json:"color,omitempty"       minLength:"4" maxLength:"9"`
+}
+
 type updateInput struct {
 	ID   string `path:"id"`
-	Body struct {
-		Name        string `json:"name,omitempty"        minLength:"1" maxLength:"128"`
-		Description string `json:"description,omitempty" maxLength:"512"`
-		Color       string `json:"color,omitempty"       minLength:"4" maxLength:"9"`
-	}
+	Body updateBody
 }
 
 type updateOutput struct {

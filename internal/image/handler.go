@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tidefly-oss/tidefly-plane/internal/access"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
@@ -40,27 +41,14 @@ type containersOutput struct {
 	Body []imageContainerRef
 }
 
+// list returns all non-internal images.
+// Internal filtering is done inside runtime.ListImages via container labels.
 func (h *Handler) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	list, err := h.runtime.ListImages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}
-	internalImages := map[string]bool{}
-	if containers, err := h.runtime.ListContainers(ctx, true); err == nil {
-		for _, ct := range containers {
-			if ct.Labels["tidefly.internal"] == "true" && ct.Image != "" {
-				internalImages[ct.Image] = true
-			}
-		}
-	}
-	result := make([]runtime.Image, 0, len(list))
-	for _, img := range list {
-		if !hasRealTag(img.Tags) || isInternalImage(img.Tags, internalImages) {
-			continue
-		}
-		result = append(result, img)
-	}
-	return &listOutput{Body: result}, nil
+	return &listOutput{Body: list}, nil
 }
 
 func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, error) {
@@ -103,7 +91,7 @@ outer:
 	}
 	refs := make([]imageContainerRef, 0)
 	for _, ct := range cs {
-		if ct.Labels["tidefly.internal"] == "true" {
+		if access.IsInternal(ct.Labels) {
 			continue
 		}
 		for _, tag := range matchedTags {
@@ -114,24 +102,4 @@ outer:
 		}
 	}
 	return &containersOutput{Body: refs}, nil
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func hasRealTag(tags []string) bool {
-	for _, t := range tags {
-		if t != "" && t != "<none>" && t != "<none>:<none>" {
-			return true
-		}
-	}
-	return false
-}
-
-func isInternalImage(tags []string, internalImages map[string]bool) bool {
-	for _, t := range tags {
-		if internalImages[t] {
-			return true
-		}
-	}
-	return false
 }

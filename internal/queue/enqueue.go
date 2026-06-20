@@ -1,3 +1,5 @@
+// Package queue provides asynq enqueue helpers shared across packages.
+// It deliberately has no imports from internal feature packages to avoid cycles.
 package queue
 
 import (
@@ -24,25 +26,25 @@ const (
 // Duplicated here to avoid manifest/converter → queue → manifest cycle.
 
 type APIInput struct {
-	ManifestJSON     string   `json:"manifest_json,omitempty"`
-	Image            string   `json:"image,omitempty"`
-	ComposeYAML      string   `json:"compose,omitempty"`
-	Dockerfile       string   `json:"dockerfile,omitempty"`
-	GitURL           string   `json:"git_url,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	StackName        string   `json:"stack_name,omitempty"`
-	ProjectID        string   `json:"project_id,omitempty"`
-	Domain           string   `json:"domain,omitempty"`
-	Port             int      `json:"port,omitempty"`
-	Expose           bool     `json:"expose,omitempty"`
-	Branch           string   `json:"branch,omitempty"`
-	GitIntegrationID string   `json:"git_integration_id,omitempty"`
-	Env              []EnvVar `json:"env,omitempty"`
-	Replicas         int      `json:"replicas,omitempty"`
-	Strategy         string   `json:"strategy,omitempty"`
+	ManifestJSON     string     `json:"manifest_json,omitempty"`
+	Image            string     `json:"image,omitempty"`
+	ComposeYAML      string     `json:"compose,omitempty"`
+	Dockerfile       string     `json:"dockerfile,omitempty"`
+	GitURL           string     `json:"git_url,omitempty"`
+	Name             string     `json:"name,omitempty"`
+	StackName        string     `json:"stack_name,omitempty"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	Domain           string     `json:"domain,omitempty"`
+	Port             int        `json:"port,omitempty"`
+	Expose           bool       `json:"expose,omitempty"`
+	Branch           string     `json:"branch,omitempty"`
+	GitIntegrationID string     `json:"git_integration_id,omitempty"`
+	Env              []EnvEntry `json:"env,omitempty"`
+	Replicas         int        `json:"replicas,omitempty"`
+	Strategy         string     `json:"strategy,omitempty"`
 }
 
-type EnvVar struct {
+type EnvEntry struct {
 	Name   string `json:"name"`
 	Value  string `json:"value,omitempty"`
 	Secret string `json:"secret,omitempty"`

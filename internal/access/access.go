@@ -1,3 +1,5 @@
+// Package access provides shared access control helpers for container, network, and volume filtering.
+// It has zero dependency on middleware — callers pass in userID/role directly.
 package access
 
 import (
@@ -19,6 +21,9 @@ const (
 	LabelSlot      = "tidefly.slot"
 	LabelProjectID = "tidefly-plane.project_id"
 )
+
+// NetworkProxy is the Caddy proxy network — always hidden from users.
+const NetworkProxy = "tidefly_proxy"
 
 // IsInternal returns true if the resource should be hidden from users.
 func IsInternal(labels map[string]string) bool {

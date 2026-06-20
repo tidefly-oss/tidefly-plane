@@ -56,7 +56,7 @@ func (h *Handler) get(ctx context.Context, input *getInput) (*getOutput, error) 
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-type createInput struct {
+type serviceCreateInput struct {
 	Body queue.APIInput
 }
 
@@ -67,7 +67,7 @@ type createOutput struct {
 	}
 }
 
-func (h *Handler) create(ctx context.Context, input *createInput) (*createOutput, error) {
+func (h *Handler) create(ctx context.Context, input *serviceCreateInput) (*createOutput, error) {
 	gitToken, _ := h.resolveGitToken(input.Body.GitIntegrationID)
 
 	result, err := h.mgr.Create(ctx, input.Body, gitToken)
@@ -174,7 +174,7 @@ func (h *Handler) createFromTemplate(ctx context.Context, input *createFromTempl
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
-type updateInput struct {
+type serviceUpdateInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		Image    string   `json:"image,omitempty"    maxLength:"512"`
@@ -188,7 +188,7 @@ type updateOutput struct {
 	Body *models.Service
 }
 
-func (h *Handler) update(ctx context.Context, input *updateInput) (*updateOutput, error) {
+func (h *Handler) update(ctx context.Context, input *serviceUpdateInput) (*updateOutput, error) {
 	svc, err := h.mgr.Update(ctx, input.ID, UpdateRequest{
 		Image:    input.Body.Image,
 		Env:      input.Body.Env,
