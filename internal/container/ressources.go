@@ -31,13 +31,13 @@ type containerAutoscalingConfig struct {
 type updateResourcesInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		CPUCores       float64            `json:"cpu_cores"                 minimum:"0"`
-		MemoryMB       int64              `json:"memory_mb"                 minimum:"0"`
-		MemorySwapMB   int64              `json:"memory_swap_mb"            minimum:"-1"`
-		RestartPolicy  string             `json:"restart_policy,omitempty"  enum:"no,always,on-failure,unless-stopped"`
-		MaxRetries     int                `json:"max_retries"               minimum:"0"`
-		Replicas       int                `json:"replicas,omitempty"        minimum:"1"`
-		DeployStrategy string             `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
+		CPUCores       float64                     `json:"cpu_cores" minimum:"0"`
+		MemoryMB       int64                       `json:"memory_mb" minimum:"0"`
+		MemorySwapMB   int64                       `json:"memory_swap_mb" minimum:"-1"`
+		RestartPolicy  string                      `json:"restart_policy,omitempty" enum:"no,always,on-failure,unless-stopped"`
+		MaxRetries     int                         `json:"max_retries" minimum:"0"`
+		Replicas       int                         `json:"replicas,omitempty" minimum:"1"`
+		DeployStrategy string                      `json:"deploy_strategy,omitempty" enum:"rolling,recreate,blue-green"`
 		Autoscaling    *containerAutoscalingConfig `json:"autoscaling,omitempty"`
 	}
 }
