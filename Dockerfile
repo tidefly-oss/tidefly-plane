@@ -3,7 +3,6 @@
 # =============================================================================
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
-
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Templates clonen
@@ -28,7 +27,7 @@ ARG BUILD_DATE=unknown
 # Wire + main binary
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-    wire ./internal/platform/bootstrap/ && \
+    wire ./internal/bootstrap/ && \
     mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux \
     go build \
@@ -54,11 +53,9 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 # Runtime Stage - scratch
 # =============================================================================
 FROM scratch
-
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /templates /home/tidefly/templates
-
 WORKDIR /app
 COPY --from=builder /out/tidefly-plane .
 COPY --from=builder /out/healthcheck .
@@ -76,6 +73,8 @@ LABEL org.opencontainers.image.title="tidefly-plane" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 EXPOSE 8181 7443
+
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
     CMD ["/app/healthcheck"]
+
 ENTRYPOINT ["/app/tidefly-plane"]
