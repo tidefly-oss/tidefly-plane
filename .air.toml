@@ -5,7 +5,7 @@ tmp_dir = "tmp"
 cmd = "go build -gcflags='all=-N -l' -ldflags=\"-X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o ./tmp/main ./cmd/tidefly-plane"
 entrypoint = "./tmp/main"
 include_ext = ["go"]
-exclude_dir = ["tmp", "vendor", "internal/platform/bootstrap"]
+exclude_dir = ["tmp", "vendor", "internal/bootstrap"]
 delay = 500
 log = "tmp/build-errors.log"
 

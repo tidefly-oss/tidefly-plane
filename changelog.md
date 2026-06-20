@@ -5,6 +5,47 @@ All notable changes to Tidefly Plane will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.1-beta.21] - 2026-06-20
+
+> Internal architecture refactor + security hardening. No functional changes to the API surface.
+
+### Changed
+
+#### Package Structure
+- Feature-first flat layout — all features live directly under `internal/`, replacing the layered `api/v1/handlers/*/http` + `domain/*/` structure
+- `internal/bootstrap/` replaces `internal/platform/bootstrap/`
+- `internal/logmon/` replaces `internal/infra/logwatcher/`
+- `internal/converter/` promoted from `internal/manifest/converter/` to break import cycles
+- `internal/queue/` introduced — zero-internal-imports package for all asynq enqueue helpers, breaks the `manifest ↔ jobs ↔ manifest/converter` cycle
+- `internal/access/` introduced — centralized access control helpers shared by `container`, `network`, `volume` — eliminates duplication and `network → container` import
+- `internal/platform/config/` consolidated from 15 files to 4
+- `internal/infra/agent/` merged into `internal/agent/` — gRPC server/client/registry alongside HTTP handler
+
+#### Naming
+- All `New()` constructors renamed to `NewHandler()`
+- All Huma handler methods made unexported — `h.List` → `h.list`
+- All Input/Output types made unexported — `GitListOutput` → `listOutput`
+- `auth.Service` → `auth.JWTService`
+
+#### Routes
+- All route paths use `httpx.V1` constant instead of hardcoded `"/api/v1"`
+
+#### Import cycle fixes
+- `middleware` has no dependency on `auth` — bootstrap wires via `jwtValidator()` adapter
+- `access` has no dependency on `middleware` — bootstrap wires via `access.SetUserReader()`
+- `queue` imports nothing from `internal/` — payload types duplicated as standalone structs
+- `manifest` no longer imports `jobs` — uses `queue.Enqueue*` directly
+
+### Security
+
+- **HTTP server timeouts** — `ReadTimeout: 15s`, `WriteTimeout: 60s`, `IdleTimeout: 120s`, `MaxHeaderBytes: 1MB` — prevents Slowloris and header-bombing attacks
+- **Global rate limiting** — `RateLimitAPI()` (300 req/min per IP) applied to all routes
+- **Auth rate limiting** — `RateLimitAuth()` (10 req/min per IP) applied to all `/api/v1/auth/*` routes via chi group
+- **Token length check** — JWT tokens over 2048 bytes rejected before parsing
+- **IP extraction hardened** — `realIP()` correctly strips port from `RemoteAddr`, handles `X-Forwarded-For` multi-value
+- **Tidefly label constants** centralized in `access/` — consistent filtering of internal containers/networks/volumes across all packages
+
+---
 
 ## [0.0.1-beta.1] - 2026-05-20
 
@@ -28,18 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Admin Settings
 - `api_docs_enabled` toggle in admin settings
-- `GuardDocs` Echo middleware: blocks `/docs` and `/openapi` live from DB — no restart required
-
-#### Templates
-- Locust load testing template (`category: testing`)
+- `GuardDocs` middleware: blocks `/docs` and `/openapi` live from DB — no restart required
 
 ### Fixed
 - Suppress self-heal log noise for already-deleted services
-- Extract `proxyNetwork` constant in jobs package (goconst)
+- Extract `proxyNetwork` constant in jobs package
 
 ### Changed
 - `ServiceJobHandler` carries `asynq.Client` for cleanup job enqueueing
-- Roadmap: marked orchestration API as complete
 
 ---
 
@@ -78,67 +115,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Worker node management — list, revoke, delete
 - Container management on worker nodes — list containers, stream logs
 - Caddy routing via worker IP for worker-deployed containers
-- Worker selection UI in all deploy wizards
 
 #### Reverse Proxy
 - Caddy integration via Admin API — no Caddyfile needed
-- Custom Caddy image with `caddy-l4` and `caddy-ratelimit` plugins
 - Automatic route registration/removal on container deploy/delete
 - Let's Encrypt ACME + internal TLS support
-- `tidefly_proxy` Docker network for container routing
 
 #### Monitoring & Observability
 - Prometheus metrics registry (`tidefly_*` namespace)
 - System metrics: CPU, memory, disk via SSE
-- Container count gauges, HTTP instrumentation, job and webhook counters
 - Caddy access log streaming via SSE
 - Real-time notification stream via SSE
 
 #### Developer Experience
 - Huma v2 API with Scalar docs renderer
-- OpenAPI tags for all route groups
-- golangci-lint v2 configuration
 - Wire DI throughout
 - Taskfile for all common workflows
 - Production Dockerfile (scratch-based, no CGO, multi-arch)
-- GitHub Actions CI (lint, test, build)
-- GitHub Actions Release (multi-arch Docker push to ghcr.io, GitHub Release)
-- In-app update button — checks GitHub Releases API for new versions
+- GitHub Actions CI (lint, test, build, Docker push)
 
 #### Other
 - Git integration: GitHub, GitLab, Gitea/Forgejo, Bitbucket with AES-256-GCM token encryption
-- Webhook auto-deploy (GitHub, GitLab, Gitea, Bitbucket, Generic) with HMAC-SHA256
+- Webhook auto-deploy with HMAC-SHA256 signature verification
 - External notifications via Slack, Discord, SMTP
 - S3 backup integration with Postgres export
 - RBAC: admin and member roles with project-scoped permissions
-- User management
 - Audit logging with retention policies
 
 ---
 
 ## Roadmap
 
-### Next (Beta)
+### Next
 - [ ] E2E and integration tests
 - [ ] Auto-scheduling across worker nodes
 - [ ] Custom domain management UI
+- [ ] Two-factor authentication
 
-### Done in Beta
-- [x] Unified orchestration API (runtime + desired state + drift detection)
+### Done
+- [x] Feature-first flat package layout
+- [x] Import cycle resolution via `queue/` + `access/` packages
+- [x] HTTP server timeouts + rate limiting
+- [x] Unified orchestration API
 - [x] Cascading resource cleanup on service delete
 - [x] Self-healing orphan and stuck-deploy purge
 - [x] API docs toggle in admin settings
 
-### Later
-- [ ] Two-factor authentication
-- [ ] SSO / LDAP integration (Enterprise)
-
 ---
 
-[Unreleased]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-beta.1...HEAD
+[0.0.1-beta.2]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-beta.1...v0.0.1-beta.2
 [0.0.1-beta.1]: https://github.com/tidefly-oss/tidefly-plane/compare/v0.0.1-alpha.1...v0.0.1-beta.1
 [0.0.1-alpha.1]: https://github.com/tidefly-oss/tidefly-plane/releases/tag/v0.0.1-alpha.1
-
 
 <div align="center">
   <sub>Built with ❤️ by <a href="https://github.com/dbuettgen">@dbuettgen</a> · Part of the <a href="https://github.com/tidefly-oss">tidefly-oss</a> project</sub>

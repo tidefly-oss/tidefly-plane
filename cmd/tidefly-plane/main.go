@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/bootstrap"
+	"github.com/tidefly-oss/tidefly-plane/internal/bootstrap"
 )
 
 var migrateOnly = flag.Bool("migrate-only", false, "run database migrations and exit")

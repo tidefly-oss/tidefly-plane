@@ -1,0 +1,210 @@
+package jobs
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/tidefly-oss/tidefly-plane/internal/deploy"
+	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/queue"
+	"gorm.io/gorm"
+)
+
+type WebhookDeployHandler struct {
+	db          *gorm.DB
+	deployer    *deploy.Deployer
+	log         *logger.Logger
+	notifSvc    *notification.Service
+	notifierSvc *notification.Notifier
+}
+
+func NewWebhookDeployHandler(
+	db *gorm.DB,
+	deployer *deploy.Deployer,
+	log *logger.Logger,
+	notifSvc *notification.Service,
+	notifierSvc *notification.Notifier,
+) *WebhookDeployHandler {
+	return &WebhookDeployHandler{
+		db:          db,
+		deployer:    deployer,
+		log:         log,
+		notifSvc:    notifSvc,
+		notifierSvc: notifierSvc,
+	}
+}
+
+func (h *WebhookDeployHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
+	var p queue.WebhookDeployPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("unmarshal payload: %w", err)
+	}
+
+	started := time.Now()
+
+	var wh models.Webhook
+	if err := h.db.WithContext(ctx).First(&wh, "id = ?", p.WebhookID).Error; err != nil {
+		return h.fail(ctx, p.DeliveryID, fmt.Errorf("webhook not found: %w", err), started)
+	}
+
+	if !wh.Active {
+		return h.updateDelivery(ctx, p.DeliveryID, models.WebhookStatusFailed, "webhook is disabled", "", started)
+	}
+
+	overrides, err := expandOverrides(wh.FieldOverrides, p.Payload)
+	if err != nil {
+		return h.fail(ctx, p.DeliveryID, fmt.Errorf("expanding overrides: %w", err), started)
+	}
+
+	var jobID string
+
+	switch wh.TriggerType {
+	case models.WebhookTriggerRedeploy:
+		jobID, err = h.redeploy(ctx, &wh, p.Payload, overrides)
+	case models.WebhookTriggerDeploy:
+		jobID, err = h.deployFresh(ctx, &wh, p.Payload, overrides)
+	default:
+		err = fmt.Errorf("unknown trigger type: %s", wh.TriggerType)
+	}
+
+	if err != nil {
+		return h.fail(ctx, p.DeliveryID, err, started)
+	}
+
+	now := time.Now()
+	h.db.WithContext(ctx).Model(&wh).Updates(map[string]any{
+		"last_triggered_at": now,
+		"last_status":       models.WebhookStatusSuccess,
+		"last_error":        "",
+		"trigger_count":     gorm.Expr("trigger_count + 1"),
+	})
+
+	return h.updateDelivery(ctx, p.DeliveryID, models.WebhookStatusSuccess, "", jobID, started)
+}
+
+func (h *WebhookDeployHandler) redeploy(
+	ctx context.Context, wh *models.Webhook, p queue.WebhookPayload, overrides map[string]string,
+) (string, error) {
+	if wh.ServiceID == nil {
+		return "", fmt.Errorf("redeploy trigger requires service_id")
+	}
+	var svc models.Service
+	if err := h.db.WithContext(ctx).First(&svc, "id = ?", *wh.ServiceID).Error; err != nil {
+		return "", fmt.Errorf("service not found: %w", err)
+	}
+	containerID, err := h.findServiceContainer(ctx, svc.ID.String())
+	if err != nil {
+		return "", err
+	}
+	if err := h.deployer.Redeploy(ctx, containerID, deploy.DeployRequest{
+		ProjectID: wh.ProjectID,
+		Version:   p.Commit,
+		Fields:    overrides,
+	}); err != nil {
+		return "", fmt.Errorf("redeploy failed: %w", err)
+	}
+	h.log.Info("jobs", "webhook redeploy triggered")
+	return uuid.New().String(), nil
+}
+
+func (h *WebhookDeployHandler) deployFresh(
+	ctx context.Context, wh *models.Webhook, p queue.WebhookPayload, overrides map[string]string,
+) (string, error) {
+	if wh.GitIntegrationID == nil {
+		return "", fmt.Errorf("services trigger requires git_integration_id")
+	}
+	if wh.TemplateSlug == "" {
+		return "", fmt.Errorf("services trigger requires template_slug")
+	}
+	fields := make(map[string]string)
+	for k, v := range overrides {
+		fields[k] = v
+	}
+	if p.Branch != "" {
+		fields["GIT_BRANCH"] = p.Branch
+	}
+	if p.Tag != "" {
+		fields["GIT_TAG"] = p.Tag
+	}
+	if p.Commit != "" {
+		fields["GIT_COMMIT"] = p.Commit
+	}
+	serviceID, err := h.deployer.DeployFromTemplate(ctx, deploy.DeployRequest{
+		ProjectID:        wh.ProjectID,
+		Version:          p.Commit,
+		GitIntegrationID: *wh.GitIntegrationID,
+		RepoURL:          wh.RepoURL,
+		Branch:           p.Branch,
+		TemplateSlug:     wh.TemplateSlug,
+		Fields:           fields,
+	})
+	if err != nil {
+		return "", fmt.Errorf("services failed: %w", err)
+	}
+	h.log.Info("jobs", fmt.Sprintf(
+		"webhook services triggered: template=%s service=%s branch=%s commit=%s",
+		wh.TemplateSlug, serviceID, p.Branch, p.Commit,
+	))
+	return serviceID, nil
+}
+
+func (h *WebhookDeployHandler) findServiceContainer(ctx context.Context, serviceID string) (string, error) {
+	containers, err := h.deployer.Runtime().ListContainers(ctx, true)
+	if err != nil {
+		return "", fmt.Errorf("list containers: %w", err)
+	}
+	for _, ct := range containers {
+		if ct.Labels["tidefly-plane.service"] == serviceID {
+			return ct.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no container found for service %s", serviceID)
+}
+
+func (h *WebhookDeployHandler) fail(ctx context.Context, deliveryID string, err error, started time.Time) error {
+	_ = h.updateDelivery(ctx, deliveryID, models.WebhookStatusFailed, err.Error(), "", started)
+	_ = h.notifSvc.Publish(ctx, models.SeverityError, "Webhook services failed", err.Error())
+	h.notifierSvc.Send(ctx, notification.Event{
+		Title:   "Webhook services failed",
+		Message: err.Error(),
+		Level:   "error",
+	})
+	return err
+}
+
+func (h *WebhookDeployHandler) updateDelivery(
+	ctx context.Context, deliveryID string, status models.WebhookStatus, errMsg, jobID string, started time.Time,
+) error {
+	return h.db.WithContext(ctx).Model(&models.WebhookDelivery{}).
+		Where("id = ?", deliveryID).
+		Updates(map[string]any{
+			"status":      status,
+			"error_msg":   errMsg,
+			"job_id":      jobID,
+			"duration_ms": time.Since(started).Milliseconds(),
+		}).Error
+}
+
+func expandOverrides(raw string, p queue.WebhookPayload) (map[string]string, error) {
+	if raw == "" {
+		return map[string]string{}, nil
+	}
+	replacer := strings.NewReplacer(
+		"{{.branch}}", p.Branch,
+		"{{.commit}}", p.Commit,
+		"{{.tag}}", p.Tag,
+	)
+	expanded := replacer.Replace(raw)
+	var result map[string]string
+	if err := json.Unmarshal([]byte(expanded), &result); err != nil {
+		return nil, fmt.Errorf("invalid field_overrides JSON: %w", err)
+	}
+	return result, nil
+}

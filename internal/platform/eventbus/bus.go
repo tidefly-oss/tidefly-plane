@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/olahol/melody"
-	"github.com/tidefly-oss/tidefly-plane/internal/infrastructure/runtime"
+	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )

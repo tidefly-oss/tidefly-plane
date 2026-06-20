@@ -10,10 +10,10 @@ tasks:
   # ── Code Generation ───────────────────────────────────────────────────────
 
   wire:
-    desc: Regenerate Wire DI bindings (internal/platform/bootstrap/wire_gen.go)
+    desc: Regenerate Wire DI bindings (internal/bootstrap/wire_gen.go)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
+      - wire ./internal/bootstrap/
       - echo 'wire_gen.go updated'
 
   # ── Development ───────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ tasks:
     desc: Start backend with Air hot reload (runs wire first)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
+      - wire ./internal/bootstrap/
       - air
     dotenv:
       - "{{.HOME}}/.local/share/tidefly-plane/.env.dev"
@@ -57,7 +57,7 @@ tasks:
     desc: Build production binary (runs wire first)
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
+      - wire ./internal/bootstrap/
       - go build
         -trimpath
         -ldflags="-s -w -X github.com/tidefly-oss/tidefly-plane/internal/platform/version.Version={{.VERSION}}"
@@ -72,7 +72,7 @@ tasks:
     desc: Build Docker image
     cmds:
       - which wire || go install github.com/google/wire/cmd/wire@latest
-      - wire ./internal/platform/bootstrap/
+      - wire ./internal/bootstrap/
       - docker buildx build
         --platform linux/amd64,linux/arm64
         --build-arg VERSION={{.VERSION}}
