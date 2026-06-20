@@ -59,7 +59,7 @@ jobs:
       - name: Install Wire
         run: go install github.com/google/wire/cmd/wire@latest
       - name: Generate Wire bindings
-        run: wire ./internal/platform/bootstrap/
+        run: wire ./internal/bootstrap/
       - name: Test
         env:
           DATABASE_URL: postgres://tidefly-plane:testpassword@localhost:5432/tidefly_test?sslmode=disable
@@ -89,7 +89,7 @@ jobs:
       - name: Install Wire
         run: go install github.com/google/wire/cmd/wire@latest
       - name: Generate Wire bindings
-        run: wire ./internal/platform/bootstrap/
+        run: wire ./internal/bootstrap/
       - name: Build
         env:
           GOOS: linux

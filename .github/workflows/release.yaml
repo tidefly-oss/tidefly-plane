@@ -45,7 +45,7 @@ jobs:
         run: go install github.com/google/wire/cmd/wire@latest
 
       - name: Generate Wire bindings
-        run: wire ./internal/platform/bootstrap/
+        run: wire ./internal/bootstrap/
 
       - name: Build
         env:
