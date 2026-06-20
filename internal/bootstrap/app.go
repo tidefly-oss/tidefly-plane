@@ -232,6 +232,13 @@ func (a *App) buildRouter() chi.Router {
 		{Name: "Services", Description: "Manifest-based service management"},
 	}
 
+	// Unauthenticated health endpoint — used by Docker healthcheck binary
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
 	humaAPI := humachi.New(r, humaConfig)
 	humaAPI.UseMiddleware(middleware2.InjectHumaContext())
 
