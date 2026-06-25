@@ -5,7 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
-	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/access"
@@ -35,9 +36,9 @@ import (
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infra/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
@@ -68,17 +69,16 @@ func Register(
 	notifSvc *notification.Service,
 	gitSvc *git.Service,
 	webhookSvc *webhook.Service,
-	asynqClient *asynq.Client,
+	riverClient *river.Client[pgx.Tx],
 	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
-	caService *ca.Service,
+	caService *_ca.Service,
 	agentClient *agent.Client,
-	bus *eventbus.Bus,
+	bus *_eventbus.Bus,
 	ingressAdapter ingress.Adapter,
 ) {
 	deployer := deploy.New(rt, db)
 
-	// Wire middleware user reader into access package (breaks access → middleware cycle)
 	access.SetUserReader(func(ctx context.Context) *access.UserInfo {
 		u := middleware2.UserFromHumaCtx(ctx)
 		if u == nil {
@@ -104,8 +104,7 @@ func Register(
 	// ── Events SSE ────────────────────────────────────────────────────────────
 	events.NewHandler(rt).RegisterSSERoutes(r, sseAuth)
 
-	// ── Auth — stricter rate limit (10 req/min per IP) ────────────────────────
-	// Chi middleware fires before Huma, so this group wraps all /api/v1/auth/* routes.
+	// ── Auth ──────────────────────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
 		r.Use(middleware2.RateLimitAuth())
 		auth.NewHandler(db, jwtSvc, tokenStore, log).RegisterRoutes(api, mw)
@@ -120,7 +119,7 @@ func Register(
 	project.NewHandler(db, rt, log).RegisterRoutes(api, mw)
 	template.NewHandler(templateLoader).RegisterRoutes(api, mw)
 	volume.NewHandler(rt, deployer, db, log, bus).RegisterRoutes(api, mw, adminMw)
-	manifest.NewHandler(db, deployer, asynqClient, log, gitSvc, templateLoader, rt, ingressAdapter).RegisterRoutes(api, mw)
+	manifest.NewHandler(db, deployer, riverClient, log, gitSvc, templateLoader, rt, ingressAdapter).RegisterRoutes(api, mw)
 	dashboard.NewHandler(rt, db, log, notifSvc).RegisterRoutes(api, mw)
 
 	// ── REST + SSE ────────────────────────────────────────────────────────────
@@ -128,7 +127,7 @@ func Register(
 	backup.NewHandler(db).RegisterRoutes(api, r, mw, adminMw, sseAuth)
 	container.NewHandler(rt, db, log, caddy, bus).RegisterRoutes(api, r, mw, sseAuth)
 	applog.NewHandler(db).RegisterRoutes(api, r, mw, adminMw, sseAuth)
-	webhook.NewHandler(db, asynqClient, log, webhookSvc).RegisterRoutes(api, r, mw)
+	webhook.NewHandler(db, riverClient, log, webhookSvc).RegisterRoutes(api, r, mw)
 
 	// ── System ────────────────────────────────────────────────────────────────
 	sysh := system.NewHandler(rt, log, metricsReg, bus)

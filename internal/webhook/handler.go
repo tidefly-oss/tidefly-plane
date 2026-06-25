@@ -1,19 +1,20 @@
 package webhook
 
 import (
-	"github.com/hibiken/asynq"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	store *Store
 	svc   *Service
-	queue *asynq.Client
-	log   *logger.Logger
+	queue *river.Client[pgx.Tx]
+	log   *_logger.Logger
 }
 
-func NewHandler(db *gorm.DB, queue *asynq.Client, log *logger.Logger, svc *Service) *Handler {
+func NewHandler(db *gorm.DB, queue *river.Client[pgx.Tx], log *_logger.Logger, svc *Service) *Handler {
 	return &Handler{
 		store: NewStore(db),
 		svc:   svc,

@@ -5,7 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 // ── GetSettings ───────────────────────────────────────────────────────────────
@@ -74,8 +74,8 @@ func (h *Handler) updateSettings(ctx context.Context, input *updateSettingsInput
 		NotifyOnWebhookFail:          input.Body.NotifyOnWebhookFail,
 		APIDocsEnabled:               input.Body.APIDocsEnabled,
 	})
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:  logger.AuditAdminSettingsUpdate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:  _logger.AuditAdminSettingsUpdate,
 		Success: err == nil,
 	})
 	if err != nil {

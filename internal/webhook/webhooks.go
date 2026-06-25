@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type webhookResponse struct {
@@ -134,8 +134,8 @@ func (h *Handler) create(ctx context.Context, input *webhookCreateInput) (*creat
 	if err := h.store.Create(ctx, &wh); err != nil {
 		return nil, fmt.Errorf("create webhook: %w", err)
 	}
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditWebhookCreate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditWebhookCreate,
 		ResourceID: wh.ID,
 		Success:    true,
 		Details:    "name=" + wh.Name + " project=" + input.PID,
@@ -182,7 +182,7 @@ func (h *Handler) update(ctx context.Context, input *webhookUpdateInput) (*updat
 	if err := h.store.Update(ctx, wh, updates); err != nil {
 		return nil, fmt.Errorf("update webhook: %w", err)
 	}
-	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditWebhookUpdate, ResourceID: wh.ID, Success: true})
+	h.log.Audit(ctx, _logger.AuditEntry{Action: _logger.AuditWebhookUpdate, ResourceID: wh.ID, Success: true})
 	return &updateOutput{Body: webhookResponse{Webhook: *wh, URL: BuildURL(ctx, wh.ID)}}, nil
 }
 
@@ -205,7 +205,7 @@ func (h *Handler) rotateSecret(ctx context.Context, input *rotateSecretInput) (*
 	if err := h.store.Update(ctx, wh, map[string]any{"secret": encSecret}); err != nil {
 		return nil, fmt.Errorf("save secret: %w", err)
 	}
-	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditWebhookRotate, ResourceID: wh.ID, Success: true})
+	h.log.Audit(ctx, _logger.AuditEntry{Action: _logger.AuditWebhookRotate, ResourceID: wh.ID, Success: true})
 	out := &rotateSecretOutput{}
 	out.Body.Secret = rawSecret
 	return out, nil
@@ -222,8 +222,8 @@ func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, er
 	if err := h.store.Delete(ctx, wh); err != nil {
 		return nil, fmt.Errorf("delete webhook: %w", err)
 	}
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditWebhookDelete,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditWebhookDelete,
 		ResourceID: wh.ID,
 		Success:    true,
 		Details:    "name=" + wh.Name,

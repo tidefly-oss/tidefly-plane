@@ -6,8 +6,8 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type listInput struct {
@@ -84,13 +84,13 @@ func (h *Handler) start(ctx context.Context, input *startInput) (*startOutput, e
 		}
 	}
 	err := h.runtime.StartContainer(ctx, input.ID)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action: logger.AuditContainerStart, ResourceID: input.ID, Success: err == nil,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action: _logger.AuditContainerStart, ResourceID: input.ID, Success: err == nil,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start container: %w", err)
 	}
-	h.publishContainerEvent(ctx, input.ID, eventbus.EventContainerUpdated)
+	h.publishContainerEvent(ctx, input.ID, _eventbus.EventContainerUpdated)
 	out := &startOutput{}
 	out.Body.Status = "started"
 	return out, nil
@@ -104,13 +104,13 @@ func (h *Handler) stop(ctx context.Context, input *stopInput) (*stopOutput, erro
 		}
 	}
 	err := h.runtime.StopContainer(ctx, input.ID, runtime.StopOptions{})
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action: logger.AuditContainerStop, ResourceID: input.ID, Success: err == nil,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action: _logger.AuditContainerStop, ResourceID: input.ID, Success: err == nil,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stop container: %w", err)
 	}
-	h.publishContainerEvent(ctx, input.ID, eventbus.EventContainerUpdated)
+	h.publishContainerEvent(ctx, input.ID, _eventbus.EventContainerUpdated)
 	out := &stopOutput{}
 	out.Body.Status = "stopped"
 	return out, nil
@@ -126,8 +126,8 @@ func (h *Handler) restart(ctx context.Context, input *restartInput) (*restartOut
 		}
 	}
 	err := h.runtime.RestartContainer(ctx, input.ID, runtime.StopOptions{})
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action: logger.AuditContainerRestart, ResourceID: input.ID, Success: err == nil,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action: _logger.AuditContainerRestart, ResourceID: input.ID, Success: err == nil,
 	})
 	if err != nil {
 		if svcName != "" {
@@ -140,7 +140,7 @@ func (h *Handler) restart(ctx context.Context, input *restartInput) (*restartOut
 		h.db.Model(&models.Service{}).Where("name = ?", svcName).
 			Update("status", models.ServiceStatusRunning)
 	}
-	h.publishContainerEvent(ctx, input.ID, eventbus.EventContainerUpdated)
+	h.publishContainerEvent(ctx, input.ID, _eventbus.EventContainerUpdated)
 	out := &restartOutput{}
 	out.Body.Status = "restarted"
 	return out, nil
@@ -151,10 +151,10 @@ func (h *Handler) publishContainerEvent(ctx context.Context, containerID string,
 	if err != nil {
 		return
 	}
-	h.bus.Publish(eventbus.Event{
+	h.bus.Publish(_eventbus.Event{
 		Type:  evtType,
-		Topic: eventbus.TopicContainers,
-		Payload: eventbus.ContainerUpdatedPayload{
+		Topic: _eventbus.TopicContainers,
+		Payload: _eventbus.ContainerUpdatedPayload{
 			ID: ct.ID, Name: ct.Name, Status: string(ct.Status), State: ct.State,
 		},
 	})

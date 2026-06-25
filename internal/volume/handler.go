@@ -9,21 +9,21 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/access"
 	"github.com/tidefly-oss/tidefly-plane/internal/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	runtime  runtime.Runtime
 	deployer *deploy.Deployer
-	log      *logger.Logger
+	log      *_logger.Logger
 	db       *gorm.DB
-	bus      *eventbus.Bus
+	bus      *_eventbus.Bus
 	access   *access.Store
 }
 
-func NewHandler(rt runtime.Runtime, deployer *deploy.Deployer, db *gorm.DB, log *logger.Logger, bus *eventbus.Bus) *Handler {
+func NewHandler(rt runtime.Runtime, deployer *deploy.Deployer, db *gorm.DB, log *_logger.Logger, bus *_eventbus.Bus) *Handler {
 	return &Handler{runtime: rt, deployer: deployer, log: log, db: db, bus: bus, access: access.NewStore(db)}
 }
 
@@ -96,14 +96,14 @@ func (h *Handler) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 
 func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, error) {
 	err := h.runtime.DeleteVolume(ctx, input.ID)
-	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditVolumeDelete, ResourceID: input.ID, Success: err == nil})
+	h.log.Audit(ctx, _logger.AuditEntry{Action: _logger.AuditVolumeDelete, ResourceID: input.ID, Success: err == nil})
 	if err != nil {
 		return nil, fmt.Errorf("delete volume: %w", err)
 	}
-	h.bus.Publish(eventbus.Event{
-		Type:    eventbus.EventVolumeDeleted,
-		Topic:   eventbus.TopicVolumes,
-		Payload: eventbus.VolumeDeletedPayload{Name: input.ID},
+	h.bus.Publish(_eventbus.Event{
+		Type:    _eventbus.EventVolumeDeleted,
+		Topic:   _eventbus.TopicVolumes,
+		Payload: _eventbus.VolumeDeletedPayload{Name: input.ID},
 	})
 	return nil, nil
 }

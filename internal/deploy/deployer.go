@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/secret"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_secret"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 )
 
@@ -78,7 +78,7 @@ func (d *Deployer) Deploy(ctx context.Context, tmpl *template.Template, req Depl
 
 	// ── 2. Auto-generate service_name if not provided ─────────────────────────
 	if vars["service_name"] == "" {
-		name, err := secret.GenerateName(tmpl.Slug)
+		name, err := _secret.GenerateName(tmpl.Slug)
 		if err != nil {
 			return nil, fmt.Errorf("generate service name: %w", err)
 		}
@@ -93,11 +93,11 @@ func (d *Deployer) Deploy(ctx context.Context, tmpl *template.Template, req Depl
 		if field.Type != "credential" {
 			continue
 		}
-		plaintext, err := secret.Generate()
+		plaintext, err := _secret.Generate()
 		if err != nil {
 			return nil, fmt.Errorf("generate secret %q: %w", field.Key, err)
 		}
-		hash, err := secret.Hash(plaintext)
+		hash, err := _secret.Hash(plaintext)
 		if err != nil {
 			return nil, fmt.Errorf("hash secret %q: %w", field.Key, err)
 		}

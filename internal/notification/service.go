@@ -10,7 +10,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -26,18 +26,18 @@ var normalizeRe = regexp.MustCompile(
 
 type Service struct {
 	db  *gorm.DB
-	bus *eventbus.Bus
+	bus *_eventbus.Bus
 }
 
-func New(db *gorm.DB, bus *eventbus.Bus) *Service {
+func New(db *gorm.DB, bus *_eventbus.Bus) *Service {
 	return &Service{db: db, bus: bus}
 }
 
 func (s *Service) publish(n *models.Notification) {
-	s.bus.Publish(eventbus.Event{
-		Type:  eventbus.EventNotificationCreated,
-		Topic: eventbus.TopicNotifications,
-		Payload: eventbus.NotificationCreatedPayload{
+	s.bus.Publish(_eventbus.Event{
+		Type:  _eventbus.EventNotificationCreated,
+		Topic: _eventbus.TopicNotifications,
+		Payload: _eventbus.NotificationCreatedPayload{
 			ID:      n.ID,
 			Title:   n.ContainerName,
 			Message: n.Message,

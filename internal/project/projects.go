@@ -8,7 +8,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type listOutput struct {
@@ -83,8 +83,8 @@ func (h *Handler) create(ctx context.Context, input *createInput) (*createOutput
 	}
 	networkName := "tidefly_" + input.Body.Name
 	if err := h.runtime.CreateNetwork(ctx, networkName); err != nil {
-		h.log.Audit(ctx, logger.AuditEntry{
-			Action:  logger.AuditProjectCreate,
+		h.log.Audit(ctx, _logger.AuditEntry{
+			Action:  _logger.AuditProjectCreate,
 			Success: false,
 			Details: fmt.Sprintf("name=%s network_create_failed err=%s", input.Body.Name, err),
 		})
@@ -98,15 +98,15 @@ func (h *Handler) create(ctx context.Context, input *createInput) (*createOutput
 	}
 	if err := h.svc.Create(p); err != nil {
 		_ = h.runtime.DeleteNetwork(ctx, networkName)
-		h.log.Audit(ctx, logger.AuditEntry{
-			Action:  logger.AuditProjectCreate,
+		h.log.Audit(ctx, _logger.AuditEntry{
+			Action:  _logger.AuditProjectCreate,
 			Success: false,
 			Details: fmt.Sprintf("name=%s db_create_failed err=%s", input.Body.Name, err),
 		})
 		return nil, fmt.Errorf("create project: %w", err)
 	}
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditProjectCreate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditProjectCreate,
 		ResourceID: p.ID,
 		Success:    true,
 		Details:    fmt.Sprintf("name=%s network=%s", p.Name, networkName),
@@ -132,8 +132,8 @@ func (h *Handler) update(ctx context.Context, input *updateInput) (*updateOutput
 		Description: input.Body.Description,
 		Color:       input.Body.Color,
 	})
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditProjectUpdate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditProjectUpdate,
 		ResourceID: p.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("name=%s changes: %v", p.Name, changes),
@@ -153,8 +153,8 @@ func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, er
 		h.log.Warn("project", fmt.Sprintf("could not delete network %q: %v", p.NetworkName, err))
 	}
 	err = h.svc.Delete(&p)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditProjectDelete,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditProjectDelete,
 		ResourceID: p.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("name=%s network=%s", p.Name, p.NetworkName),

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/agent/proto"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -32,13 +32,13 @@ type Server struct {
 	proto.UnimplementedAgentServiceServer
 
 	db        *gorm.DB
-	caService *ca.Service
+	caService *_ca.Service
 	registry  *Registry
 	grpcSrv   *grpc.Server
 	port      string
 }
 
-func NewServer(db *gorm.DB, caService *ca.Service, port string) *Server {
+func NewServer(db *gorm.DB, caService *_ca.Service, port string) *Server {
 	if port == "" {
 		port = defaultGRPCPort
 	}

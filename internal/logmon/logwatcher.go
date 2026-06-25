@@ -14,8 +14,8 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 // ── Patterns ──────────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ func cleanLine(line string) string {
 
 type Watcher struct {
 	rt          runtime.Runtime
-	log         *logger.Logger
+	log         *_logger.Logger
 	cfg         config.LogWatcherConfig
 	notifSvc    *notification.Service
 	notifierSvc *notification.Notifier
@@ -98,7 +98,7 @@ type Watcher struct {
 
 func New(
 	rt runtime.Runtime,
-	log *logger.Logger,
+	log *_logger.Logger,
 	cfg config.LogWatcherConfig,
 	notifSvc *notification.Service,
 	notifierSvc *notification.Notifier,

@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
 )
 
 // ── Register ──────────────────────────────────────────────────────────────────
@@ -184,10 +184,10 @@ func (h *Handler) revokeWorker(ctx context.Context, input *revokeWorkerInput) (*
 		h.log.Error("agent", "revoke worker failed", err)
 		return nil, huma.Error500InternalServerError("failed to revoke worker")
 	}
-	h.bus.Publish(eventbus.Event{
-		Type:    eventbus.EventWorkerUpdated,
-		Topic:   eventbus.TopicWorkers,
-		Payload: eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "revoked"},
+	h.bus.Publish(_eventbus.Event{
+		Type:    _eventbus.EventWorkerUpdated,
+		Topic:   _eventbus.TopicWorkers,
+		Payload: _eventbus.WorkerUpdatedPayload{ID: input.ID, Status: "revoked"},
 	})
 	return &struct{}{}, nil
 }
@@ -211,10 +211,10 @@ func (h *Handler) deleteWorker(ctx context.Context, input *deleteWorkerInput) (*
 		h.log.Error("agent", "delete worker failed", err)
 		return nil, huma.Error500InternalServerError("failed to delete worker")
 	}
-	h.bus.Publish(eventbus.Event{
-		Type:    eventbus.EventWorkerUpdated,
-		Topic:   eventbus.TopicWorkers,
-		Payload: eventbus.WorkerUpdatedPayload{ID: worker.ID, Status: "deleted"},
+	h.bus.Publish(_eventbus.Event{
+		Type:    _eventbus.EventWorkerUpdated,
+		Topic:   _eventbus.TopicWorkers,
+		Payload: _eventbus.WorkerUpdatedPayload{ID: worker.ID, Status: "deleted"},
 	})
 	return &struct{}{}, nil
 }

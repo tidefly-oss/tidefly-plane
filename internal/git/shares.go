@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type setSharesInput struct {
@@ -29,8 +29,8 @@ func (h *Handler) setShares(ctx context.Context, input *setSharesInput) (*setSha
 		return nil, err
 	}
 	txErr := h.store.SetShares(m.ID, input.Body.ProjectIDs)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditGitRepoLink,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditGitRepoLink,
 		ResourceID: m.ID,
 		Success:    txErr == nil,
 		Details: fmt.Sprintf(

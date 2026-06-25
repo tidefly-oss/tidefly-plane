@@ -1,12 +1,13 @@
 package manifest
 
 import (
-	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 	"github.com/tidefly-oss/tidefly-plane/internal/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/git"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ type Handler struct {
 func NewHandler(
 	db *gorm.DB,
 	deployer *deploy.Deployer,
-	queue *asynq.Client,
+	queue *river.Client[pgx.Tx],
 	log *applogger.Logger,
 	gitSvc *git.Service,
 	templateLd *template.Loader,

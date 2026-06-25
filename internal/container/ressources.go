@@ -9,7 +9,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/manifest"
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type getResourcesInput struct {
@@ -119,8 +119,8 @@ func (h *Handler) updateResources(ctx context.Context, input *updateResourcesInp
 		}
 	}
 	result, err := h.runtime.UpdateResources(ctx, input.ID, cfg)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditContainerUpdate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditContainerUpdate,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details: fmt.Sprintf("cpu=%.2f mem=%dMB swap=%dMB restart=%s retries=%d replicas=%d strategy=%s",

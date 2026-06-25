@@ -6,18 +6,18 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	svc *AuthService
-	log *logger.Logger
+	log *_logger.Logger
 }
 
 // NewHandler wires db + jwt + tokenStore into AuthService and returns a Handler.
 // Signature matches bootstrap/register.go: NewHandler(db, jwtSvc, tokenStore, log)
-func NewHandler(db *gorm.DB, jwtSvc *JWTService, tokenStore *TokenStore, log *logger.Logger) *Handler {
+func NewHandler(db *gorm.DB, jwtSvc *JWTService, tokenStore *TokenStore, log *_logger.Logger) *Handler {
 	store := NewStore(db)
 	svc := NewAuthService(store, jwtSvc, tokenStore)
 	return &Handler{svc: svc, log: log}

@@ -32,49 +32,40 @@ func InitializeApp() (*App, func(), error) {
 		return nil, nil, err
 	}
 	jwtService := ProvideJWTService(config)
-	client, cleanup3, err := ProvideRedis(config)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	tokenStore := ProvideTokenStore(client)
-	caddyClient := ProvideCaddyClient(config)
+	tokenStore := ProvideTokenStore(db)
+	client := ProvideCaddyClient(config)
 	loader := ProvideTemplateLoader()
 	bus := ProvideEventBus()
 	service := ProvideNotificationService(db, bus)
 	gitService := ProvideGitService(config)
 	webhookService := ProvideWebhookService(config)
+	pool, cleanup3, err := ProvidePgxPool(config)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	notifier := ProvideNotifier(db, logger)
 	registry := ProvideMetricsRegistry()
-	adapter := ProvideCaddyIngress(caddyClient)
-	caService, err := ProvideCAService(config, db)
+	adapter := ProvideCaddyIngress(client)
+	_caService, err := ProvideCAService(config, db)
 	if err != nil {
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	server := ProvideAgentServer(config, db, caService)
+	server := ProvideAgentServer(config, db, _caService)
 	agentClient := ProvideAgentClient(server)
-	jobsServer, cleanup4, err := ProvideJobServer(config, runtime, db, logger, service, notifier, registry, adapter, agentClient)
+	jobsServer, cleanup4, err := ProvideJobServer(config, pool, runtime, db, logger, service, notifier, registry, adapter, agentClient)
 	if err != nil {
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	asynqClient, cleanup5, err := ProvideAsynqClient(config)
-	if err != nil {
-		cleanup4()
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	app := NewApp(config, logger, runtime, db, jwtService, tokenStore, caddyClient, loader, service, gitService, webhookService, jobsServer, asynqClient, notifier, registry, caService, server, bus, adapter)
+	app := NewApp(config, logger, runtime, db, jwtService, tokenStore, client, loader, service, gitService, webhookService, jobsServer, notifier, registry, _caService, server, bus, adapter)
 	return app, func() {
-		cleanup5()
 		cleanup4()
 		cleanup3()
 		cleanup2()

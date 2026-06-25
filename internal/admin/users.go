@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 // ── ListUsers ─────────────────────────────────────────────────────────────────
@@ -66,8 +66,8 @@ func (h *Handler) createUser(ctx context.Context, input *createUserInput) (*crea
 		input.Body.Role = models.RoleMember
 	}
 	u, plain, err := h.users.Create(input.Body.Email, input.Body.Name, input.Body.Role)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditAdminUserCreate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditAdminUserCreate,
 		ResourceID: u.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("email=%s role=%s", input.Body.Email, input.Body.Role),
@@ -98,8 +98,8 @@ type updateUserOutput struct {
 
 func (h *Handler) updateUser(ctx context.Context, input *updateUserInput) (*updateUserOutput, error) {
 	u, changes, err := h.users.Update(input.ID, input.Body.Name, input.Body.Role, input.Body.Active)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditAdminUserUpdate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditAdminUserUpdate,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("%v", changes),
@@ -118,8 +118,8 @@ type deleteUserInput struct {
 
 func (h *Handler) deleteUser(ctx context.Context, input *deleteUserInput) (*struct{}, error) {
 	u, err := h.users.Delete(input.ID)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditAdminUserDelete,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditAdminUserDelete,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("email=%s", u.Email),
@@ -144,8 +144,8 @@ type resetUserPasswordOutput struct {
 
 func (h *Handler) resetUserPassword(ctx context.Context, input *resetUserPasswordInput) (*resetUserPasswordOutput, error) {
 	u, plain, err := h.users.ResetPassword(input.ID)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditAdminUserPasswordReset,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditAdminUserPasswordReset,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("email=%s", u.Email),
@@ -176,8 +176,8 @@ func (h *Handler) setProjectMembers(ctx context.Context, input *setProjectMember
 		input.Body.ProjectIDs = []string{}
 	}
 	u, err := h.users.SetProjectMembers(input.ID, input.Body.ProjectIDs)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditAdminUserProjectsUpdate,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditAdminUserProjectsUpdate,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("email=%s projects=%d", u.Email, len(input.Body.ProjectIDs)),

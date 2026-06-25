@@ -1,5 +1,5 @@
 // Package logger provides structured logging, audit logging, and notification integration for Tidefly.
-package logger
+package _logger
 
 import (
 	"context"

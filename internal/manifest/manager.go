@@ -7,14 +7,14 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 	"github.com/tidefly-oss/tidefly-plane/internal/deploy"
 	"github.com/tidefly-oss/tidefly-plane/internal/git"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/queue"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
@@ -23,6 +23,74 @@ var (
 	ErrAlreadyExists   = errors.New("service already exists")
 	ErrInvalidManifest = errors.New("invalid manifest")
 )
+
+// Lokale River JobArgs — identische JSON-Felder wie jobs.DeployArgs,
+// gleiche Kind() Strings → River Worker in jobs package pickt sie auf.
+// Kein Import von jobs nötig → kein Zyklus.
+
+type deployArgs struct {
+	ServiceID        string `json:"service_id"`
+	ManifestJSON     string `json:"manifest_json,omitempty"`
+	Image            string `json:"image,omitempty"`
+	ComposeYAML      string `json:"compose_yaml,omitempty"`
+	Dockerfile       string `json:"dockerfile,omitempty"`
+	GitURL           string `json:"git_url,omitempty"`
+	GitToken         string `json:"git_token,omitempty"`
+	Name             string `json:"name,omitempty"`
+	StackName        string `json:"stack_name,omitempty"`
+	ProjectID        string `json:"project_id,omitempty"`
+	Domain           string `json:"domain,omitempty"`
+	Port             int    `json:"port,omitempty"`
+	Expose           bool   `json:"expose,omitempty"`
+	Branch           string `json:"branch,omitempty"`
+	GitIntegrationID string `json:"git_integration_id,omitempty"`
+	Replicas         int    `json:"replicas,omitempty"`
+	Strategy         string `json:"strategy,omitempty"`
+}
+
+func (deployArgs) Kind() string { return "service:deploy" }
+
+type redeployArgs struct {
+	ServiceID     string `json:"service_id"`
+	ImageOverride string `json:"image_override,omitempty"`
+	GitToken      string `json:"git_token,omitempty"`
+}
+
+func (redeployArgs) Kind() string { return "service:redeploy" }
+
+type updateArgs struct {
+	ServiceID string `json:"service_id"`
+	Image     string `json:"image,omitempty"`
+	Domain    string `json:"domain,omitempty"`
+	Replicas  int    `json:"replicas,omitempty"`
+}
+
+func (updateArgs) Kind() string { return "service:update" }
+
+type deleteArgs struct {
+	ServiceID string `json:"service_id"`
+}
+
+func (deleteArgs) Kind() string { return "service:delete" }
+
+// DeployInput ist der HTTP-seitige Input-Type (von services.go benutzt).
+type DeployInput struct {
+	ManifestJSON     string `json:"manifest_json,omitempty"`
+	Image            string `json:"image,omitempty"`
+	ComposeYAML      string `json:"compose,omitempty"`
+	Dockerfile       string `json:"dockerfile,omitempty"`
+	GitURL           string `json:"git_url,omitempty"`
+	Name             string `json:"name,omitempty"`
+	StackName        string `json:"stack_name,omitempty"`
+	ProjectID        string `json:"project_id,omitempty"`
+	Domain           string `json:"domain,omitempty"`
+	Port             int    `json:"port,omitempty"`
+	Expose           bool   `json:"expose,omitempty"`
+	Branch           string `json:"branch,omitempty"`
+	GitIntegrationID string `json:"git_integration_id,omitempty"`
+	Replicas         int    `json:"replicas,omitempty"`
+	Strategy         string `json:"strategy,omitempty"`
+}
 
 type CreateResult struct {
 	Service *models.Service
@@ -53,7 +121,7 @@ type DriftView struct {
 type Manager struct {
 	db       *gorm.DB
 	deployer *deploy.Deployer
-	queue    *asynq.Client
+	queue    *river.Client[pgx.Tx]
 	log      *applogger.Logger
 	gitSvc   *git.Service
 	rt       runtime.Runtime
@@ -63,16 +131,13 @@ type Manager struct {
 func NewManager(
 	db *gorm.DB,
 	deployer *deploy.Deployer,
-	q *asynq.Client,
+	q *river.Client[pgx.Tx],
 	log *applogger.Logger,
 	gitSvc *git.Service,
 	rt runtime.Runtime,
 	ingressAdapter ingress.Adapter,
 ) *Manager {
-	return &Manager{
-		db: db, deployer: deployer, queue: q, log: log,
-		gitSvc: gitSvc, rt: rt, ingress: ingressAdapter,
-	}
+	return &Manager{db: db, deployer: deployer, queue: q, log: log, gitSvc: gitSvc, rt: rt, ingress: ingressAdapter}
 }
 
 func (m *Manager) BuildView(ctx context.Context, svc *models.Service) (rv *RuntimeView, dv *DriftView) {
@@ -100,13 +165,9 @@ func (m *Manager) BuildView(ctx context.Context, svc *models.Service) (rv *Runti
 			}
 		}
 	}
-	notRunning := rv == nil || (rv.Status != string(runtime.StatusRunning))
+	notRunning := rv == nil || rv.Status != string(runtime.StatusRunning)
 	replicaDrift := rv != nil && rv.Replicas != desiredReplicas
-	dv = &DriftView{
-		NotRunning:   notRunning,
-		ReplicaDrift: replicaDrift,
-		HasDrift:     notRunning || replicaDrift,
-	}
+	dv = &DriftView{NotRunning: notRunning, ReplicaDrift: replicaDrift, HasDrift: notRunning || replicaDrift}
 	return rv, dv
 }
 
@@ -137,68 +198,70 @@ func (m *Manager) ResolveGitToken(integrationID string) (string, error) {
 	return m.gitSvc.ResolveSecret(integration.SecretEncrypted)
 }
 
-// Create accepts a queue.APIInput so manifest does not need to import converter.
-func (m *Manager) Create(_ context.Context, input queue.APIInput, gitToken string) (*CreateResult, error) {
-	name := input.ServiceName()
+func (m *Manager) Create(ctx context.Context, input DeployInput, gitToken string) (*CreateResult, error) {
+	name := input.Name
 	if name == "" && input.ManifestJSON == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidManifest)
 	}
-	if input.ManifestJSON == "" && input.Image == "" && input.ComposeYAML == "" &&
-		input.Dockerfile == "" && input.GitURL == "" {
+	if input.ManifestJSON == "" && input.Image == "" && input.ComposeYAML == "" && input.Dockerfile == "" && input.GitURL == "" {
 		return nil, fmt.Errorf("%w: provide image, compose, dockerfile, or git_url", ErrInvalidManifest)
 	}
 	var count int64
-	m.db.Model(&models.Service{}).
-		Where("name = ? AND manifest_service = ?", name, true).
-		Count(&count)
+	m.db.Model(&models.Service{}).Where("name = ? AND manifest_service = ?", name, true).Count(&count)
 	if count > 0 {
 		return nil, ErrAlreadyExists
 	}
 	svc := &models.Service{
-		ID:              uuid.New(),
-		Name:            name,
-		Status:          models.ServiceStatusDeploying,
-		ManifestService: true,
-		ProjectID:       input.ProjectID,
+		ID: uuid.New(), Name: name,
+		Status: models.ServiceStatusDeploying, ManifestService: true, ProjectID: input.ProjectID,
 	}
 	if err := m.db.Create(svc).Error; err != nil {
 		return nil, fmt.Errorf("persist service: %w", err)
 	}
-	if err := queue.EnqueueServiceDeploy(m.queue, svc.ID.String(), input, gitToken); err != nil {
+	if _, err := m.queue.Insert(ctx, deployArgs{
+		ServiceID: svc.ID.String(), ManifestJSON: input.ManifestJSON, Image: input.Image,
+		ComposeYAML: input.ComposeYAML, Dockerfile: input.Dockerfile, GitURL: input.GitURL,
+		GitToken: gitToken, Name: input.Name, StackName: input.StackName, ProjectID: input.ProjectID,
+		Domain: input.Domain, Port: input.Port, Expose: input.Expose, Branch: input.Branch,
+		GitIntegrationID: input.GitIntegrationID, Replicas: input.Replicas, Strategy: input.Strategy,
+	}, &river.InsertOpts{Queue: "critical"}); err != nil {
 		m.db.Delete(svc)
 		return nil, fmt.Errorf("enqueue deploy: %w", err)
 	}
 	return &CreateResult{Service: svc}, nil
 }
 
-func (m *Manager) Update(_ context.Context, id string, req UpdateRequest) (*models.Service, error) {
+func (m *Manager) Update(ctx context.Context, id string, req UpdateRequest) (*models.Service, error) {
 	svc, err := m.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if err := queue.EnqueueServiceUpdate(m.queue, id, req.Image, req.Domain, req.Replicas); err != nil {
+	if _, err := m.queue.Insert(ctx, updateArgs{ServiceID: id, Image: req.Image, Domain: req.Domain, Replicas: req.Replicas},
+		&river.InsertOpts{Queue: "critical"}); err != nil {
 		return nil, fmt.Errorf("enqueue update: %w", err)
 	}
 	svc.Status = models.ServiceStatusDeploying
 	return svc, nil
 }
 
-func (m *Manager) Delete(_ context.Context, id string) error {
+func (m *Manager) Delete(ctx context.Context, id string) error {
 	svc, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 	m.db.Model(svc).Update("status", models.ServiceStatusStopped)
-	return queue.EnqueueServiceDelete(m.queue, id)
+	_, err = m.queue.Insert(ctx, deleteArgs{ServiceID: id}, &river.InsertOpts{Queue: "critical"})
+	return err
 }
 
-func (m *Manager) Redeploy(_ context.Context, id, imageOverride string) (*models.Service, error) {
+func (m *Manager) Redeploy(ctx context.Context, id, imageOverride string) (*models.Service, error) {
 	svc, err := m.Get(id)
 	if err != nil {
 		return nil, err
 	}
 	m.db.Model(svc).Update("status", models.ServiceStatusDeploying)
-	if err := queue.EnqueueServiceRedeploy(m.queue, id, imageOverride); err != nil {
+	if _, err := m.queue.Insert(ctx, redeployArgs{ServiceID: id, ImageOverride: imageOverride},
+		&river.InsertOpts{Queue: "critical"}); err != nil {
 		return nil, fmt.Errorf("enqueue redeploy: %w", err)
 	}
 	return svc, nil

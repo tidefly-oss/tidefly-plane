@@ -10,7 +10,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
-	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 	"github.com/tidefly-oss/tidefly-plane/internal/agent"
 	"github.com/tidefly-oss/tidefly-plane/internal/auth"
 	"github.com/tidefly-oss/tidefly-plane/internal/git"
@@ -22,10 +23,10 @@ import (
 	middleware2 "github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"github.com/tidefly-oss/tidefly-plane/internal/system"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
@@ -46,13 +47,13 @@ type App struct {
 	gitSvc      *git.Service
 	webhookSvc  *webhook.Service
 	jobServer   *jobs.Server
-	asynq       *asynq.Client
+	riverClient *river.Client[pgx.Tx]
 	notifSvc    *notification.Service
 	notifierSvc *notification.Notifier
 	metrics     *metrics.Registry
-	caService   *ca.Service
+	caService   *_ca.Service
 	agentSrv    *agent.Server
-	bus         *eventbus.Bus
+	bus         *_eventbus.Bus
 	ingress     ingress.Adapter
 }
 
@@ -69,12 +70,11 @@ func NewApp(
 	gitSvc *git.Service,
 	webhookSvc *webhook.Service,
 	jobServer *jobs.Server,
-	asynqClient *asynq.Client,
 	notifierSvc *notification.Notifier,
 	metricsReg *metrics.Registry,
-	caService *ca.Service,
+	caService *_ca.Service,
 	agentSrv *agent.Server,
-	bus *eventbus.Bus,
+	bus *_eventbus.Bus,
 	ingressAdapter ingress.Adapter,
 ) *App {
 	app := &App{
@@ -90,7 +90,7 @@ func NewApp(
 		gitSvc:      gitSvc,
 		webhookSvc:  webhookSvc,
 		jobServer:   jobServer,
-		asynq:       asynqClient,
+		riverClient: jobServer.Client(),
 		notifierSvc: notifierSvc,
 		metrics:     metricsReg,
 		caService:   caService,
@@ -177,9 +177,9 @@ func (a *App) serveHTTP(ctx context.Context, r http.Handler) error {
 		Addr:           addr,
 		Handler:        r,
 		ReadTimeout:    15 * time.Second,
-		WriteTimeout:   60 * time.Second, // SSE streams brauchen länger
+		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 1 MB
+		MaxHeaderBytes: 1 << 20,
 	}
 	go func() {
 		<-ctx.Done()
@@ -232,7 +232,6 @@ func (a *App) buildRouter() chi.Router {
 		{Name: "Services", Description: "Manifest-based service management"},
 	}
 
-	// Unauthenticated health endpoint — used by Docker healthcheck binary
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -245,7 +244,7 @@ func (a *App) buildRouter() chi.Router {
 	Register(
 		humaAPI, r, a.jwtSvc, a.tokenStore, a.caddy, a.rt, a.db, a.log,
 		a.templateLd, a.notifSvc, a.gitSvc, a.webhookSvc,
-		a.asynq, a.notifierSvc, a.metrics,
+		a.riverClient, a.notifierSvc, a.metrics,
 		a.caService,
 		agent.NewClient(a.agentSrv.Registry()),
 		a.bus,

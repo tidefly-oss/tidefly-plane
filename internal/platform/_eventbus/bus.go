@@ -1,4 +1,4 @@
-package eventbus
+package _eventbus
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/olahol/melody"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 

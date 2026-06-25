@@ -4,8 +4,8 @@ import (
 	"github.com/olahol/melody"
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infra/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
@@ -14,18 +14,18 @@ type Handler struct {
 	store   *Store
 	access  *accessService
 	db      *gorm.DB
-	log     *logger.Logger
+	log     *_logger.Logger
 	caddy   *caddysvc.Client
-	bus     *eventbus.Bus
+	bus     *_eventbus.Bus
 	execMel *melody.Melody
 }
 
 func NewHandler(
 	rt runtime.Runtime,
 	db *gorm.DB,
-	log *logger.Logger,
+	log *_logger.Logger,
 	caddy *caddysvc.Client,
-	bus *eventbus.Bus,
+	bus *_eventbus.Bus,
 ) *Handler {
 	m := melody.New()
 	m.Config.MaxMessageSize = 32 * 1024

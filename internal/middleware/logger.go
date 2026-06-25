@@ -13,7 +13,7 @@ import (
 	"time"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 // ── Response Writer Wrapper ───────────────────────────────────────────────────

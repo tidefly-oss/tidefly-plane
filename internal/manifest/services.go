@@ -6,8 +6,7 @@ import (
 	"fmt"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
-	"github.com/tidefly-oss/tidefly-plane/internal/queue"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 type serviceView struct {
@@ -57,7 +56,7 @@ func (h *Handler) get(ctx context.Context, input *getInput) (*getOutput, error) 
 // ── Create ────────────────────────────────────────────────────────────────────
 
 type serviceCreateInput struct {
-	Body queue.APIInput
+	Body DeployInput
 }
 
 type createOutput struct {
@@ -72,12 +71,11 @@ func (h *Handler) create(ctx context.Context, input *serviceCreateInput) (*creat
 
 	result, err := h.mgr.Create(ctx, input.Body, gitToken)
 	if err != nil {
-		svcName := input.Body.ServiceName()
 		h.log.Audit(ctx, applogger.AuditEntry{
 			Action:     applogger.AuditContainerDeploy,
-			ResourceID: svcName,
+			ResourceID: input.Body.Name,
 			Success:    false,
-			Details:    fmt.Sprintf("service=%s error=%s", svcName, err.Error()),
+			Details:    fmt.Sprintf("service=%s error=%s", input.Body.Name, err.Error()),
 		})
 		if errors.Is(err, ErrAlreadyExists) {
 			return nil, huma409("service already exists")
@@ -89,9 +87,9 @@ func (h *Handler) create(ctx context.Context, input *serviceCreateInput) (*creat
 	}
 	h.log.Audit(ctx, applogger.AuditEntry{
 		Action:     applogger.AuditContainerDeploy,
-		ResourceID: input.Body.ServiceName(),
+		ResourceID: input.Body.Name,
 		Success:    true,
-		Details:    fmt.Sprintf("service=%s url=%s", input.Body.ServiceName(), result.URL),
+		Details:    fmt.Sprintf("service=%s url=%s", input.Body.Name, result.URL),
 	})
 	out := &createOutput{}
 	out.Body.Service = result.Service
@@ -137,13 +135,13 @@ func (h *Handler) createFromTemplate(ctx context.Context, input *createFromTempl
 		return nil, huma400(fmt.Sprintf("resolve template: %s", err.Error()))
 	}
 
-	apiInput := queue.APIInput{
+	deployArgs := DeployInput{
 		ManifestJSON: resolved.ManifestJSON,
 		ProjectID:    input.Body.ProjectID,
 		Expose:       input.Body.Expose,
 		Domain:       input.Body.Domain,
 	}
-	result, err := h.mgr.Create(ctx, apiInput, "")
+	result, err := h.mgr.Create(ctx, deployArgs, "")
 	if err != nil {
 		h.log.Audit(ctx, applogger.AuditEntry{
 			Action:     applogger.AuditContainerDeploy,

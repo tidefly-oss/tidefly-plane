@@ -12,8 +12,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/argon2"
+	"gorm.io/gorm"
 )
 
 // ── Errors ────────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// ── Service ───────────────────────────────────────────────────────────────────
+// ── JWTService ────────────────────────────────────────────────────────────────
 
 type JWTService struct {
 	signingKey      []byte
@@ -68,37 +68,23 @@ func NewJWTService(signingKey string) *JWTService {
 	}
 }
 
-// SigningKey returns the raw signing key bytes.
-// Required by echo-jwt middleware config.
-func (s *JWTService) SigningKey() []byte {
-	return s.signingKey
-}
+func (s *JWTService) SigningKey() []byte { return s.signingKey }
 
 // ── Password hashing ──────────────────────────────────────────────────────────
 
 func HashPassword(password string) (string, error) {
 	p := defaultArgon2Params
-
 	salt := make([]byte, p.saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generating salt: %w", err)
 	}
-
 	hash := argon2.IDKey([]byte(password), salt, p.iterations, p.memory, p.parallelism, p.keyLen)
-
-	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
-	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
-
-	encoded := fmt.Sprintf(
+	return fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version,
-		p.memory,
-		p.iterations,
-		p.parallelism,
-		b64Salt,
-		b64Hash,
-	)
-	return encoded, nil
+		argon2.Version, p.memory, p.iterations, p.parallelism,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	), nil
 }
 
 func VerifyPassword(password, encodedHash string) error {
@@ -106,9 +92,7 @@ func VerifyPassword(password, encodedHash string) error {
 	if err != nil {
 		return ErrInvalidHash
 	}
-
 	computed := argon2.IDKey([]byte(password), salt, p.iterations, p.memory, p.parallelism, p.keyLen)
-
 	if subtle.ConstantTimeCompare(hash, computed) != 1 {
 		return ErrInvalidPassword
 	}
@@ -117,38 +101,27 @@ func VerifyPassword(password, encodedHash string) error {
 
 func decodeHash(encoded string) (*argon2Params, []byte, []byte, error) {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 {
+	if len(parts) != 6 || parts[1] != "argon2id" {
 		return nil, nil, nil, ErrInvalidHash
 	}
-	if parts[1] != "argon2id" {
-		return nil, nil, nil, ErrInvalidHash
-	}
-
 	var version int
-	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil {
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || version != argon2.Version {
 		return nil, nil, nil, ErrInvalidHash
 	}
-	if version != argon2.Version {
-		return nil, nil, nil, ErrInvalidHash
-	}
-
 	p := &argon2Params{}
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.memory, &p.iterations, &p.parallelism); err != nil {
 		return nil, nil, nil, ErrInvalidHash
 	}
-
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return nil, nil, nil, ErrInvalidHash
 	}
 	p.saltLen = uint32(len(salt))
-
 	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
 		return nil, nil, nil, ErrInvalidHash
 	}
 	p.keyLen = uint32(len(hash))
-
 	return p, salt, hash, nil
 }
 
@@ -157,9 +130,7 @@ func decodeHash(encoded string) (*argon2Params, []byte, []byte, error) {
 func (s *JWTService) GenerateAccessToken(userID, email, role string) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
-		Role:   role,
+		UserID: userID, Email: email, Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -180,14 +151,12 @@ func (s *JWTService) ValidateAccessToken(tokenStr string) (*Claims, error) {
 			return s.signingKey, nil
 		}, jwt.WithValidMethods([]string{"HS256"}),
 	)
-
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
 		}
 		return nil, ErrInvalidToken
 	}
-
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, ErrInvalidToken
@@ -222,61 +191,75 @@ func GenerateAPIToken() (string, error) {
 	return fmt.Sprintf("tfy_%s", base64.URLEncoding.EncodeToString(b)), nil
 }
 
-// ── TokenStore ────────────────────────────────────────────────────────────────
+// ── TokenStore — PostgreSQL backed ───────────────────────────────────────────
+// Replaces the Redis implementation. Refresh tokens are stored in
+// the refresh_tokens table. Same semantics, zero extra dependencies.
 
-const (
-	refreshTokenPrefix = "refresh:"
-	refreshTokenTTL    = 7 * 24 * time.Hour
-)
+const refreshTokenTTL = 7 * 24 * time.Hour
 
-type TokenStore struct {
-	rdb *redis.Client
+// refreshToken is the GORM model for the refresh_tokens table.
+type refreshToken struct {
+	Token     string    `gorm:"primaryKey"`
+	UserID    string    `gorm:"index;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
 }
 
-func NewTokenStore(rdb *redis.Client) *TokenStore {
-	return &TokenStore{rdb: rdb}
+func (refreshToken) TableName() string { return "refresh_tokens" }
+
+type TokenStore struct {
+	db *gorm.DB
+}
+
+func NewTokenStore(db *gorm.DB) *TokenStore {
+	_ = db.AutoMigrate(&refreshToken{})
+	return &TokenStore{db: db}
 }
 
 func (s *TokenStore) StoreRefreshToken(ctx context.Context, token, userID string) error {
-	return s.rdb.Set(ctx, refreshTokenPrefix+token, userID, refreshTokenTTL).Err()
+	return s.db.WithContext(ctx).Create(&refreshToken{
+		Token:     token,
+		UserID:    userID,
+		ExpiresAt: time.Now().UTC().Add(refreshTokenTTL),
+	}).Error
 }
 
 func (s *TokenStore) ValidateRefreshToken(ctx context.Context, token string) (string, error) {
-	userID, err := s.rdb.Get(ctx, refreshTokenPrefix+token).Result()
+	var rt refreshToken
+	err := s.db.WithContext(ctx).
+		Where("token = ? AND expires_at > ?", token, time.Now().UTC()).
+		First(&rt).Error
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", ErrInvalidToken
 		}
-		return "", fmt.Errorf("redis get: %w", err)
+		return "", fmt.Errorf("db get: %w", err)
 	}
-	return userID, nil
+	return rt.UserID, nil
 }
 
 func (s *TokenStore) RevokeRefreshToken(ctx context.Context, token string) error {
-	return s.rdb.Del(ctx, refreshTokenPrefix+token).Err()
+	return s.db.WithContext(ctx).
+		Where("token = ?", token).
+		Delete(&refreshToken{}).Error
 }
 
-// RevokeAllUserTokens scans all refresh keys and deletes those belonging to userID.
 func (s *TokenStore) RevokeAllUserTokens(ctx context.Context, userID string) error {
-	var cursor uint64
-	for {
-		keys, next, err := s.rdb.Scan(ctx, cursor, refreshTokenPrefix+"*", 100).Result()
-		if err != nil {
-			return fmt.Errorf("redis scan: %w", err)
-		}
-		for _, key := range keys {
-			if val, err := s.rdb.Get(ctx, key).Result(); err == nil && val == userID {
-				s.rdb.Del(ctx, key)
-			}
-		}
-		cursor = next
-		if cursor == 0 {
-			break
-		}
-	}
-	return nil
+	return s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Delete(&refreshToken{}).Error
 }
 
+// ExtendRefreshToken verlängert die Laufzeit eines Tokens.
 func (s *TokenStore) ExtendRefreshToken(ctx context.Context, token string) error {
-	return s.rdb.Expire(ctx, refreshTokenPrefix+token, refreshTokenTTL).Err()
+	return s.db.WithContext(ctx).
+		Model(&refreshToken{}).
+		Where("token = ?", token).
+		Update("expires_at", time.Now().UTC().Add(refreshTokenTTL)).Error
+}
+
+// Cleanup löscht abgelaufene Tokens — wird vom RetentionWorker aufgerufen.
+func (s *TokenStore) Cleanup(ctx context.Context) error {
+	return s.db.WithContext(ctx).
+		Where("expires_at <= ?", time.Now().UTC()).
+		Delete(&refreshToken{}).Error
 }

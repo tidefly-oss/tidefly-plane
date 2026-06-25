@@ -9,7 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 )
 
 // ── Register ──────────────────────────────────────────────────────────────────
@@ -161,8 +161,8 @@ func (h *Handler) changePassword(ctx context.Context, input *changePasswordInput
 	}
 
 	err = h.svc.ChangePassword(&u, input.Body.CurrentPassword, input.Body.NewPassword)
-	h.log.Audit(ctx, logger.AuditEntry{
-		Action:     logger.AuditPasswordChange,
+	h.log.Audit(ctx, _logger.AuditEntry{
+		Action:     _logger.AuditPasswordChange,
 		ResourceID: claims.UserID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("email=%s reason=%v", claims.Email, err),

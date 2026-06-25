@@ -1,14 +1,16 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/queue"
 )
 
 func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
@@ -54,27 +56,20 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	delivery := models.WebhookDelivery{
-		ID: uuid.New().String(), WebhookID: wh.ID,
-		Provider: string(provider), EventType: payload.EventType,
-		Branch: payload.Branch, Commit: payload.Commit,
-		CommitMsg: payload.CommitMsg, PushedBy: payload.PushedBy,
-		RepoURL: payload.RepoURL, Status: models.WebhookStatusPending,
-	}
-	h.store.CreateDelivery(ctx, &delivery)
-
-	qp := queue.WebhookPayload{
-		Provider:  string(payload.Provider),
+		ID:        uuid.New().String(),
+		WebhookID: wh.ID,
+		Provider:  string(provider),
 		EventType: payload.EventType,
 		Branch:    payload.Branch,
-		Tag:       payload.Tag,
 		Commit:    payload.Commit,
 		CommitMsg: payload.CommitMsg,
 		PushedBy:  payload.PushedBy,
 		RepoURL:   payload.RepoURL,
-		RepoName:  payload.RepoName,
+		Status:    models.WebhookStatusPending,
 	}
+	h.store.CreateDelivery(ctx, &delivery)
 
-	if err := queue.EnqueueWebhookDeploy(h.queue, wh.ID, delivery.ID, qp); err != nil {
+	if err := h.enqueueWebhookDeploy(ctx, wh.ID, delivery.ID, payload); err != nil {
 		h.store.UpdateDelivery(ctx, &delivery, map[string]any{
 			"status":    models.WebhookStatusFailed,
 			"error_msg": err.Error(),
@@ -85,4 +80,19 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 
 	h.store.UpdateLastTriggered(ctx, wh, models.WebhookStatusPending)
 	writeJSON(http.StatusAccepted, map[string]string{"status": "accepted", "delivery_id": delivery.ID})
+}
+
+func (h *Handler) enqueueWebhookDeploy(ctx context.Context, webhookID, deliveryID string, payload *Payload) error {
+	args := jobs.WebhookArgs{
+		WebhookID:  webhookID,
+		DeliveryID: deliveryID,
+	}
+	args.Payload.Branch = payload.Branch
+	args.Payload.Tag = payload.Tag
+	args.Payload.Commit = payload.Commit
+
+	_, err := h.queue.Insert(ctx, args, &river.InsertOpts{
+		Queue: river.QueueDefault,
+	})
+	return err
 }

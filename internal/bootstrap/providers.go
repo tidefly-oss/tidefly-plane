@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/wire"
-	"github.com/hibiken/asynq"
-	goredis "github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/agent"
@@ -16,17 +17,16 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/database"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	caddyingress "github.com/tidefly-oss/tidefly-plane/internal/infra/ingress/caddy"
-	"github.com/tidefly-oss/tidefly-plane/internal/infra/redis"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime/docker"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime/podman"
 	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_crypto"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/crypto"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 	"github.com/tidefly-oss/tidefly-plane/internal/webhook"
@@ -36,8 +36,7 @@ var ProviderSet = wire.NewSet(
 	ProvideConfig,
 	ProvideLogger,
 	ProvideDatabase,
-	ProvideRedis,
-	ProvideAsynqClient,
+	ProvidePgxPool,
 	ProvideRuntime,
 	ProvideJWTService,
 	ProvideTokenStore,
@@ -91,21 +90,18 @@ func ProvideDatabase(cfg *config.Config, log *applogger.Logger) (*gorm.DB, func(
 	return db, func() {}, nil
 }
 
-func ProvideRedis(cfg *config.Config) (*goredis.Client, func(), error) {
-	client, err := redis.Connect(cfg.Redis.URL)
+// ProvidePgxPool creates a pgxpool from the same DATABASE_URL.
+// River uses pgx directly (not GORM) for its job queue tables.
+func ProvidePgxPool(cfg *config.Config) (*pgxpool.Pool, func(), error) {
+	pool, err := pgxpool.New(context.Background(), cfg.Database.URL)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("pgxpool: %w", err)
 	}
-	return client, func() { _ = client.Close() }, nil
-}
-
-func ProvideAsynqClient(cfg *config.Config) (*asynq.Client, func(), error) {
-	client := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:     cfg.Redis.Addr,
-		Username: cfg.Redis.User,
-		Password: cfg.Redis.Password,
-	})
-	return client, func() { _ = client.Close() }, nil
+	if err := pool.Ping(context.Background()); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("pgxpool: ping failed: %w", err)
+	}
+	return pool, func() { pool.Close() }, nil
 }
 
 func ProvideRuntime(cfg *config.Config, db *gorm.DB) (runtime.Runtime, error) {
@@ -115,6 +111,7 @@ func ProvideRuntime(cfg *config.Config, db *gorm.DB) (runtime.Runtime, error) {
 	case runtime.RuntimePodman:
 		return podman.New(cfg.Runtime.SocketPath, db)
 	default:
+		// Auto-detect: try Docker first, then Podman
 		if d, err := docker.New(cfg.Runtime.SocketPath, db); err == nil {
 			if err := d.Ping(context.Background()); err == nil {
 				return d, nil
@@ -133,8 +130,10 @@ func ProvideJWTService(cfg *config.Config) *auth.JWTService {
 	return auth.NewJWTService(cfg.Auth.JWTSecret)
 }
 
-func ProvideTokenStore(rc *goredis.Client) *auth.TokenStore {
-	return auth.NewTokenStore(rc)
+// ProvideTokenStore now uses the DB instead of Redis for token storage.
+// auth.TokenStore must accept *gorm.DB — update that struct if needed.
+func ProvideTokenStore(db *gorm.DB) *auth.TokenStore {
+	return auth.NewTokenStore(db)
 }
 
 func ProvideCaddyClient(cfg *config.Config) *caddysvc.Client {
@@ -155,11 +154,11 @@ func ProvideTemplateLoader() *template.Loader {
 	return template.NewLoader()
 }
 
-func ProvideEventBus() *eventbus.Bus {
-	return eventbus.New()
+func ProvideEventBus() *_eventbus.Bus {
+	return _eventbus.New()
 }
 
-func ProvideNotificationService(db *gorm.DB, bus *eventbus.Bus) *notification.Service {
+func ProvideNotificationService(db *gorm.DB, bus *_eventbus.Bus) *notification.Service {
 	return notification.New(db, bus)
 }
 
@@ -181,6 +180,7 @@ func ProvideMetricsRegistry() *metrics.Registry {
 
 func ProvideJobServer(
 	cfg *config.Config,
+	pool *pgxpool.Pool,
 	rt runtime.Runtime,
 	db *gorm.DB,
 	log *applogger.Logger,
@@ -190,29 +190,46 @@ func ProvideJobServer(
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
 ) (*jobs.Server, func(), error) {
-	if !cfg.Jobs.Enabled || cfg.Redis.URL == "" {
+	if !cfg.Jobs.Enabled {
 		return nil, func() {}, nil
 	}
-	srv, err := jobs.NewServer(cfg.Redis, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient)
+
+	// Run River migrations so job tables exist before starting
+	ctx := context.Background()
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("river migrate: acquire conn: %w", err)
+	}
+	defer conn.Release()
+
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), &rivermigrate.Config{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("river migrator: %w", err)
+	}
+	if _, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, &rivermigrate.MigrateOpts{}); err != nil {
+		return nil, nil, fmt.Errorf("river migrate: %w", err)
+	}
+
+	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient)
 	if err != nil {
 		return nil, nil, err
 	}
 	return srv, func() {}, nil
 }
 
-func ProvideCAService(cfg *config.Config, db *gorm.DB) (*ca.Service, error) {
-	encKey, err := crypto.KeyFromBase64(cfg.App.EncryptionKey)
+func ProvideCAService(cfg *config.Config, db *gorm.DB) (*_ca.Service, error) {
+	encKey, err := _crypto.KeyFromBase64(cfg.App.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("ca: invalid encryption key: %w", err)
 	}
-	svc := ca.New(db, encKey)
+	svc := _ca.New(db, encKey)
 	if err := svc.Init(); err != nil {
 		return nil, fmt.Errorf("ca: init failed: %w", err)
 	}
 	return svc, nil
 }
 
-func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service) *agent.Server {
+func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *_ca.Service) *agent.Server {
 	return agent.NewServer(db, caService, ":"+cfg.App.AgentGRPCPort)
 }
 

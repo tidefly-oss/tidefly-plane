@@ -1,4 +1,4 @@
-package eventbus
+package _eventbus
 
 // Topic constants
 const (

@@ -17,7 +17,7 @@ import (
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockernetwork "github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
 )
 
 const (
@@ -189,10 +189,10 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 
 	// For non-self-updates publish done immediately.
 	// For self (plane), the new container publishes done after it starts.
-	h.bus.Publish(eventbus.Event{
-		Type:    eventbus.EventDeployDone,
-		Topic:   eventbus.TopicDeploy,
-		Payload: eventbus.DeployDonePayload{DeployID: systemUpdateID},
+	h.bus.Publish(_eventbus.Event{
+		Type:    _eventbus.EventDeployDone,
+		Topic:   _eventbus.TopicDeploy,
+		Payload: _eventbus.DeployDonePayload{DeployID: systemUpdateID},
 	})
 	return nil
 }
@@ -498,10 +498,10 @@ func (h *Handler) recreateContainer(ctx context.Context, cli *dockerclient.Clien
 
 func (h *Handler) publishProgress(step, message string) {
 	h.log.Info("self_update", fmt.Sprintf("[%s] %s", step, message))
-	h.bus.Publish(eventbus.Event{
-		Type:  eventbus.EventDeployProgress,
-		Topic: eventbus.TopicDeploy,
-		Payload: eventbus.DeployProgressPayload{
+	h.bus.Publish(_eventbus.Event{
+		Type:  _eventbus.EventDeployProgress,
+		Topic: _eventbus.TopicDeploy,
+		Payload: _eventbus.DeployProgressPayload{
 			DeployID: systemUpdateID,
 			Step:     step,
 			Message:  message,
@@ -510,10 +510,10 @@ func (h *Handler) publishProgress(step, message string) {
 }
 
 func (h *Handler) publishFailed(errMsg string) {
-	h.bus.Publish(eventbus.Event{
-		Type:  eventbus.EventDeployFailed,
-		Topic: eventbus.TopicDeploy,
-		Payload: eventbus.DeployFailedPayload{
+	h.bus.Publish(_eventbus.Event{
+		Type:  _eventbus.EventDeployFailed,
+		Topic: _eventbus.TopicDeploy,
+		Payload: _eventbus.DeployFailedPayload{
 			DeployID: systemUpdateID,
 			Error:    errMsg,
 		},

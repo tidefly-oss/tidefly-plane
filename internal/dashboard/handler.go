@@ -3,7 +3,7 @@ package dashboard
 import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"gorm.io/gorm"
 )
 
@@ -12,11 +12,11 @@ import (
 type Handler struct {
 	runtime  runtime.Runtime
 	db       *gorm.DB
-	log      *logger.Logger
+	log      *_logger.Logger
 	notifSvc *notification.Service
 }
 
-func NewHandler(rt runtime.Runtime, db *gorm.DB, log *logger.Logger, notifSvc *notification.Service) *Handler {
+func NewHandler(rt runtime.Runtime, db *gorm.DB, log *_logger.Logger, notifSvc *notification.Service) *Handler {
 	return &Handler{
 		runtime:  rt,
 		db:       db,
