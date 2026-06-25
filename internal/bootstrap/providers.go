@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"github.com/tidefly-oss/tidefly-plane/internal/reconciler"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/agent"
@@ -47,6 +48,7 @@ var ProviderSet = wire.NewSet(
 	ProvideNotifier,
 	ProvideGitService,
 	ProvideWebhookService,
+	ProvideReconciler,
 	ProvideJobServer,
 	ProvideMetricsRegistry,
 	ProvideEventBus,
@@ -178,6 +180,16 @@ func ProvideMetricsRegistry() *metrics.Registry {
 	return metrics.New()
 }
 
+func ProvideReconciler(
+	db *gorm.DB,
+	rt runtime.Runtime,
+	ing ingress.Adapter,
+	notifSvc *notification.Service,
+	log *applogger.Logger,
+) *reconciler.Reconciler {
+	return reconciler.New(db, rt, ing, notifSvc, log)
+}
+
 func ProvideJobServer(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
@@ -189,6 +201,7 @@ func ProvideJobServer(
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
+	rec *reconciler.Reconciler,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled {
 		return nil, func() {}, nil
@@ -210,10 +223,7 @@ func ProvideJobServer(
 		return nil, nil, fmt.Errorf("river migrate: %w", err)
 	}
 
-	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient)
-	if err != nil {
-		return nil, nil, err
-	}
+	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient, rec)
 	return srv, func() {}, nil
 }
 

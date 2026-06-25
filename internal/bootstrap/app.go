@@ -28,6 +28,7 @@ import (
 	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/reconciler"
 	"github.com/tidefly-oss/tidefly-plane/internal/system"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 	"github.com/tidefly-oss/tidefly-plane/internal/webhook"
@@ -55,6 +56,7 @@ type App struct {
 	agentSrv    *agent.Server
 	bus         *_eventbus.Bus
 	ingress     ingress.Adapter
+	reconciler  *reconciler.Reconciler
 }
 
 func NewApp(
@@ -97,6 +99,7 @@ func NewApp(
 		agentSrv:    agentSrv,
 		bus:         bus,
 		ingress:     ingressAdapter,
+		reconciler:  reconciler.New(db, rt, ingressAdapter, notifSvc, log),
 	}
 
 	log.SetNotifier(
@@ -148,6 +151,7 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 		eg.Go(func() error { watcher.Run(ctx); return nil })
 		a.log.Info("app", "container log watcher enabled")
 	}
+
 	if a.jobServer != nil {
 		eg.Go(func() error { return a.jobServer.Run(ctx) })
 		a.log.Info("app", fmt.Sprintf(
@@ -155,6 +159,11 @@ func (a *App) startBackgroundServices(eg *errgroup.Group, ctx context.Context) {
 			a.cfg.Jobs.CleanupCron, a.cfg.Jobs.HealthCheckCron,
 		))
 	}
+
+	// Reconciler — Kubernetes-style desired↔actual loop (30s interval)
+	eg.Go(func() error { return a.reconciler.Run(ctx) })
+	a.log.Info("app", "reconciler started (interval: 30s)")
+
 	a.caService.StartRenewalJob(ctx)
 	a.log.Info("app", "CA certificate renewal job started")
 

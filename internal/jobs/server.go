@@ -17,11 +17,10 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
+	"github.com/tidefly-oss/tidefly-plane/internal/reconciler"
 	"gorm.io/gorm"
 )
 
-// Server owns the River client + workers and all periodic schedules.
-// Zero Redis dependency — everything runs on the existing PostgreSQL connection.
 type Server struct {
 	river  *river.Client[pgx.Tx]
 	pool   *pgxpool.Pool
@@ -42,6 +41,7 @@ func NewServer(
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
+	rec *reconciler.Reconciler,
 ) (*Server, error) {
 	workers := river.NewWorkers()
 
@@ -56,11 +56,12 @@ func NewServer(
 	river.AddWorker(workers, &CleanupWorker{h: svc})
 	river.AddWorker(workers, &HealthCheckWorker{h: svc})
 	river.AddWorker(workers, &AutoscaleWorker{h: svc})
-	river.AddWorker(workers, &UpdateCheckWorker{h: sys})
 	river.AddWorker(workers, &MetricsWorker{h: sys})
 	river.AddWorker(workers, &RetentionWorker{h: sys})
 	river.AddWorker(workers, &RuntimeCleanupWorker{h: sys})
 	river.AddWorker(workers, &RuntimeHealthWorker{h: sys})
+	// UpdateCheckWorker delegates digest polling to the Reconciler
+	river.AddWorker(workers, NewUpdateCheckWorker(rec))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
@@ -90,9 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.river.Start(ctx); err != nil {
 		return fmt.Errorf("jobs: river start: %w", err)
 	}
-
 	go s.watchContainerEvents(ctx)
-
 	s.log.Info("jobs", fmt.Sprintf("river job server started (runtime: %s)", s.system.rt.Type()))
 
 	<-ctx.Done()
@@ -103,53 +102,37 @@ func (s *Server) Run(ctx context.Context) error {
 	return s.river.Stop(stopCtx)
 }
 
-// Client returns the River client for enqueueing jobs from HTTP handlers.
 func (s *Server) Client() *river.Client[pgx.Tx] {
 	return s.river
 }
 
-// buildPeriodicJobs maps schedules → River PeriodicJob entries.
-// River v0.39 has no built-in cron parser — use PeriodicInterval for
-// fixed intervals, and a custom cronSchedule for cron expressions.
 func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(
 			river.PeriodicInterval(15*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return MetricsArgs{}, &river.InsertOpts{
-					Queue:      "critical",
-					UniqueOpts: river.UniqueOpts{ByArgs: true},
-				}
+				return MetricsArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(30*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return HealthCheckArgs{}, &river.InsertOpts{
-					Queue:      "critical",
-					UniqueOpts: river.UniqueOpts{ByArgs: true},
-				}
+				return HealthCheckArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			nil,
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(30*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return AutoscaleArgs{}, &river.InsertOpts{
-					Queue:      "critical",
-					UniqueOpts: river.UniqueOpts{ByArgs: true},
-				}
+				return AutoscaleArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			nil,
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(6*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return UpdateCheckArgs{}, &river.InsertOpts{
-					Queue:      "low",
-					UniqueOpts: river.UniqueOpts{ByArgs: true},
-				}
+				return UpdateCheckArgs{}, &river.InsertOpts{Queue: "low", UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
 		),
@@ -185,9 +168,6 @@ func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 	}
 }
 
-// intervalFromCron converts common cron expressions to a duration-based schedule.
-// River v0.39 has no cron parser — we map the most common patterns.
-// For production use, replace with a proper cron library implementing PeriodicSchedule.
 func intervalFromCron(expr string, fallback time.Duration) river.PeriodicSchedule {
 	switch expr {
 	case "@hourly", "0 * * * *":
@@ -207,7 +187,6 @@ func intervalFromCron(expr string, fallback time.Duration) river.PeriodicSchedul
 	}
 }
 
-// riverErrorHandler implements river.ErrorHandler with the correct v0.39 signature.
 type riverErrorHandler struct {
 	log     *_logger.Logger
 	metrics *metrics.Registry

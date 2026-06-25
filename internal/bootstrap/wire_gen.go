@@ -57,7 +57,8 @@ func InitializeApp() (*App, func(), error) {
 	}
 	server := ProvideAgentServer(config, db, _caService)
 	agentClient := ProvideAgentClient(server)
-	jobsServer, cleanup4, err := ProvideJobServer(config, pool, runtime, db, logger, service, notifier, registry, adapter, agentClient)
+	reconciler := ProvideReconciler(db, runtime, adapter, service, logger)
+	jobsServer, cleanup4, err := ProvideJobServer(config, pool, runtime, db, logger, service, notifier, registry, adapter, agentClient, reconciler)
 	if err != nil {
 		cleanup3()
 		cleanup2()
