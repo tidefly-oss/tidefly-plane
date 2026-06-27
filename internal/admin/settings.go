@@ -32,6 +32,7 @@ type updateSettingsInput struct {
 		SMTPPassword                 *string `json:"smtp_password,omitempty"`
 		SMTPFrom                     *string `json:"smtp_from,omitempty"`
 		SMTPTLSEnabled               *bool   `json:"smtp_tls_enabled,omitempty"`
+		NotificationsEnabled         *bool   `json:"notifications_enabled,omitempty"`
 		ExternalNotificationsEnabled *bool   `json:"external_notifications_enabled,omitempty"`
 		SlackWebhookURL              *string `json:"slack_webhook_url,omitempty"`
 		DiscordWebhookURL            *string `json:"discord_webhook_url,omitempty"`
@@ -58,6 +59,7 @@ func (h *Handler) updateSettings(ctx context.Context, input *updateSettingsInput
 		SMTPPassword:                 input.Body.SMTPPassword,
 		SMTPFrom:                     input.Body.SMTPFrom,
 		SMTPTLSEnabled:               input.Body.SMTPTLSEnabled,
+		NotificationsEnabled:         input.Body.NotificationsEnabled,
 		ExternalNotificationsEnabled: input.Body.ExternalNotificationsEnabled,
 		SlackWebhookURL:              input.Body.SlackWebhookURL,
 		DiscordWebhookURL:            input.Body.DiscordWebhookURL,
