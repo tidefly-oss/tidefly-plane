@@ -21,6 +21,7 @@ const (
 	healthTimeout    = 60 * time.Second
 	stuckDeployAfter = 10 * time.Minute
 	proxyNetwork     = "tidefly_proxy"
+	colLastError     = "last_error"
 )
 
 type Action string
@@ -62,13 +63,13 @@ func New(
 	return &Reconciler{db: db, rt: rt, ingress: ing, notif: notif, log: log}
 }
 
-// Run starts the reconcile loop — blocks until ctx cancelled.
+// Run starts the reconcile loop — blocks until ctx canceled.
 func (r *Reconciler) Run(ctx context.Context) error {
 	r.log.Info("reconciler", "starting (interval: 30s)")
 	ticker := time.NewTicker(loopInterval)
 	defer ticker.Stop()
 
-	r.reconcileAll(ctx) // run immediately on start
+	r.reconcileAll(ctx)
 
 	for {
 		select {
@@ -105,7 +106,7 @@ func (r *Reconciler) reconcileAll(ctx context.Context) {
 	for i := range services {
 		svc := &services[i]
 		if svc.WorkerID != "" {
-			continue // remote worker handles its own reconcile
+			continue
 		}
 		r.reconcileOne(ctx, svc, byService)
 	}
@@ -148,7 +149,6 @@ func (r *Reconciler) reconcileOne(ctx context.Context, svc *models.Service, bySe
 	}
 }
 
-// diff computes desired vs actual state and returns the action to take.
 func (r *Reconciler) diff(svc *models.Service, resolved *manifest.ResolvedManifest, actual []runtime.Container) Delta {
 	base := Delta{ServiceID: svc.ID.String(), ServiceName: svc.Name}
 
@@ -159,37 +159,36 @@ func (r *Reconciler) diff(svc *models.Service, resolved *manifest.ResolvedManife
 
 	running := countRunning(actual)
 
-	// 1. No containers at all → heal
 	if running == 0 {
 		return Delta{Action: ActionHeal, Reason: "no running containers", ServiceID: base.ServiceID, ServiceName: base.ServiceName}
 	}
 
-	// 2. OCI image digest drift → update (blue-green or rolling)
 	if svc.HasImageDrift() {
 		return Delta{
-			Action:    ActionUpdate,
-			Reason:    fmt.Sprintf("image digest changed (%s → %s)", shortDigest(svc.DeployedDigest), shortDigest(svc.RemoteDigest)),
-			ServiceID: base.ServiceID, ServiceName: base.ServiceName,
+			Action:      ActionUpdate,
+			Reason:      fmt.Sprintf("image digest changed (%s → %s)", shortDigest(svc.DeployedDigest), shortDigest(svc.RemoteDigest)),
+			ServiceID:   base.ServiceID,
+			ServiceName: base.ServiceName,
 		}
 	}
 
-	// 3. Replica count drift → scale
 	if running < desiredReplicas {
 		return Delta{
-			Action:    ActionScaleUp,
-			Reason:    fmt.Sprintf("replicas %d < desired %d", running, desiredReplicas),
-			ServiceID: base.ServiceID, ServiceName: base.ServiceName,
+			Action:      ActionScaleUp,
+			Reason:      fmt.Sprintf("replicas %d < desired %d", running, desiredReplicas),
+			ServiceID:   base.ServiceID,
+			ServiceName: base.ServiceName,
 		}
 	}
 	if running > desiredReplicas {
 		return Delta{
-			Action:    ActionScaleDown,
-			Reason:    fmt.Sprintf("replicas %d > desired %d", running, desiredReplicas),
-			ServiceID: base.ServiceID, ServiceName: base.ServiceName,
+			Action:      ActionScaleDown,
+			Reason:      fmt.Sprintf("replicas %d > desired %d", running, desiredReplicas),
+			ServiceID:   base.ServiceID,
+			ServiceName: base.ServiceName,
 		}
 	}
 
-	// 4. Stuck in deploying → heal
 	if svc.Status == models.ServiceStatusDeploying && time.Since(svc.UpdatedAt) > stuckDeployAfter {
 		return Delta{Action: ActionHeal, Reason: "stuck deploying >10m", ServiceID: base.ServiceID, ServiceName: base.ServiceName}
 	}
@@ -197,12 +196,9 @@ func (r *Reconciler) diff(svc *models.Service, resolved *manifest.ResolvedManife
 	return Delta{Action: ActionNoop, ServiceID: base.ServiceID, ServiceName: base.ServiceName}
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-
 func (r *Reconciler) heal(ctx context.Context, svc *models.Service, resolved *manifest.ResolvedManifest) {
 	time.Sleep(healDelay)
 
-	// Re-check — might have recovered already
 	containers, _ := r.rt.ListContainers(ctx, true)
 	for _, ct := range containers {
 		if ct.Labels["tidefly.service"] == svc.Name && !runtime.NeedsRestart(ct.Status) {
@@ -221,12 +217,12 @@ func (r *Reconciler) heal(ctx context.Context, svc *models.Service, resolved *ma
 
 	if err := r.rt.CreateContainer(ctx, spec); err != nil {
 		r.log.Error("reconciler", fmt.Sprintf("heal: create failed for %q", svc.Name), err)
-		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, "last_error": err.Error()})
+		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, colLastError: err.Error()})
 		r.notify(ctx, svc.Name, models.SeverityError, fmt.Sprintf("self-heal FAILED for %q: %s — manual intervention required", svc.Name, err.Error()))
 		return
 	}
 
-	r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusRunning, "last_error": ""})
+	r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusRunning, colLastError: ""})
 	r.log.Info("reconciler", fmt.Sprintf("heal: %q recovered", svc.Name))
 	r.notify(ctx, svc.Name, models.SeverityInfo, fmt.Sprintf("service %q recovered automatically", svc.Name))
 }
@@ -248,7 +244,6 @@ func (r *Reconciler) scaleUp(ctx context.Context, svc *models.Service, resolved 
 }
 
 func (r *Reconciler) scaleDown(ctx context.Context, _ *models.Service, containers []runtime.Container, current int) {
-	// Remove highest-named replica first (newest)
 	var toRemove *runtime.Container
 	for i := range containers {
 		ct := &containers[i]
@@ -272,13 +267,13 @@ func (r *Reconciler) update(ctx context.Context, svc *models.Service, resolved *
 	switch resolved.Scaling.Strategy {
 	case "blue-green":
 		err = r.blueGreen(ctx, svc, resolved)
-	default: // rolling, recreate, or empty
+	default:
 		err = r.rolling(ctx, svc, resolved)
 	}
 
 	if err != nil {
 		r.log.Error("reconciler", fmt.Sprintf("update failed for %q", svc.Name), err)
-		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, "last_error": err.Error()})
+		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, colLastError: err.Error()})
 		return
 	}
 
@@ -287,7 +282,7 @@ func (r *Reconciler) update(ctx context.Context, svc *models.Service, resolved *
 		"deployed_digest":  svc.RemoteDigest,
 		"update_available": false,
 		"update_source":    "",
-		"last_error":       "",
+		colLastError:       "",
 	})
 	r.notify(ctx, svc.Name, models.SeverityInfo, fmt.Sprintf("service %q updated to latest image", svc.Name))
 }
@@ -304,13 +299,11 @@ func (r *Reconciler) redeploy(ctx context.Context, svc *models.Service, resolved
 
 	if err := r.rt.CreateContainer(ctx, spec); err != nil {
 		r.log.Error("reconciler", fmt.Sprintf("redeploy failed for %q", svc.Name), err)
-		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, "last_error": err.Error()})
+		r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusFailed, colLastError: err.Error()})
 		return
 	}
-	r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusRunning, "last_error": ""})
+	r.db.Model(svc).Updates(map[string]any{"status": models.ServiceStatusRunning, colLastError: ""})
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 func (r *Reconciler) removeContainers(ctx context.Context, serviceName string) {
 	containers, err := r.rt.ListContainers(ctx, true)

@@ -202,7 +202,7 @@ func ProvideJobServer(
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
 	rec *reconciler.Reconciler,
-	bus *eventbus.Bus, // NEU
+	bus *eventbus.Bus,
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled {
 		return nil, func() {}, nil
@@ -224,6 +224,9 @@ func ProvideJobServer(
 	}
 
 	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient, rec, bus)
+	if err != nil {
+		return nil, nil, err
+	}
 	return srv, func() {}, nil
 }
 

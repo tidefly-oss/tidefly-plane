@@ -14,8 +14,6 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
 )
 
-// recentStops tracks containers that received a stop event recently
-// so we can distinguish manual stops from unexpected exits in EventDie.
 type stopTracker struct {
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -82,7 +80,6 @@ func (s *Server) handleContainerEvent(ctx context.Context, event runtime.Contain
 		return
 	}
 
-	// Skip expected churn from blue-green slot teardown
 	if event.Labels["tidefly.slot"] != "" &&
 		(event.Type == runtime.EventStop || event.Type == runtime.EventDie || event.Type == runtime.EventDestroy) {
 		return
@@ -91,26 +88,19 @@ func (s *Server) handleContainerEvent(ctx context.Context, event runtime.Contain
 	switch event.Type {
 	case runtime.EventCreate:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, fmt.Sprintf("container created (image: %s)", event.Image), "")
-
 	case runtime.EventStart:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container started", "")
-
 	case runtime.EventRestart:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container restarted", "")
-
 	case runtime.EventUnpause:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container unpaused", "")
-
 	case runtime.EventDestroy:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container removed", "")
-
 	case runtime.EventPause:
 		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container paused", "")
-
 	case runtime.EventStop:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container stopped", "")
 		s.stops.record(event.ContainerID)
-
 	case runtime.EventKill:
 		sig := event.Labels["signal"]
 		if sig == "15" || sig == "SIGTERM" {
@@ -121,7 +111,6 @@ func (s *Server) handleContainerEvent(ctx context.Context, event runtime.Contain
 		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, fmt.Sprintf("container killed (signal: %s) — self-healing queued", sig), "")
 		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q killed (signal: %s) — attempting recovery", event.Name, sig))
 		s.enqueueHeal(ctx, event)
-
 	case runtime.EventDie:
 		exitCode := event.Labels["exitCode"]
 		if exitCode == "0" || s.stops.wasRecentlyStopped(event.ContainerID) {
@@ -131,7 +120,6 @@ func (s *Server) handleContainerEvent(ctx context.Context, event runtime.Contain
 		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container exited unexpectedly — self-healing queued", "")
 		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q exited — attempting recovery", event.Name))
 		s.enqueueHeal(ctx, event)
-
 	case runtime.EventOOM:
 		s.system.log.ContainerEvent("ERROR", event.ContainerID, event.Name, "container OOM — self-healing queued", "")
 		s.notifyOOM(ctx, event)
@@ -197,7 +185,7 @@ func (s *Server) enqueueHeal(ctx context.Context, event runtime.ContainerEvent) 
 		ContainerID: event.ContainerID,
 		Reason:      string(event.Type),
 	}, &river.InsertOpts{
-		Queue:    "critical",
+		Queue:    queueCritical,
 		Priority: 1,
 		UniqueOpts: river.UniqueOpts{
 			ByArgs:  true,
@@ -235,12 +223,12 @@ func EnqueueWebhook(ctx context.Context, client *river.Client[pgx.Tx], webhookID
 	args.Payload.Branch = branch
 	args.Payload.Tag = tag
 	args.Payload.Commit = commit
-	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: river.QueueDefault})
+	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: queueDefault})
 	return err
 }
 
 func EnqueueDeploy(ctx context.Context, client *river.Client[pgx.Tx], args DeployArgs) error {
-	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: "critical"})
+	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: queueCritical})
 	return err
 }
 
@@ -249,17 +237,17 @@ func EnqueueRedeploy(ctx context.Context, client *river.Client[pgx.Tx], serviceI
 		ServiceID:     serviceID,
 		ImageOverride: imageOverride,
 		GitToken:      gitToken,
-	}, &river.InsertOpts{Queue: "critical"})
+	}, &river.InsertOpts{Queue: queueCritical})
 	return err
 }
 
 func EnqueueDelete(ctx context.Context, client *river.Client[pgx.Tx], serviceID string) error {
-	_, err := client.Insert(ctx, DeleteArgs{ServiceID: serviceID}, &river.InsertOpts{Queue: river.QueueDefault})
+	_, err := client.Insert(ctx, DeleteArgs{ServiceID: serviceID}, &river.InsertOpts{Queue: queueDefault})
 	return err
 }
 
 func EnqueueCleanup(ctx context.Context, client *river.Client[pgx.Tx], serviceName string, images, volumes []string) error {
 	_, err := client.Insert(ctx, CleanupArgs{ServiceName: serviceName, Images: images, Volumes: volumes},
-		&river.InsertOpts{Queue: "low"})
+		&river.InsertOpts{Queue: queueLow})
 	return err
 }

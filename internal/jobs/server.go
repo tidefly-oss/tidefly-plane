@@ -22,6 +22,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	queueCritical = "critical"
+	queueLow      = "low"
+	queueDefault  = river.QueueDefault
+)
+
 type Server struct {
 	river  *river.Client[pgx.Tx]
 	pool   *pgxpool.Pool
@@ -67,9 +73,9 @@ func NewServer(
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: cfg.Concurrency},
-			"critical":         {MaxWorkers: cfg.Concurrency},
-			"low":              {MaxWorkers: 2},
+			queueDefault:  {MaxWorkers: cfg.Concurrency},
+			queueCritical: {MaxWorkers: cfg.Concurrency},
+			queueLow:      {MaxWorkers: 2},
 		},
 		Workers:      workers,
 		PeriodicJobs: buildPeriodicJobs(cfg),
@@ -114,28 +120,28 @@ func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 		river.NewPeriodicJob(
 			river.PeriodicInterval(15*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return MetricsArgs{}, &river.InsertOpts{Queue: "critical"}
+				return MetricsArgs{}, &river.InsertOpts{Queue: queueCritical}
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(30*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return HealthCheckArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
+				return HealthCheckArgs{}, &river.InsertOpts{Queue: queueCritical, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			nil,
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(30*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return AutoscaleArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
+				return AutoscaleArgs{}, &river.InsertOpts{Queue: queueCritical, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			nil,
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(6*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return UpdateCheckArgs{}, &river.InsertOpts{Queue: "low", UniqueOpts: river.UniqueOpts{ByArgs: true}}
+				return UpdateCheckArgs{}, &river.InsertOpts{Queue: queueLow, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
 		),
@@ -147,7 +153,7 @@ func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 					StoppedContainers: cfg.CleanupStoppedContainers,
 					DanglingImages:    cfg.CleanupDanglingImages,
 					UnusedVolumes:     cfg.CleanupUnusedVolumes,
-				}, &river.InsertOpts{Queue: "low"}
+				}, &river.InsertOpts{Queue: queueLow}
 			},
 			nil,
 		),
@@ -157,14 +163,14 @@ func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 				return RetentionArgs{
 					AuditRetentionDays:        cfg.AuditRetentionDays,
 					NotificationRetentionDays: cfg.NotificationRetentionDays,
-				}, &river.InsertOpts{Queue: "low"}
+				}, &river.InsertOpts{Queue: queueLow}
 			},
 			nil,
 		),
 		river.NewPeriodicJob(
 			intervalFromCron(cfg.HealthCheckCron, 2*time.Minute),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return RuntimeHealthArgs{}, &river.InsertOpts{Queue: "critical"}
+				return RuntimeHealthArgs{}, &river.InsertOpts{Queue: queueCritical}
 			},
 			nil,
 		),
