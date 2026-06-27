@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -15,21 +14,29 @@ const (
 	defaultRepoOwner = "tidefly-oss"
 	defaultRepoName  = "tidefly-templates"
 	defaultBranch    = "main"
-	cacheTTL         = 5 * time.Minute
+
+	indexCacheTTL    = 5 * time.Minute
+	templateCacheTTL = 30 * time.Minute
 	fetchTimeout     = 15 * time.Second
 )
 
-// Loader fetches and caches templates from GitHub.
-// No filesystem dependency — templates are always loaded from the repo.
 type Loader struct {
 	owner  string
 	repo   string
 	branch string
 	client *http.Client
 
-	mu          sync.RWMutex
-	templates   map[string]*Template
-	lastFetched time.Time
+	indexMu      sync.RWMutex
+	index        []Summary
+	indexFetched time.Time
+
+	tmplMu    sync.RWMutex
+	templates map[string]*cachedTemplate
+}
+
+type cachedTemplate struct {
+	tmpl    *Template
+	fetched time.Time
 }
 
 func NewLoader() *Loader {
@@ -38,176 +45,196 @@ func NewLoader() *Loader {
 		repo:      defaultRepoName,
 		branch:    defaultBranch,
 		client:    &http.Client{Timeout: fetchTimeout},
-		templates: make(map[string]*Template),
+		templates: make(map[string]*cachedTemplate),
 	}
 }
 
-// List returns all templates, refreshing from GitHub if the cache is stale.
-func (l *Loader) List() ([]*Template, error) {
-	if err := l.refreshIfStale(); err != nil {
+func (l *Loader) rawURL(path string) string {
+	return fmt.Sprintf(
+		"https://raw.githubusercontent.com/%s/%s/%s/%s",
+		l.owner, l.repo, l.branch, path,
+	)
+}
+
+// ── Index ─────────────────────────────────────────────────────────────────────
+
+func (l *Loader) List() ([]Summary, error) {
+	if err := l.refreshIndexIfStale(); err != nil {
 		return nil, err
 	}
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	result := make([]*Template, 0, len(l.templates))
-	for _, t := range l.templates {
-		result = append(result, t)
-	}
-	return result, nil
+	l.indexMu.RLock()
+	defer l.indexMu.RUnlock()
+	return l.index, nil
 }
 
-// Get returns a single template by slug, refreshing if stale.
-func (l *Loader) Get(slug string) (*Template, error) {
-	if err := l.refreshIfStale(); err != nil {
-		return nil, err
-	}
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	t, ok := l.templates[slug]
-	if !ok {
-		return nil, fmt.Errorf("template %q not found", slug)
-	}
-	return t, nil
-}
-
-// ListByCategory returns templates filtered by category.
-func (l *Loader) ListByCategory(category string) ([]*Template, error) {
-	templates, err := l.List()
+func (l *Loader) ListByCategory(category string) ([]Summary, error) {
+	all, err := l.List()
 	if err != nil {
 		return nil, err
 	}
-	var result []*Template
-	for _, t := range templates {
-		if t.Category == category {
-			result = append(result, t)
+	var result []Summary
+	for _, s := range all {
+		if s.Category == category {
+			result = append(result, s)
 		}
 	}
 	return result, nil
 }
 
-// refreshIfStale fetches templates from GitHub if the cache has expired.
-func (l *Loader) refreshIfStale() error {
-	l.mu.RLock()
-	stale := time.Since(l.lastFetched) > cacheTTL
-	l.mu.RUnlock()
+func (l *Loader) ListByTag(tag string) ([]Summary, error) {
+	all, err := l.List()
+	if err != nil {
+		return nil, err
+	}
+	var result []Summary
+	for _, s := range all {
+		for _, t := range s.Tags {
+			if t == tag {
+				result = append(result, s)
+				break
+			}
+		}
+	}
+	return result, nil
+}
 
+func (l *Loader) refreshIndexIfStale() error {
+	l.indexMu.RLock()
+	stale := time.Since(l.indexFetched) > indexCacheTTL
+	l.indexMu.RUnlock()
 	if !stale {
 		return nil
 	}
-
-	return l.fetch()
+	return l.fetchIndex()
 }
 
-// fetch downloads the full template list from GitHub and updates the cache.
-func (l *Loader) fetch() error {
+func (l *Loader) fetchIndex() error {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
-	// GitHub API: get all files in the repo tree
-	treeURL := fmt.Sprintf(
-		"https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1",
-		l.owner, l.repo, l.branch,
-	)
-	tree, err := l.fetchTree(ctx, treeURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.rawURL("index.json"), nil)
 	if err != nil {
-		return fmt.Errorf("fetch template tree: %w", err)
-	}
-
-	loaded := make(map[string]*Template)
-	for _, item := range tree.Tree {
-		if item.Type != "blob" || !isTemplate(item.Path) {
-			continue
-		}
-		rawURL := fmt.Sprintf(
-			"https://raw.githubusercontent.com/%s/%s/%s/%s",
-			l.owner, l.repo, l.branch, item.Path,
-		)
-		t, err := l.fetchTemplate(ctx, rawURL, item.Path)
-		if err != nil {
-			// Log and skip malformed templates — don't abort the whole list
-			// TODO: surface via structured logger once injected
-			_ = fmt.Errorf("skip template %q: %w", item.Path, err)
-			continue
-		}
-		loaded[t.Slug] = t
-	}
-
-	l.mu.Lock()
-	l.templates = loaded
-	l.lastFetched = time.Now()
-	l.mu.Unlock()
-
-	return nil
-}
-
-type githubTree struct {
-	Tree []struct {
-		Path string `json:"path"`
-		Type string `json:"type"`
-	} `json:"tree"`
-}
-
-func (l *Loader) fetchTree(ctx context.Context, url string) (*githubTree, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := l.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode)
-	}
-
-	var tree githubTree
-	if err := json.NewDecoder(resp.Body).Decode(&tree); err != nil {
-		return nil, fmt.Errorf("decode tree: %w", err)
-	}
-	return &tree, nil
-}
-
-func isTemplate(path string) bool {
-	return len(path) > 5 && path[len(path)-5:] == ".json"
-}
-
-func (l *Loader) fetchTemplate(ctx context.Context, rawURL string, path string) (*Template, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
+		return err
 	}
 
 	resp, err := l.client.Do(req)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("fetch index.json: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, rawURL)
+		return fmt.Errorf("fetch index.json: HTTP %d", resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return fmt.Errorf("read index.json: %w", err)
+	}
+
+	var summaries []Summary
+	if err := json.Unmarshal(data, &summaries); err != nil {
+		return fmt.Errorf("parse index.json: %w", err)
+	}
+
+	l.indexMu.Lock()
+	l.index = summaries
+	l.indexFetched = time.Now()
+	l.indexMu.Unlock()
+
+	return nil
+}
+
+// ── Individual templates ───────────────────────────────────────────────────────
+
+func (l *Loader) Get(slug string) (*Template, error) {
+	l.tmplMu.RLock()
+	cached, ok := l.templates[slug]
+	l.tmplMu.RUnlock()
+
+	if ok && time.Since(cached.fetched) < templateCacheTTL {
+		return cached.tmpl, nil
+	}
+
+	return l.fetchTemplate(slug)
+}
+
+func (l *Loader) fetchTemplate(slug string) (*Template, error) {
+	// Find the path from the index — category/slug.json
+	summary, err := l.findSummary(slug)
+	if err != nil {
+		return nil, fmt.Errorf("template %q not found in index", slug)
+	}
+
+	path := summary.Category + "/" + slug + ".json"
+	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.rawURL(path), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := l.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch template %q: %w", slug, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("template %q not found", slug)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch template %q: HTTP %d", slug, resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read template %q: %w", slug, err)
 	}
 
 	var t Template
 	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("parse JSON: %w", err)
+		return nil, fmt.Errorf("parse template %q: %w", slug, err)
 	}
 	if t.Slug == "" {
-		return nil, fmt.Errorf("missing slug")
+		t.Slug = slug
 	}
-	// Derive category from folder name if not set in JSON
-	if t.Category == "" {
-		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 {
-			t.Category = parts[0]
+
+	l.tmplMu.Lock()
+	l.templates[slug] = &cachedTemplate{tmpl: &t, fetched: time.Now()}
+	l.tmplMu.Unlock()
+
+	return &t, nil
+}
+
+func (l *Loader) findSummary(slug string) (*Summary, error) {
+	if err := l.refreshIndexIfStale(); err != nil {
+		return nil, err
+	}
+	l.indexMu.RLock()
+	defer l.indexMu.RUnlock()
+	for i := range l.index {
+		if l.index[i].Slug == slug {
+			return &l.index[i], nil
 		}
 	}
-	return &t, nil
+	return nil, fmt.Errorf("not found")
+}
+
+func (l *Loader) InvalidateTemplate(slug string) {
+	l.tmplMu.Lock()
+	delete(l.templates, slug)
+	l.tmplMu.Unlock()
+}
+
+func (l *Loader) InvalidateAll() {
+	l.indexMu.Lock()
+	l.index = nil
+	l.indexFetched = time.Time{}
+	l.indexMu.Unlock()
+
+	l.tmplMu.Lock()
+	l.templates = make(map[string]*cachedTemplate)
+	l.tmplMu.Unlock()
 }
