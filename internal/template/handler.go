@@ -14,9 +14,42 @@ func NewHandler(loader *Loader) *Handler {
 	return &Handler{loader: loader}
 }
 
+// ── List ──────────────────────────────────────────────────────────────────────
+
+type listTemplatesInput struct {
+	Category string `query:"category" doc:"Filter by category"`
+	Tag      string `query:"tag"      doc:"Filter by tag"`
+}
+
 type listTemplatesOutput struct {
 	Body []Summary
 }
+
+func (h *Handler) listTemplates(_ context.Context, input *listTemplatesInput) (*listTemplatesOutput, error) {
+	var (
+		summaries []Summary
+		err       error
+	)
+
+	switch {
+	case input.Category != "":
+		summaries, err = h.loader.ListByCategory(input.Category)
+	case input.Tag != "":
+		summaries, err = h.loader.ListByTag(input.Tag)
+	default:
+		summaries, err = h.loader.List()
+	}
+
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("templates unavailable: " + err.Error())
+	}
+	if summaries == nil {
+		summaries = []Summary{}
+	}
+	return &listTemplatesOutput{Body: summaries}, nil
+}
+
+// ── Get ───────────────────────────────────────────────────────────────────────
 
 type getTemplateInput struct {
 	Slug string `path:"slug"`
@@ -24,18 +57,6 @@ type getTemplateInput struct {
 
 type getTemplateOutput struct {
 	Body *Template
-}
-
-func (h *Handler) listTemplates(_ context.Context, _ *struct{}) (*listTemplatesOutput, error) {
-	list, err := h.loader.List()
-	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("templates unavailable: " + err.Error())
-	}
-	summaries := make([]Summary, 0, len(list))
-	for _, t := range list {
-		summaries = append(summaries, t.ToSummary())
-	}
-	return &listTemplatesOutput{Body: summaries}, nil
 }
 
 func (h *Handler) getTemplate(_ context.Context, input *getTemplateInput) (*getTemplateOutput, error) {
