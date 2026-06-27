@@ -89,7 +89,6 @@ type SystemSettings struct {
 	SMTPPassword                 string    `gorm:"size:255"                   json:"-"`
 	SMTPFrom                     string    `gorm:"size:255"                   json:"smtp_from"`
 	SMTPTLSEnabled               bool      `gorm:"default:true"               json:"smtp_tls_enabled"`
-	ExternalNotificationsEnabled bool      `gorm:"default:false"              json:"external_notifications_enabled"`
 	SlackWebhookURL              string    `gorm:"size:500"                   json:"slack_webhook_url"`
 	DiscordWebhookURL            string    `gorm:"size:500"                   json:"discord_webhook_url"`
 	NotifyOnDeploy               bool      `gorm:"default:true"               json:"notify_on_deploy"`
@@ -98,4 +97,6 @@ type SystemSettings struct {
 	CaddyBaseDomain              string    `gorm:"size:255"                   json:"caddy_base_domain"`
 	APIDocsEnabled               bool      `gorm:"default:true"               json:"api_docs_enabled"`
 	UpdatedAt                    time.Time `                                  json:"updated_at"`
+	NotificationsEnabled         bool      `gorm:"default:true"               json:"notifications_enabled"`
+	ExternalNotificationsEnabled bool      `gorm:"default:false"              json:"external_notifications_enabled"`
 }
