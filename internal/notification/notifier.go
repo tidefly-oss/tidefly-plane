@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"

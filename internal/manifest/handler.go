@@ -7,7 +7,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/git"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 	"gorm.io/gorm"
 )

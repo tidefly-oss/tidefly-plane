@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type listOutput struct {
@@ -75,8 +75,8 @@ func (h *Handler) create(ctx context.Context, input *gitCreateInput) (*createOut
 	}
 	encrypted, err := h.svc.PrepareSecret(input.Body.Token)
 	if err != nil {
-		h.log.Audit(ctx, _logger.AuditEntry{
-			Action:  _logger.AuditGitTokenAdd,
+		h.log.Audit(ctx, logger.AuditEntry{
+			Action:  logger.AuditGitTokenAdd,
 			Success: false,
 			Details: fmt.Sprintf("provider=%s name=%s encrypt_failed", input.Body.Provider, input.Body.Name),
 		})
@@ -87,8 +87,8 @@ func (h *Handler) create(ctx context.Context, input *gitCreateInput) (*createOut
 		BaseURL: baseURL, AuthType: "token", SecretEncrypted: encrypted,
 	}
 	err = h.store.Create(m)
-	h.log.Audit(ctx, _logger.AuditEntry{
-		Action:     _logger.AuditGitTokenAdd,
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditGitTokenAdd,
 		ResourceID: m.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("provider=%s name=%s", input.Body.Provider, input.Body.Name),
@@ -96,10 +96,10 @@ func (h *Handler) create(ctx context.Context, input *gitCreateInput) (*createOut
 	if err != nil {
 		return nil, fmt.Errorf("save integration: %w", err)
 	}
-	h.bus.Publish(_eventbus.Event{
-		Type:  _eventbus.EventGitIntegrationCreated,
-		Topic: _eventbus.TopicGit,
-		Payload: _eventbus.GitIntegrationPayload{
+	h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventGitIntegrationCreated,
+		Topic: eventbus.TopicGit,
+		Payload: eventbus.GitIntegrationPayload{
 			ID:   m.ID,
 			Name: m.Name,
 		},
@@ -129,8 +129,8 @@ func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, er
 		return nil, err
 	}
 	err = h.store.Delete(input.ID)
-	h.log.Audit(ctx, _logger.AuditEntry{
-		Action:     _logger.AuditGitTokenDelete,
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:     logger.AuditGitTokenDelete,
 		ResourceID: input.ID,
 		Success:    err == nil,
 		Details:    fmt.Sprintf("provider=%s name=%s", m.Provider, m.Name),
@@ -138,10 +138,10 @@ func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, er
 	if err != nil {
 		return nil, fmt.Errorf("delete integration: %w", err)
 	}
-	h.bus.Publish(_eventbus.Event{
-		Type:  _eventbus.EventGitIntegrationDeleted,
-		Topic: _eventbus.TopicGit,
-		Payload: _eventbus.GitIntegrationPayload{
+	h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventGitIntegrationDeleted,
+		Topic: eventbus.TopicGit,
+		Payload: eventbus.GitIntegrationPayload{
 			ID:   input.ID,
 			Name: m.Name,
 		},

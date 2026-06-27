@@ -1,4 +1,4 @@
-package _eventbus
+package eventbus
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/olahol/melody"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
@@ -111,19 +111,6 @@ func (b *Bus) StartRuntimeWatcher(ctx context.Context, rt runtime.Runtime, log *
 // StartMetricsTicker pushes system metrics to all connected WS clients every 10s.
 func (b *Bus) StartMetricsTicker(ctx context.Context, reg *metrics.Registry) {
 	go func() {
-		// Sofort beim Start einmal publishen
-		snap := reg.GetSystem()
-		b.Publish(Event{
-			Type:  EventSystemMetrics,
-			Topic: TopicMetrics,
-			Payload: SystemMetricsPayload{
-				CPUPercent: snap.CPUPercent,
-				MemPercent: snap.MemPercent,
-				DiskUsed:   snap.DiskUsedMB,
-				DiskTotal:  snap.DiskTotalMB,
-			},
-		})
-
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -132,6 +119,9 @@ func (b *Bus) StartMetricsTicker(ctx context.Context, reg *metrics.Registry) {
 				return
 			case <-ticker.C:
 				snap := reg.GetSystem()
+				if snap.CPUPercent == 0 {
+					continue
+				}
 				b.Publish(Event{
 					Type:  EventSystemMetrics,
 					Topic: TopicMetrics,

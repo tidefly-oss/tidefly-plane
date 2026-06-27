@@ -141,7 +141,7 @@ func (c *WorkerConn) pushLog(log *proto.ContainerLogsResult) {
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 // Registry holds all active WorkerConn instances.
-// Thread-safe — used by other services to send commands to workers.
+// Thread-safe — used by other manifest to send commands to workers.
 type Registry struct {
 	mu      sync.RWMutex
 	workers map[string]*WorkerConn

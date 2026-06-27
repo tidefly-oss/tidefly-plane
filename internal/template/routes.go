@@ -6,6 +6,6 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(api huma.API, mw huma.Middlewares) {
-	huma.Register(api, httpx.Op("templates-list", "GET", httpx.V1+"/services/templates", "List templates", "Templates", mw...), h.listTemplates)
-	huma.Register(api, httpx.Op("templates-get", "GET", httpx.V1+"/services/templates/{slug}", "Get template", "Templates", mw...), h.getTemplate)
+	huma.Register(api, httpx.Op("templates-list", "GET", httpx.V1+"/templates", "List templates", "Templates", mw...), h.listTemplates)
+	huma.Register(api, httpx.Op("templates-get", "GET", httpx.V1+"/templates/{slug}", "Get template", "Templates", mw...), h.getTemplate)
 }

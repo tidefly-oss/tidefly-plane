@@ -48,24 +48,24 @@ func InitializeApp() (*App, func(), error) {
 	notifier := ProvideNotifier(db, logger)
 	registry := ProvideMetricsRegistry()
 	adapter := ProvideCaddyIngress(client)
-	_caService, err := ProvideCAService(config, db)
+	caService, err := ProvideCAService(config, db)
 	if err != nil {
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	server := ProvideAgentServer(config, db, _caService)
+	server := ProvideAgentServer(config, db, caService)
 	agentClient := ProvideAgentClient(server)
 	reconciler := ProvideReconciler(db, runtime, adapter, service, logger)
-	jobsServer, cleanup4, err := ProvideJobServer(config, pool, runtime, db, logger, service, notifier, registry, adapter, agentClient, reconciler)
+	jobsServer, cleanup4, err := ProvideJobServer(config, pool, runtime, db, logger, service, notifier, registry, adapter, agentClient, reconciler, bus)
 	if err != nil {
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	app := NewApp(config, logger, runtime, db, jwtService, tokenStore, client, loader, service, gitService, webhookService, jobsServer, notifier, registry, _caService, server, bus, adapter)
+	app := NewApp(config, logger, runtime, db, jwtService, tokenStore, client, loader, service, gitService, webhookService, jobsServer, notifier, registry, caService, server, bus, adapter)
 	return app, func() {
 		cleanup4()
 		cleanup3()

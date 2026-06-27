@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 type serviceView struct {

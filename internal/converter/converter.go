@@ -14,7 +14,7 @@ type SourceType string
 
 const (
 	SourceManifest   SourceType = "manifest"
-	SourceStack      SourceType = "stack" // docker-compose → multiple services
+	SourceStack      SourceType = "stack" // docker-compose → multiple manifest
 	SourceImage      SourceType = "image"
 	SourceCompose    SourceType = "compose" // legacy direct API field
 	SourceDockerfile SourceType = "dockerfile"
@@ -168,7 +168,7 @@ func convertServiceManifest(ctx context.Context, input ConvertInput) (*Result, e
 	return result, nil
 }
 
-// convertStackManifest handles a StackManifest (docker-compose → N services).
+// convertStackManifest handles a StackManifest (docker-compose → N manifest).
 func convertStackManifest(_ context.Context, input ConvertInput) (*Result, error) {
 	var sm manifest.StackManifest
 	if err := json.Unmarshal([]byte(input.ManifestJSON), &sm); err != nil {

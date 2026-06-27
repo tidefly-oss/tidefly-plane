@@ -7,15 +7,15 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/access"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 )
 
 type Handler struct {
 	runtime runtime.Runtime
-	bus     *_eventbus.Bus
+	bus     *eventbus.Bus
 }
 
-func NewHandler(rt runtime.Runtime, bus *_eventbus.Bus) *Handler {
+func NewHandler(rt runtime.Runtime, bus *eventbus.Bus) *Handler {
 	return &Handler{runtime: rt, bus: bus}
 }
 
@@ -55,10 +55,10 @@ func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, er
 	if err := h.runtime.DeleteImage(ctx, input.ID, input.Force); err != nil {
 		return nil, fmt.Errorf("delete image: %w", err)
 	}
-	h.bus.Publish(_eventbus.Event{
-		Type:    _eventbus.EventImageDeleted,
-		Topic:   _eventbus.TopicImages,
-		Payload: _eventbus.ImageDeletedPayload{ID: input.ID},
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventImageDeleted,
+		Topic:   eventbus.TopicImages,
+		Payload: eventbus.ImageDeletedPayload{ID: input.ID},
 	})
 	return nil, nil
 }

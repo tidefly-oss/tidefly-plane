@@ -1,5 +1,5 @@
 // Package logger provides structured logging, audit logging, and notification integration for Tidefly.
-package _logger
+package logger
 
 import (
 	"context"
@@ -48,7 +48,7 @@ const (
 	AuditAdminUserProjectsUpdate AuditAction = "admin.user.projects_update"
 	AuditAdminSettingsUpdate     AuditAction = "admin.settings.update"
 
-	AuditContainerDeploy  AuditAction = "container.services"
+	AuditContainerDeploy  AuditAction = "container.manifest"
 	AuditContainerStart   AuditAction = "container.start"
 	AuditContainerStop    AuditAction = "container.stop"
 	AuditContainerRestart AuditAction = "container.restart"

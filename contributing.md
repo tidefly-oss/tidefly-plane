@@ -21,7 +21,7 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 ```bash
 git clone https://github.com/tidefly-oss/tidefly-plane
 cd tidefly-plane
-task setup        # creates services/development/.env and generates secrets
+task setup        # creates manifest/development/.env and generates secrets
 task dev:up       # starts Postgres, Redis, Caddy
 task dev          # starts backend with hot reload (runs wire first)
 ```

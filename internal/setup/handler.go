@@ -49,13 +49,12 @@ func (h *Handler) setupAdmin(ctx context.Context, input *setupAdminInput) (*setu
 	}
 
 	user := &models.User{
-		ID:        uuid.New().String(),
-		Email:     input.Body.Email,
-		Password:  hash,
-		Name:      input.Body.FirstName + " " + input.Body.LastName,
-		Role:      models.RoleAdmin,
-		Active:    true,
-		Confirmed: true,
+		ID:       uuid.New().String(),
+		Email:    input.Body.Email,
+		Password: hash,
+		Name:     input.Body.FirstName + " " + input.Body.LastName,
+		Role:     models.RoleAdmin,
+		Active:   true,
 	}
 
 	if err := h.db.WithContext(ctx).Create(user).Error; err != nil {

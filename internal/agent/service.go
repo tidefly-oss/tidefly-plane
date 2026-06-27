@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 )
 
 var (
@@ -37,10 +37,10 @@ type CertBundle struct {
 
 type Service struct {
 	store     *Store
-	caService *_ca.Service
+	caService *ca.Service
 }
 
-func NewService(store *Store, caService *_ca.Service) *Service {
+func NewService(store *Store, caService *ca.Service) *Service {
 	return &Service{store: store, caService: caService}
 }
 

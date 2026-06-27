@@ -10,8 +10,9 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"gorm.io/gorm"
 )
@@ -46,18 +47,20 @@ func (RuntimeHealthArgs) Kind() string { return "system:runtime_health" }
 type SystemWorkers struct {
 	rt       runtime.Runtime
 	db       *gorm.DB
-	log      *_logger.Logger
+	log      *logger.Logger
 	cfg      config.JobsConfig
 	notifSvc *notification.Service
 	notifier *notification.Notifier
 	metrics  *metrics.Registry
+	bus      *eventbus.Bus
 }
 
 func newSystemWorkers(
-	db *gorm.DB, rt runtime.Runtime, log *_logger.Logger, cfg config.JobsConfig,
+	db *gorm.DB, rt runtime.Runtime, log *logger.Logger, cfg config.JobsConfig,
 	notifSvc *notification.Service, notifier *notification.Notifier, metricsReg *metrics.Registry,
+	bus *eventbus.Bus,
 ) *SystemWorkers {
-	return &SystemWorkers{rt: rt, db: db, log: log, cfg: cfg, notifSvc: notifSvc, notifier: notifier, metrics: metricsReg}
+	return &SystemWorkers{rt: rt, db: db, log: log, cfg: cfg, notifSvc: notifSvc, notifier: notifier, metrics: metricsReg, bus: bus}
 }
 
 const (
@@ -78,6 +81,18 @@ func (w *MetricsWorker) Work(ctx context.Context, _ *river.Job[MetricsArgs]) err
 	}
 	w.h.metrics.SetSystem(info.CPUPercent, info.MemUsedMB, info.MemTotalMB, info.MemPercent, info.DiskUsedMB, info.DiskTotalMB, info.DiskPercent)
 	w.h.metrics.UpdateRuntime()
+
+	w.h.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventSystemMetrics,
+		Topic: eventbus.TopicMetrics,
+		Payload: eventbus.SystemMetricsPayload{
+			CPUPercent: info.CPUPercent,
+			MemPercent: info.MemPercent,
+			DiskUsed:   info.DiskUsedMB,
+			DiskTotal:  info.DiskTotalMB,
+		},
+	})
+
 	w.h.metrics.IncJob(MetricsArgs{}.Kind())
 	if w.h.notifSvc == nil {
 		return nil
@@ -216,7 +231,7 @@ func (w *RuntimeHealthWorker) Work(ctx context.Context, _ *river.Job[RuntimeHeal
 		return fmt.Errorf("healthcheck: list containers: %w", err)
 	}
 	for _, c := range containers {
-		if c.Status == runtime.StatusExited {
+		if c.Status == runtime.StatusDead {
 			w.h.log.ContainerEvent("WARN", c.ID, c.Name, "container exited unexpectedly", "")
 		}
 	}

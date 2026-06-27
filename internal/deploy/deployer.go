@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_secret"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/secret"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 )
 
@@ -37,7 +37,7 @@ type DeployRequest struct {
 	Fields      map[string]string
 	ExtraLabels map[string]string
 
-	// Git + template services — used by webhook services trigger and Git services wizard.
+	// Git + template manifest — used by webhook manifest trigger and Git manifest wizard.
 	GitIntegrationID string
 	RepoURL          string
 	Branch           string
@@ -78,7 +78,7 @@ func (d *Deployer) Deploy(ctx context.Context, tmpl *template.Template, req Depl
 
 	// ── 2. Auto-generate service_name if not provided ─────────────────────────
 	if vars["service_name"] == "" {
-		name, err := _secret.GenerateName(tmpl.Slug)
+		name, err := secret.GenerateName(tmpl.Slug)
 		if err != nil {
 			return nil, fmt.Errorf("generate service name: %w", err)
 		}
@@ -93,11 +93,11 @@ func (d *Deployer) Deploy(ctx context.Context, tmpl *template.Template, req Depl
 		if field.Type != "credential" {
 			continue
 		}
-		plaintext, err := _secret.Generate()
+		plaintext, err := secret.Generate()
 		if err != nil {
 			return nil, fmt.Errorf("generate secret %q: %w", field.Key, err)
 		}
-		hash, err := _secret.Hash(plaintext)
+		hash, err := secret.Hash(plaintext)
 		if err != nil {
 			return nil, fmt.Errorf("hash secret %q: %w", field.Key, err)
 		}
@@ -215,7 +215,7 @@ func (d *Deployer) Destroy(ctx context.Context, serviceID uuid.UUID) error {
 		_ = d.rt.DeleteImage(ctx, img, false)
 	}
 
-	// Delete project network if no other services use it
+	// Delete project network if no other manifest use it
 	// (skip for now — network is shared per project)
 
 	// Delete DB record

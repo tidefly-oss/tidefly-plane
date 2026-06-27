@@ -11,7 +11,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/manifest"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
@@ -88,7 +88,7 @@ func (r *Reconciler) reconcileAll(ctx context.Context) {
 			models.ServiceStatusStopped,
 			models.ServiceStatusDeploying,
 		}).Find(&services).Error; err != nil {
-		r.log.Error("reconciler", "list services failed", err)
+		r.log.Error("reconciler", "list manifest failed", err)
 		return
 	}
 	if len(services) == 0 {

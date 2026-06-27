@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/tidefly-oss/tidefly-tui/main/script
 ```bash
 git clone https://github.com/tidefly-oss/tidefly-plane
 cd tidefly-plane
-task setup      # generates services/development/.env with secrets
+task setup      # generates manifest/development/.env with secrets
 task dev:up     # starts Postgres, Redis, Caddy
 task dev        # starts backend with hot reload
 ```

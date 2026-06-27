@@ -1,4 +1,4 @@
-package _eventbus
+package eventbus
 
 // Topic constants
 const (
@@ -6,8 +6,8 @@ const (
 	TopicImages        = "images"
 	TopicNetworks      = "networks"
 	TopicVolumes       = "volumes"
-	TopicServices      = "services"
-	TopicDeploy        = "services"
+	TopicServices      = "manifest"
+	TopicDeploy        = "deploy"
 	TopicWorkers       = "workers"
 	TopicGit           = "git"
 	TopicNotifications = "notifications"
@@ -16,40 +16,39 @@ const (
 
 // Event type constants
 const (
-	// Containers
+	// EventContainerUpdated Containers
 	EventContainerUpdated = "container.updated"
 	EventContainerDeleted = "container.deleted"
 
-	// Images
+	// EventImageDeleted Images
 	EventImageDeleted = "image.deleted"
 
-	// Networks
+	// EventNetworkDeleted Networks
 	EventNetworkDeleted = "network.deleted"
 
-	// Volumes
+	// EventVolumeDeleted Volumes
 	EventVolumeDeleted = "volume.deleted"
 
-	// Services
+	// EventServiceCreated Services
 	EventServiceCreated = "service.created"
 	EventServiceUpdated = "service.updated"
 	EventServiceDeleted = "service.deleted"
 
-	// Deploy
-	EventDeployProgress = "services.progress"
-	EventDeployDone     = "services.done"
-	EventDeployFailed   = "services.failed"
-
-	// Workers
+	// EventDeployProgress Deploy
+	EventDeployProgress = "deploy.progress"
+	EventDeployDone     = "deploy.done"
+	EventDeployFailed   = "deploy.failed"
+	// EventWorkerUpdated Workers
 	EventWorkerUpdated = "worker.updated"
 
-	// Git
+	// EventGitIntegrationCreated Git
 	EventGitIntegrationCreated = "git.integration.created"
 	EventGitIntegrationDeleted = "git.integration.deleted"
 
-	// Notifications
+	// EventNotificationCreated Notifications
 	EventNotificationCreated = "notification.created"
 
-	// Metrics
+	// EventSystemMetrics Metrics
 	EventSystemMetrics = "system.metrics"
 )
 

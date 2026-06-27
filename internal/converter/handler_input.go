@@ -2,7 +2,7 @@ package converter
 
 import "github.com/tidefly-oss/tidefly-plane/internal/manifest"
 
-// APIInput is the unified request body for POST /api/v1/services.
+// APIInput is the unified request body for POST /api/v1/manifest.
 // Supports all source types — the converter auto-detects which to use.
 //
 // Source priority (first non-empty wins):

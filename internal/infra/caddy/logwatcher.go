@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
 
 const caddyContainerName = "tidefly_caddy"

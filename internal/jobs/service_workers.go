@@ -18,13 +18,13 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/manifest"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"gorm.io/gorm"
 )
 
 const proxyNetwork = "tidefly_proxy"
 
 // ── Job Arg Types ─────────────────────────────────────────────────────────────
-// Each type implements river.JobArgs (Kind() string).
 
 type DeployArgs struct {
 	ServiceID    string `json:"service_id"`
@@ -105,6 +105,7 @@ type ServiceWorkers struct {
 	notifSvc     *notification.Service
 	notifier     *notification.Notifier
 	scaleHistory *scaleTracker
+	bus          *eventbus.Bus
 }
 
 type serviceLogger interface {
@@ -123,6 +124,7 @@ func newServiceWorkers(
 	notifSvc *notification.Service,
 	notifier *notification.Notifier,
 	agentClient *agent.Client,
+	bus *eventbus.Bus,
 ) *ServiceWorkers {
 	return &ServiceWorkers{
 		db:           db,
@@ -133,6 +135,7 @@ func newServiceWorkers(
 		notifSvc:     notifSvc,
 		notifier:     notifier,
 		scaleHistory: &scaleTracker{m: make(map[string]scaleEntry)},
+		bus:          bus,
 	}
 }
 
@@ -141,6 +144,17 @@ func (h *ServiceWorkers) markFailed(svc *models.Service, err error) {
 		"status":     models.ServiceStatusFailed,
 		"last_error": err.Error(),
 	})
+	if h.bus != nil {
+		h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventDeployFailed,
+			Topic: eventbus.TopicDeploy,
+			Payload: eventbus.DeployFailedPayload{
+				DeployID:  svc.ID.String(),
+				ServiceID: svc.ID.String(),
+				Error:     err.Error(),
+			},
+		})
+	}
 }
 
 func (h *ServiceWorkers) removeContainers(ctx context.Context, serviceName string) {
@@ -242,7 +256,6 @@ func (h *ServiceWorkers) buildImage(ctx context.Context, result *converter.Resul
 	}
 	defer func() { _ = out.Close() }()
 
-	// Drain build output, surface first error line
 	buf := make([]byte, 65536)
 	for {
 		n, readErr := out.Read(buf)
@@ -412,6 +425,26 @@ func (w *DeployWorker) Work(ctx context.Context, job *river.Job[DeployArgs]) err
 		}
 	}
 
+	if w.h.bus != nil {
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventDeployDone,
+			Topic: eventbus.TopicDeploy,
+			Payload: eventbus.DeployDonePayload{
+				DeployID:  p.ServiceID,
+				ServiceID: p.ServiceID,
+			},
+		})
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventServiceCreated,
+			Topic: eventbus.TopicServices,
+			Payload: eventbus.ServicePayload{
+				ID:        svc.ID.String(),
+				Name:      svc.Name,
+				ProjectID: svc.ProjectID,
+			},
+		})
+	}
+
 	w.h.log.Info("jobs", fmt.Sprintf("service deploy complete: id=%s name=%s", p.ServiceID, svc.Name))
 	return nil
 }
@@ -508,6 +541,26 @@ func (w *RedeployWorker) Work(ctx context.Context, job *river.Job[RedeployArgs])
 		"status":        models.ServiceStatusRunning,
 		"manifest_json": string(updatedJSON),
 	})
+
+	if w.h.bus != nil {
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventDeployDone,
+			Topic: eventbus.TopicDeploy,
+			Payload: eventbus.DeployDonePayload{
+				DeployID:  p.ServiceID,
+				ServiceID: p.ServiceID,
+			},
+		})
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventServiceUpdated,
+			Topic: eventbus.TopicServices,
+			Payload: eventbus.ServicePayload{
+				ID:   svc.ID.String(),
+				Name: svc.Name,
+			},
+		})
+	}
+
 	w.h.log.Info("jobs", fmt.Sprintf("service redeploy complete: %s (strategy=%s)", svc.Name, resolved.Scaling.Strategy))
 	return nil
 }
@@ -598,6 +651,18 @@ func (w *UpdateWorker) Work(ctx context.Context, job *river.Job[UpdateArgs]) err
 		"status":        models.ServiceStatusRunning,
 		"manifest_json": string(updatedJSON),
 	})
+
+	if w.h.bus != nil {
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventServiceUpdated,
+			Topic: eventbus.TopicServices,
+			Payload: eventbus.ServicePayload{
+				ID:   svc.ID.String(),
+				Name: svc.Name,
+			},
+		})
+	}
+
 	return nil
 }
 
@@ -639,9 +704,19 @@ func (w *DeleteWorker) Work(ctx context.Context, job *river.Job[DeleteArgs]) err
 		return err
 	}
 
-	// Enqueue async cleanup for images/volumes
+	if w.h.bus != nil {
+		w.h.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventServiceDeleted,
+			Topic: eventbus.TopicServices,
+			Payload: eventbus.ServicePayload{
+				ID:        svc.ID.String(),
+				Name:      svc.Name,
+				ProjectID: svc.ProjectID,
+			},
+		})
+	}
+
 	if len(images) > 0 || len(volumes) > 0 {
-		// Caller must pass river client; for now log and skip (enqueue from HTTP layer)
 		w.h.log.Info("jobs", fmt.Sprintf("delete: skipping cleanup enqueue for %q (no client in worker)", svc.Name))
 	}
 	return nil
@@ -709,7 +784,7 @@ func (w *HealWorker) Work(ctx context.Context, job *river.Job[HealArgs]) error {
 	p := job.Args
 	var svc models.Service
 	if err := w.h.db.Where("name = ? AND manifest_service = ?", p.ServiceName, true).First(&svc).Error; err != nil {
-		return nil // service gone, skip silently
+		return nil
 	}
 	w.h.log.Info("jobs", fmt.Sprintf("self-heal: triggered for %q (reason=%s)", p.ServiceName, p.Reason))
 
@@ -743,7 +818,6 @@ func (w *HealWorker) Work(ctx context.Context, job *river.Job[HealArgs]) error {
 		return nil
 	}
 
-	// Local — check if already recovered
 	if containers, err := w.h.rt.ListContainers(ctx, true); err == nil {
 		for _, ct := range containers {
 			if ct.Labels["tidefly.service"] == p.ServiceName && !runtime.NeedsRestart(ct.Status) {
@@ -803,7 +877,7 @@ func (w *HealthCheckWorker) Work(ctx context.Context, _ *river.Job[HealthCheckAr
 		models.ServiceStatusStopped,
 		models.ServiceStatusRestarting,
 	}).Find(&services).Error; err != nil {
-		return fmt.Errorf("list services: %w", err)
+		return fmt.Errorf("list manifest: %w", err)
 	}
 	if len(services) == 0 {
 		return nil
@@ -906,7 +980,7 @@ func (w *AutoscaleWorker) Work(ctx context.Context, _ *river.Job[AutoscaleArgs])
 	var services []models.Service
 	if err := w.h.db.Where("manifest_service = ? AND status = ?", true, models.ServiceStatusRunning).
 		Find(&services).Error; err != nil {
-		return fmt.Errorf("autoscale: list services: %w", err)
+		return fmt.Errorf("autoscale: list manifest: %w", err)
 	}
 	for i := range services {
 		if err := w.processAutoscale(ctx, &services[i]); err != nil {

@@ -8,7 +8,7 @@ import (
 	agentpb "github.com/tidefly-oss/tidefly-plane/internal/agent/proto"
 )
 
-// Client wraps the Registry and provides a clean API for other services
+// Client wraps the Registry and provides a clean API for other manifest
 // to send commands to workers without dealing with proto directly.
 type Client struct {
 	registry *Registry
@@ -178,7 +178,7 @@ func (c *Client) Deploy(_ context.Context, workerID string, req DeployRequest) (
 		return nil, fmt.Errorf("unexpected result type")
 	}
 	if !res.Success {
-		return nil, fmt.Errorf("services failed: %s", res.Error)
+		return nil, fmt.Errorf("manifest failed: %s", res.Error)
 	}
 	return res, nil
 }

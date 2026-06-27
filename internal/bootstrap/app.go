@@ -23,10 +23,10 @@ import (
 	middleware2 "github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"github.com/tidefly-oss/tidefly-plane/internal/reconciler"
 	"github.com/tidefly-oss/tidefly-plane/internal/system"
@@ -52,9 +52,9 @@ type App struct {
 	notifSvc    *notification.Service
 	notifierSvc *notification.Notifier
 	metrics     *metrics.Registry
-	caService   *_ca.Service
+	caService   *ca.Service
 	agentSrv    *agent.Server
-	bus         *_eventbus.Bus
+	bus         *eventbus.Bus
 	ingress     ingress.Adapter
 	reconciler  *reconciler.Reconciler
 }
@@ -74,9 +74,9 @@ func NewApp(
 	jobServer *jobs.Server,
 	notifierSvc *notification.Notifier,
 	metricsReg *metrics.Registry,
-	caService *_ca.Service,
+	caService *ca.Service,
 	agentSrv *agent.Server,
-	bus *_eventbus.Bus,
+	bus *eventbus.Bus,
 	ingressAdapter ingress.Adapter,
 ) *App {
 	app := &App{

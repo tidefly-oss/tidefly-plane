@@ -1,4 +1,4 @@
-package _ca
+package ca
 
 import (
 	"crypto/rand"
@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_crypto"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/crypto"
 	"gorm.io/gorm"
 )
 
@@ -149,11 +149,11 @@ func (s *Service) GetWorkerCertPEM(workerID string) (certPEM, keyPEM string, err
 	).Order("created_at DESC").First(&issued).Error; err != nil {
 		return "", "", fmt.Errorf("ca: find worker cert: %w", err)
 	}
-	certPEM, err = _crypto.DecryptString(s.encryptionKey, issued.CertPEM)
+	certPEM, err = crypto.DecryptString(s.encryptionKey, issued.CertPEM)
 	if err != nil {
 		return "", "", fmt.Errorf("ca: decrypt cert: %w", err)
 	}
-	keyPEM, err = _crypto.DecryptString(s.encryptionKey, issued.KeyPEM)
+	keyPEM, err = crypto.DecryptString(s.encryptionKey, issued.KeyPEM)
 	if err != nil {
 		return "", "", fmt.Errorf("ca: decrypt key: %w", err)
 	}
@@ -165,7 +165,7 @@ func (s *Service) GetCACertPEM() (string, error) {
 	if err := s.db.First(&ca).Error; err != nil {
 		return "", fmt.Errorf("ca: load CA record: %w", err)
 	}
-	certPEM, err := _crypto.DecryptString(s.encryptionKey, ca.CertPEM)
+	certPEM, err := crypto.DecryptString(s.encryptionKey, ca.CertPEM)
 	if err != nil {
 		return "", fmt.Errorf("ca: decrypt CA cert: %w", err)
 	}
@@ -197,11 +197,11 @@ func (s *Service) createCA() error {
 	}
 	certPEM := pemEncodeCert(certDER)
 	keyPEM := pemEncodeKey(key)
-	encCert, err := _crypto.EncryptString(s.encryptionKey, certPEM)
+	encCert, err := crypto.EncryptString(s.encryptionKey, certPEM)
 	if err != nil {
 		return fmt.Errorf("ca: encrypt cert: %w", err)
 	}
-	encKey, err := _crypto.EncryptString(s.encryptionKey, keyPEM)
+	encKey, err := crypto.EncryptString(s.encryptionKey, keyPEM)
 	if err != nil {
 		return fmt.Errorf("ca: encrypt key: %w", err)
 	}
@@ -251,11 +251,11 @@ func (s *Service) issueCert(
 	}
 	certPEM := pemEncodeCert(certDER)
 	keyPEM := pemEncodeKey(key)
-	encCert, err := _crypto.EncryptString(s.encryptionKey, certPEM)
+	encCert, err := crypto.EncryptString(s.encryptionKey, certPEM)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: encrypt issued cert: %w", err)
 	}
-	encKey, err := _crypto.EncryptString(s.encryptionKey, keyPEM)
+	encKey, err := crypto.EncryptString(s.encryptionKey, keyPEM)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ca: encrypt issued key: %w", err)
 	}
@@ -283,11 +283,11 @@ func (s *Service) loadCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 		}
 		return nil, nil, fmt.Errorf("ca: load CA record: %w", err)
 	}
-	certPEM, err := _crypto.DecryptString(s.encryptionKey, record.CertPEM)
+	certPEM, err := crypto.DecryptString(s.encryptionKey, record.CertPEM)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ca: decrypt CA cert: %w", err)
 	}
-	keyPEM, err := _crypto.DecryptString(s.encryptionKey, record.KeyPEM)
+	keyPEM, err := crypto.DecryptString(s.encryptionKey, record.KeyPEM)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ca: decrypt CA key: %w", err)
 	}

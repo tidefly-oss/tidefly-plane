@@ -128,8 +128,6 @@ type SettingsUpdateInput struct {
 	SMTPPassword                 *string
 	SMTPFrom                     *string
 	SMTPTLSEnabled               *bool
-	SessionTimeoutHours          *int
-	NotificationsEnabled         *bool
 	ExternalNotificationsEnabled *bool
 	SlackWebhookURL              *string
 	DiscordWebhookURL            *string
@@ -168,8 +166,6 @@ func (s *SettingsService) Update(input SettingsUpdateInput) (models.SystemSettin
 	applyIfSet(&settings.SMTPPassword, input.SMTPPassword)
 	applyIfSet(&settings.SMTPFrom, input.SMTPFrom)
 	applyIfSet(&settings.SMTPTLSEnabled, input.SMTPTLSEnabled)
-	applyIfSet(&settings.SessionTimeoutHours, input.SessionTimeoutHours)
-	applyIfSet(&settings.NotificationsEnabled, input.NotificationsEnabled)
 	applyIfSet(&settings.ExternalNotificationsEnabled, input.ExternalNotificationsEnabled)
 	applyIfSet(&settings.SlackWebhookURL, input.SlackWebhookURL)
 	applyIfSet(&settings.DiscordWebhookURL, input.DiscordWebhookURL)

@@ -14,8 +14,9 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"github.com/tidefly-oss/tidefly-plane/internal/reconciler"
 	"gorm.io/gorm"
@@ -25,9 +26,10 @@ type Server struct {
 	river  *river.Client[pgx.Tx]
 	pool   *pgxpool.Pool
 	cfg    config.JobsConfig
-	log    *_logger.Logger
+	log    *logger.Logger
 	svc    *ServiceWorkers
 	system *SystemWorkers
+	stops  *stopTracker
 }
 
 func NewServer(
@@ -35,18 +37,19 @@ func NewServer(
 	cfg config.JobsConfig,
 	rt runtime.Runtime,
 	db *gorm.DB,
-	log *_logger.Logger,
+	log *logger.Logger,
 	notifSvc *notification.Service,
 	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
 	rec *reconciler.Reconciler,
+	bus *eventbus.Bus,
 ) (*Server, error) {
 	workers := river.NewWorkers()
 
-	svc := newServiceWorkers(db, rt, ingressAdapter, log, notifSvc, notifier, agentClient)
-	sys := newSystemWorkers(db, rt, log, cfg, notifSvc, notifier, metricsReg)
+	svc := newServiceWorkers(db, rt, ingressAdapter, log, notifSvc, notifier, agentClient, bus)
+	sys := newSystemWorkers(db, rt, log, cfg, notifSvc, notifier, metricsReg, bus)
 
 	river.AddWorker(workers, &DeployWorker{h: svc})
 	river.AddWorker(workers, &RedeployWorker{h: svc})
@@ -60,7 +63,6 @@ func NewServer(
 	river.AddWorker(workers, &RetentionWorker{h: sys})
 	river.AddWorker(workers, &RuntimeCleanupWorker{h: sys})
 	river.AddWorker(workers, &RuntimeHealthWorker{h: sys})
-	// UpdateCheckWorker delegates digest polling to the Reconciler
 	river.AddWorker(workers, NewUpdateCheckWorker(rec))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
@@ -84,6 +86,7 @@ func NewServer(
 		log:    log,
 		svc:    svc,
 		system: sys,
+		stops:  newStopTracker(),
 	}, nil
 }
 
@@ -111,9 +114,9 @@ func buildPeriodicJobs(cfg config.JobsConfig) []*river.PeriodicJob {
 		river.NewPeriodicJob(
 			river.PeriodicInterval(15*time.Second),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return MetricsArgs{}, &river.InsertOpts{Queue: "critical", UniqueOpts: river.UniqueOpts{ByArgs: true}}
+				return MetricsArgs{}, &river.InsertOpts{Queue: "critical"}
 			},
-			&river.PeriodicJobOpts{RunOnStart: false},
+			&river.PeriodicJobOpts{RunOnStart: true},
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(30*time.Second),
@@ -188,7 +191,7 @@ func intervalFromCron(expr string, fallback time.Duration) river.PeriodicSchedul
 }
 
 type riverErrorHandler struct {
-	log     *_logger.Logger
+	log     *logger.Logger
 	metrics *metrics.Registry
 }
 

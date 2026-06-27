@@ -31,7 +31,7 @@ func FetchDigest(ctx context.Context, image string) (string, error) {
 	return desc.Digest.String(), nil
 }
 
-// PollDigests checks all running registry-backed services for new OCI digests.
+// PollDigests checks all running registry-backed manifest for new OCI digests.
 // Called by the River UpdateCheckWorker every 6h.
 // Drift (RemoteDigest != DeployedDigest) is picked up by the Reconciler
 // on the next loop tick and triggers a blue-green or rolling update automatically.
@@ -40,7 +40,7 @@ func (r *Reconciler) PollDigests(ctx context.Context) {
 	if err := r.db.WithContext(ctx).
 		Where("status = ? AND manifest_service = ?", models.ServiceStatusRunning, true).
 		Find(&services).Error; err != nil {
-		r.log.Error("reconciler", "poll digests: list services failed", err)
+		r.log.Error("reconciler", "poll digests: list manifest failed", err)
 		return
 	}
 
@@ -79,11 +79,11 @@ func (r *Reconciler) PollDigests(ctx context.Context) {
 		r.db.WithContext(ctx).Model(svc).Updates(fields)
 	}
 
-	r.log.Info("reconciler", fmt.Sprintf("poll digests: checked %d services, %d updates available", len(services), updated))
+	r.log.Info("reconciler", fmt.Sprintf("poll digests: checked %d manifest, %d updates available", len(services), updated))
 }
 
 // resolveImage extracts the registry image from a service's ManifestJSON.
-// Returns empty string for git/compose/dockerfile-backed services (no registry to poll).
+// Returns empty string for git/compose/dockerfile-backed manifest (no registry to poll).
 func resolveImage(svc models.Service) string {
 	if svc.ManifestJSON == "" {
 		return ""

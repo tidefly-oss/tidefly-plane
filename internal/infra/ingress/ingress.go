@@ -26,7 +26,7 @@ type Adapter interface {
 	RemoveRoute(ctx context.Context, serviceName string) error
 	UpdateRoute(ctx context.Context, route Route) error
 
-	// AddTCPRoute TCP/TLS L4 routes (for databases and other TCP services)
+	// AddTCPRoute TCP/TLS L4 routes (for databases and other TCP manifest)
 	AddTCPRoute(ctx context.Context, route TCPRoute) error
 	RemoveTCPRoute(ctx context.Context, routeID string) error
 }

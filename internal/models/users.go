@@ -54,7 +54,7 @@ func (pm *ProjectMember) BeforeCreate(*gorm.DB) error {
 	return nil
 }
 
-// Project is the organizational unit that groups services.
+// Project is the organizational unit that groups manifest.
 type Project struct {
 	ID          string    `gorm:"primaryKey;size:36"           json:"id"`
 	Name        string    `gorm:"size:255;not null;uniqueIndex" json:"name"`

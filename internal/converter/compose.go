@@ -10,7 +10,7 @@ import (
 )
 
 type composeFile struct {
-	Services map[string]composeService `yaml:"services"`
+	Services map[string]composeService `yaml:"manifest"`
 }
 
 type composeService struct {
@@ -42,7 +42,7 @@ func convertCompose(input ConvertInput) (*Result, error) {
 		return nil, fmt.Errorf("compose converter: parse yaml: %w", err)
 	}
 	if len(cf.Services) == 0 {
-		return nil, fmt.Errorf("compose converter: no services found")
+		return nil, fmt.Errorf("compose converter: no manifest found")
 	}
 
 	stackName := input.StackName
@@ -116,7 +116,7 @@ func convertCompose(input ConvertInput) (*Result, error) {
 	}
 
 	if len(manifests) == 0 {
-		return nil, fmt.Errorf("compose converter: no deployable services (all require a build step)")
+		return nil, fmt.Errorf("compose converter: no deployable manifest (all require a build step)")
 	}
 
 	return &Result{Manifests: manifests}, nil

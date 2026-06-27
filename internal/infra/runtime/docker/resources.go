@@ -122,7 +122,7 @@ func (d *Runtime) GetResources(ctx context.Context, containerID string) (*runtim
 	cfg.MaxRetries = hc.RestartPolicy.MaximumRetryCount
 
 	// deploy_strategy, replicas and autoscaling are enriched by the HTTP handler
-	// layer from services.manifest_json — not from the runtime layer.
+	// layer from manifest.manifest_json — not from the runtime layer.
 	cfg.DeployStrategy = "blue-green"
 	cfg.Replicas = 1
 

@@ -8,7 +8,13 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/version"
+	"github.com/tidefly-oss/tidefly-plane/internal/system"
 )
+
+type systemInfoSnapshot struct {
+	TideflyVersion string `json:"tidefly_version"`
+}
 
 type overviewOutput struct {
 	Body overviewBody
@@ -23,6 +29,8 @@ type overviewBody struct {
 	Networks      []runtime.Network      `json:"networks"`
 	Volumes       []runtime.Volume       `json:"volumes"`
 	Settings      *models.SystemSettings `json:"settings,omitempty"`
+	SystemInfo    *systemInfoSnapshot    `json:"system_info,omitempty"`
+	Version       *system.VersionInfo    `json:"version,omitempty"`
 }
 
 func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, error) {
@@ -46,6 +54,7 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 		networks      []runtime.Network
 		volumes       []runtime.Volume
 		settings      *models.SystemSettings
+		versionInfo   *system.VersionInfo
 	)
 
 	setErr := func(err error) {
@@ -56,7 +65,6 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 		mu.Unlock()
 	}
 
-	// Preload allowed networks for non-admins (used by container/network/volume filter)
 	var allowed map[string]struct{}
 	if !isAdmin {
 		var err error
@@ -136,17 +144,47 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 	}()
 
 	// ── Images ────────────────────────────────────────────────────────────────
-	// Internal image filtering is handled inside ListImages (via container labels).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		cs, err := h.runtime.ListContainers(ctx, true)
+		if err != nil {
+			setErr(err)
+			return
+		}
+		allowedImageTags := make(map[string]struct{})
+		for _, c := range cs {
+			if access.IsInternal(c.Labels) {
+				continue
+			}
+			if isAdmin || access.NetworkAllowed(c.Networks, allowed) {
+				if c.Image != "" {
+					allowedImageTags[c.Image] = struct{}{}
+				}
+			}
+		}
+		if len(allowedImageTags) == 0 {
+			mu.Lock()
+			images = []runtime.Image{}
+			mu.Unlock()
+			return
+		}
 		imgs, err := h.runtime.ListImages(ctx)
 		if err != nil {
 			setErr(err)
 			return
 		}
+		filtered := make([]runtime.Image, 0)
+		for _, img := range imgs {
+			for _, tag := range img.Tags {
+				if _, ok := allowedImageTags[tag]; ok {
+					filtered = append(filtered, img)
+					break
+				}
+			}
+		}
 		mu.Lock()
-		images = imgs
+		images = filtered
 		mu.Unlock()
 	}()
 
@@ -248,6 +286,18 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 		}()
 	}
 
+	// ── Version (from cache — no network call) ────────────────────────────────
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		v := system.GetCachedVersion()
+		if v != nil {
+			mu.Lock()
+			versionInfo = v
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
 
 	if firstErr != nil {
@@ -265,6 +315,8 @@ func (h *Handler) overview(ctx context.Context, _ *struct{}) (*overviewOutput, e
 			Networks:      networks,
 			Volumes:       volumes,
 			Settings:      settings,
+			SystemInfo:    &systemInfoSnapshot{TideflyVersion: version.Version},
+			Version:       versionInfo,
 		},
 	}, nil
 }

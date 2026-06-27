@@ -7,19 +7,19 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/access"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	runtime runtime.Runtime
-	log     *_logger.Logger
+	log     *logger.Logger
 	access  *access.Store
-	bus     *_eventbus.Bus
+	bus     *eventbus.Bus
 }
 
-func NewHandler(rt runtime.Runtime, log *_logger.Logger, db *gorm.DB, bus *_eventbus.Bus) *Handler {
+func NewHandler(rt runtime.Runtime, log *logger.Logger, db *gorm.DB, bus *eventbus.Bus) *Handler {
 	return &Handler{runtime: rt, log: log, access: access.NewStore(db), bus: bus}
 }
 
@@ -82,14 +82,14 @@ func (h *Handler) get(ctx context.Context, input *getInput) (*getOutput, error) 
 
 func (h *Handler) delete(ctx context.Context, input *deleteInput) (*struct{}, error) {
 	err := h.runtime.DeleteNetwork(ctx, input.ID)
-	h.log.Audit(ctx, _logger.AuditEntry{Action: _logger.AuditNetworkDelete, ResourceID: input.ID, Success: err == nil})
+	h.log.Audit(ctx, logger.AuditEntry{Action: logger.AuditNetworkDelete, ResourceID: input.ID, Success: err == nil})
 	if err != nil {
 		return nil, fmt.Errorf("delete network: %w", err)
 	}
-	h.bus.Publish(_eventbus.Event{
-		Type:    _eventbus.EventNetworkDeleted,
-		Topic:   _eventbus.TopicNetworks,
-		Payload: _eventbus.NetworkDeletedPayload{ID: input.ID},
+	h.bus.Publish(eventbus.Event{
+		Type:    eventbus.EventNetworkDeleted,
+		Topic:   eventbus.TopicNetworks,
+		Payload: eventbus.NetworkDeletedPayload{ID: input.ID},
 	})
 	return nil, nil
 }

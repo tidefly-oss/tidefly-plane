@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,9 +14,33 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
 )
 
-// ── Container Event Watcher ───────────────────────────────────────────────────
-// Runs as a goroutine inside Server.Run — subscribes to runtime EventStream
-// and enqueues HealArgs jobs on die/kill/oom via River (no Redis).
+// recentStops tracks containers that received a stop event recently
+// so we can distinguish manual stops from unexpected exits in EventDie.
+type stopTracker struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+func newStopTracker() *stopTracker {
+	return &stopTracker{seen: make(map[string]time.Time)}
+}
+
+func (t *stopTracker) record(containerID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.seen[containerID] = time.Now()
+}
+
+func (t *stopTracker) wasRecentlyStopped(containerID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ts, ok := t.seen[containerID]
+	if !ok {
+		return false
+	}
+	delete(t.seen, containerID)
+	return time.Since(ts) < 3*time.Second
+}
 
 func (s *Server) watchContainerEvents(ctx context.Context) {
 	s.log.Info("jobs", "container event watcher started")
@@ -66,30 +91,45 @@ func (s *Server) handleContainerEvent(ctx context.Context, event runtime.Contain
 	switch event.Type {
 	case runtime.EventCreate:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, fmt.Sprintf("container created (image: %s)", event.Image), "")
+
 	case runtime.EventStart:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container started", "")
+
 	case runtime.EventRestart:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container restarted", "")
+
 	case runtime.EventUnpause:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container unpaused", "")
+
 	case runtime.EventDestroy:
 		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container removed", "")
+
 	case runtime.EventPause:
 		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container paused", "")
 
 	case runtime.EventStop:
-		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container stopped", "")
-		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q stopped", event.Name))
-
-	case runtime.EventDie:
-		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container exited unexpectedly — self-healing queued", "")
-		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q exited — attempting recovery", event.Name))
-		s.enqueueHeal(ctx, event)
+		s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, "container stopped", "")
+		s.stops.record(event.ContainerID)
 
 	case runtime.EventKill:
 		sig := event.Labels["signal"]
+		if sig == "15" || sig == "SIGTERM" {
+			s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, fmt.Sprintf("container stopped gracefully (signal: %s)", sig), "")
+			s.stops.record(event.ContainerID)
+			return
+		}
 		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, fmt.Sprintf("container killed (signal: %s) — self-healing queued", sig), "")
 		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q killed (signal: %s) — attempting recovery", event.Name, sig))
+		s.enqueueHeal(ctx, event)
+
+	case runtime.EventDie:
+		exitCode := event.Labels["exitCode"]
+		if exitCode == "0" || s.stops.wasRecentlyStopped(event.ContainerID) {
+			s.system.log.ContainerEvent("INFO", event.ContainerID, event.Name, fmt.Sprintf("container exited (exitCode=%s)", exitCode), "")
+			return
+		}
+		s.system.log.ContainerEvent("WARN", event.ContainerID, event.Name, "container exited unexpectedly — self-healing queued", "")
+		s.maybeNotify(ctx, event, models.SeverityWarn, fmt.Sprintf("container %q exited — attempting recovery", event.Name))
 		s.enqueueHeal(ctx, event)
 
 	case runtime.EventOOM:
@@ -145,8 +185,6 @@ func (s *Server) notifyOOM(ctx context.Context, event runtime.ContainerEvent) {
 	}
 }
 
-// enqueueHeal inserts a HealArgs job into River (PostgreSQL, no Redis).
-// Uses UniqueByArgs so duplicate heal jobs for the same service are deduplicated.
 func (s *Server) enqueueHeal(ctx context.Context, event runtime.ContainerEvent) {
 	serviceName := deriveServiceName(event.Name)
 	s.log.Info("jobs", fmt.Sprintf("event watcher: %s on %q → enqueuing heal", event.Type, event.Name))
@@ -180,10 +218,6 @@ func deriveServiceName(containerName string) string {
 	return containerName
 }
 
-// ── Webhook Handler ───────────────────────────────────────────────────────────
-// The WebhookDeployHandler stays as-is conceptually; it now uses River to
-// enqueue deploy/redeploy jobs rather than asynq.
-
 type WebhookArgs struct {
 	WebhookID  string `json:"webhook_id"`
 	DeliveryID string `json:"delivery_id"`
@@ -196,25 +230,20 @@ type WebhookArgs struct {
 
 func (WebhookArgs) Kind() string { return "webhook:deploy" }
 
-// EnqueueWebhook is called from the HTTP webhook handler.
-// The actual processing (redeploy vs fresh deploy) happens in WebhookWorker.Work.
 func EnqueueWebhook(ctx context.Context, client *river.Client[pgx.Tx], webhookID, deliveryID, branch, tag, commit string) error {
 	args := WebhookArgs{WebhookID: webhookID, DeliveryID: deliveryID}
 	args.Payload.Branch = branch
 	args.Payload.Tag = tag
 	args.Payload.Commit = commit
-
 	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: river.QueueDefault})
 	return err
 }
 
-// EnqueueDeploy is the canonical way for HTTP handlers to trigger a deploy.
 func EnqueueDeploy(ctx context.Context, client *river.Client[pgx.Tx], args DeployArgs) error {
 	_, err := client.Insert(ctx, args, &river.InsertOpts{Queue: "critical"})
 	return err
 }
 
-// EnqueueRedeploy triggers a redeploy for an existing service.
 func EnqueueRedeploy(ctx context.Context, client *river.Client[pgx.Tx], serviceID, imageOverride, gitToken string) error {
 	_, err := client.Insert(ctx, RedeployArgs{
 		ServiceID:     serviceID,
@@ -224,13 +253,11 @@ func EnqueueRedeploy(ctx context.Context, client *river.Client[pgx.Tx], serviceI
 	return err
 }
 
-// EnqueueDelete triggers async delete + cleanup for a service.
 func EnqueueDelete(ctx context.Context, client *river.Client[pgx.Tx], serviceID string) error {
 	_, err := client.Insert(ctx, DeleteArgs{ServiceID: serviceID}, &river.InsertOpts{Queue: river.QueueDefault})
 	return err
 }
 
-// EnqueueCleanup schedules async image/volume cleanup after a delete.
 func EnqueueCleanup(ctx context.Context, client *river.Client[pgx.Tx], serviceName string, images, volumes []string) error {
 	_, err := client.Insert(ctx, CleanupArgs{ServiceName: serviceName, Images: images, Volumes: volumes},
 		&river.InsertOpts{Queue: "low"})

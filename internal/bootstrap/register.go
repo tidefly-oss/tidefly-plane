@@ -36,9 +36,9 @@ import (
 	caddysvc "github.com/tidefly-oss/tidefly-plane/internal/infra/caddy"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 )
 
@@ -72,9 +72,9 @@ func Register(
 	riverClient *river.Client[pgx.Tx],
 	notifier *notification.Notifier,
 	metricsReg *metrics.Registry,
-	caService *_ca.Service,
+	caService *ca.Service,
 	agentClient *agent.Client,
-	bus *_eventbus.Bus,
+	bus *eventbus.Bus,
 	ingressAdapter ingress.Adapter,
 ) {
 	deployer := deploy.New(rt, db)
@@ -120,7 +120,7 @@ func Register(
 	template.NewHandler(templateLoader).RegisterRoutes(api, mw)
 	volume.NewHandler(rt, deployer, db, log, bus).RegisterRoutes(api, mw, adminMw)
 	manifest.NewHandler(db, deployer, riverClient, log, gitSvc, templateLoader, rt, ingressAdapter).RegisterRoutes(api, mw)
-	dashboard.NewHandler(rt, db, log, notifSvc).RegisterRoutes(api, mw)
+	dashboard.NewHandler(rt, db, log, notifSvc, metricsReg).RegisterRoutes(api, mw)
 
 	// ── REST + SSE ────────────────────────────────────────────────────────────
 	agent.NewHandler(db, caService, agentClient, bus, log).RegisterRoutes(api, r, mw, adminMw, sseAuth)

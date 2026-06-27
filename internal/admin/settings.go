@@ -5,10 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 )
-
-// ── GetSettings ───────────────────────────────────────────────────────────────
 
 type getSettingsOutput struct {
 	Body models.SystemSettings
@@ -22,8 +20,6 @@ func (h *Handler) getSettings(_ context.Context, _ *struct{}) (*getSettingsOutpu
 	return &getSettingsOutput{Body: s}, nil
 }
 
-// ── UpdateSettings ────────────────────────────────────────────────────────────
-
 type updateSettingsInput struct {
 	Body struct {
 		InstanceName                 *string `json:"instance_name,omitempty"`
@@ -36,8 +32,6 @@ type updateSettingsInput struct {
 		SMTPPassword                 *string `json:"smtp_password,omitempty"`
 		SMTPFrom                     *string `json:"smtp_from,omitempty"`
 		SMTPTLSEnabled               *bool   `json:"smtp_tls_enabled,omitempty"`
-		SessionTimeoutHours          *int    `json:"session_timeout_hours,omitempty"`
-		NotificationsEnabled         *bool   `json:"notifications_enabled,omitempty"`
 		ExternalNotificationsEnabled *bool   `json:"external_notifications_enabled,omitempty"`
 		SlackWebhookURL              *string `json:"slack_webhook_url,omitempty"`
 		DiscordWebhookURL            *string `json:"discord_webhook_url,omitempty"`
@@ -64,8 +58,6 @@ func (h *Handler) updateSettings(ctx context.Context, input *updateSettingsInput
 		SMTPPassword:                 input.Body.SMTPPassword,
 		SMTPFrom:                     input.Body.SMTPFrom,
 		SMTPTLSEnabled:               input.Body.SMTPTLSEnabled,
-		SessionTimeoutHours:          input.Body.SessionTimeoutHours,
-		NotificationsEnabled:         input.Body.NotificationsEnabled,
 		ExternalNotificationsEnabled: input.Body.ExternalNotificationsEnabled,
 		SlackWebhookURL:              input.Body.SlackWebhookURL,
 		DiscordWebhookURL:            input.Body.DiscordWebhookURL,
@@ -74,8 +66,8 @@ func (h *Handler) updateSettings(ctx context.Context, input *updateSettingsInput
 		NotifyOnWebhookFail:          input.Body.NotifyOnWebhookFail,
 		APIDocsEnabled:               input.Body.APIDocsEnabled,
 	})
-	h.log.Audit(ctx, _logger.AuditEntry{
-		Action:  _logger.AuditAdminSettingsUpdate,
+	h.log.Audit(ctx, logger.AuditEntry{
+		Action:  logger.AuditAdminSettingsUpdate,
 		Success: err == nil,
 	})
 	if err != nil {
@@ -83,8 +75,6 @@ func (h *Handler) updateSettings(ctx context.Context, input *updateSettingsInput
 	}
 	return &updateSettingsOutput{Body: s}, nil
 }
-
-// ── TestNotification ──────────────────────────────────────────────────────────
 
 type testNotificationInput struct {
 	Channel string `path:"channel" doc:"Channel to test: slack, discord, email"`

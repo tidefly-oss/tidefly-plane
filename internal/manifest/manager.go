@@ -14,7 +14,7 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/ingress"
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
@@ -73,7 +73,7 @@ type deleteArgs struct {
 
 func (deleteArgs) Kind() string { return "service:delete" }
 
-// DeployInput ist der HTTP-seitige Input-Type (von services.go benutzt).
+// DeployInput ist der HTTP-seitige Input-Type (von manifest.go benutzt).
 type DeployInput struct {
 	ManifestJSON     string `json:"manifest_json,omitempty"`
 	Image            string `json:"image,omitempty"`
@@ -174,7 +174,7 @@ func (m *Manager) BuildView(ctx context.Context, svc *models.Service) (rv *Runti
 func (m *Manager) List() ([]models.Service, error) {
 	var services []models.Service
 	if err := m.db.Where("manifest_service = ?", true).Find(&services).Error; err != nil {
-		return nil, fmt.Errorf("list services: %w", err)
+		return nil, fmt.Errorf("list manifest: %w", err)
 	}
 	return services, nil
 }

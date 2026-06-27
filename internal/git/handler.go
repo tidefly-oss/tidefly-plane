@@ -5,19 +5,19 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/middleware"
 	"github.com/tidefly-oss/tidefly-plane/internal/models"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
 	svc   *Service
 	store *Store
-	log   *_logger.Logger
-	bus   *_eventbus.Bus
+	log   *logger.Logger
+	bus   *eventbus.Bus
 }
 
-func NewHandler(svc *Service, db *gorm.DB, log *_logger.Logger, bus *_eventbus.Bus) *Handler {
+func NewHandler(svc *Service, db *gorm.DB, log *logger.Logger, bus *eventbus.Bus) *Handler {
 	return &Handler{
 		svc:   svc,
 		store: NewStore(db),

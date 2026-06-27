@@ -23,11 +23,11 @@ import (
 	"github.com/tidefly-oss/tidefly-plane/internal/infra/runtime/podman"
 	"github.com/tidefly-oss/tidefly-plane/internal/jobs"
 	"github.com/tidefly-oss/tidefly-plane/internal/notification"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_ca"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_crypto"
-	"github.com/tidefly-oss/tidefly-plane/internal/platform/_eventbus"
-	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/_logger"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/config"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/crypto"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
+	applogger "github.com/tidefly-oss/tidefly-plane/internal/platform/logger"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/metrics"
 	"github.com/tidefly-oss/tidefly-plane/internal/template"
 	"github.com/tidefly-oss/tidefly-plane/internal/webhook"
@@ -156,11 +156,11 @@ func ProvideTemplateLoader() *template.Loader {
 	return template.NewLoader()
 }
 
-func ProvideEventBus() *_eventbus.Bus {
-	return _eventbus.New()
+func ProvideEventBus() *eventbus.Bus {
+	return eventbus.New()
 }
 
-func ProvideNotificationService(db *gorm.DB, bus *_eventbus.Bus) *notification.Service {
+func ProvideNotificationService(db *gorm.DB, bus *eventbus.Bus) *notification.Service {
 	return notification.New(db, bus)
 }
 
@@ -202,12 +202,12 @@ func ProvideJobServer(
 	ingressAdapter ingress.Adapter,
 	agentClient *agent.Client,
 	rec *reconciler.Reconciler,
+	bus *eventbus.Bus, // NEU
 ) (*jobs.Server, func(), error) {
 	if !cfg.Jobs.Enabled {
 		return nil, func() {}, nil
 	}
 
-	// Run River migrations so job tables exist before starting
 	ctx := context.Background()
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
@@ -223,23 +223,23 @@ func ProvideJobServer(
 		return nil, nil, fmt.Errorf("river migrate: %w", err)
 	}
 
-	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient, rec)
+	srv, err := jobs.NewServer(pool, cfg.Jobs, rt, db, log, notifSvc, notifier, metricsReg, ingressAdapter, agentClient, rec, bus)
 	return srv, func() {}, nil
 }
 
-func ProvideCAService(cfg *config.Config, db *gorm.DB) (*_ca.Service, error) {
-	encKey, err := _crypto.KeyFromBase64(cfg.App.EncryptionKey)
+func ProvideCAService(cfg *config.Config, db *gorm.DB) (*ca.Service, error) {
+	encKey, err := crypto.KeyFromBase64(cfg.App.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("ca: invalid encryption key: %w", err)
 	}
-	svc := _ca.New(db, encKey)
+	svc := ca.New(db, encKey)
 	if err := svc.Init(); err != nil {
 		return nil, fmt.Errorf("ca: init failed: %w", err)
 	}
 	return svc, nil
 }
 
-func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *_ca.Service) *agent.Server {
+func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service) *agent.Server {
 	return agent.NewServer(db, caService, ":"+cfg.App.AgentGRPCPort)
 }
 
