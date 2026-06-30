@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/tidefly-oss/tidefly-plane/internal/agent/proto"
@@ -264,7 +266,32 @@ func (s *Server) buildTLSConfig() (*tls.Config, error) {
 		return nil, fmt.Errorf("get CA cert: %w", err)
 	}
 
-	_, planeCertPEM, planeKeyPEM, err := s.caService.IssuePlaneCert(nil)
+	// Collect DNS SANs from env so the plane cert is valid for the public hostname
+	var dnsNames []string
+	if instanceURL := os.Getenv("INSTANCE_URL"); instanceURL != "" {
+		host := strings.TrimPrefix(instanceURL, "https://")
+		host = strings.TrimPrefix(host, "http://")
+		host = strings.TrimSuffix(host, "/")
+		if host != "" {
+			dnsNames = append(dnsNames, host)
+		}
+	}
+	if caddyDomain := os.Getenv("CADDY_BASE_DOMAIN"); caddyDomain != "" {
+		candidate := "dashboard." + caddyDomain
+		// avoid duplicates
+		found := false
+		for _, n := range dnsNames {
+			if n == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dnsNames = append(dnsNames, candidate)
+		}
+	}
+
+	_, planeCertPEM, planeKeyPEM, err := s.caService.IssuePlaneCert(dnsNames)
 	if err != nil {
 		return nil, fmt.Errorf("issue plane cert: %w", err)
 	}
