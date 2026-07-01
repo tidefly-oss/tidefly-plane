@@ -14,6 +14,7 @@ import (
 
 	"github.com/tidefly-oss/tidefly-plane/internal/agent/proto"
 	"github.com/tidefly-oss/tidefly-plane/internal/platform/ca"
+	"github.com/tidefly-oss/tidefly-plane/internal/platform/eventbus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -35,18 +36,20 @@ type Server struct {
 
 	db        *gorm.DB
 	caService *ca.Service
+	bus       *eventbus.Bus
 	registry  *Registry
 	grpcSrv   *grpc.Server
 	port      string
 }
 
-func NewServer(db *gorm.DB, caService *ca.Service, port string) *Server {
+func NewServer(db *gorm.DB, caService *ca.Service, bus *eventbus.Bus, port string) *Server {
 	if port == "" {
 		port = defaultGRPCPort
 	}
 	return &Server{
 		db:        db,
 		caService: caService,
+		bus:       bus,
 		registry:  NewRegistry(),
 		port:      port,
 	}
@@ -132,6 +135,17 @@ func (s *Server) Connect(stream proto.AgentService_ConnectServer) error {
 	defer s.registry.Unregister(workerID)
 
 	slog.Info("agent server: worker connected", "worker_id", workerID, "ip", peerIP)
+
+	// Publish connected event
+	s.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventWorkerUpdated,
+		Topic: eventbus.TopicWorkers,
+		Payload: eventbus.WorkerUpdatedPayload{
+			ID:     workerID,
+			Name:   worker.Name,
+			Status: string(models.WorkerStatusConnected),
+		},
+	})
 
 	if err := s.handleHello(stream, &worker, peerIP); err != nil {
 		return err
@@ -220,6 +234,19 @@ func (s *Server) handleMessage(
 			"cpu", hb.CpuPercent,
 			"mem", hb.MemPercent,
 		)
+		// Publish heartbeat over WS so frontend updates reactively
+		s.bus.Publish(eventbus.Event{
+			Type:  eventbus.EventWorkerUpdated,
+			Topic: eventbus.TopicWorkers,
+			Payload: eventbus.WorkerUpdatedPayload{
+				ID:             worker.ID,
+				Name:           worker.Name,
+				Status:         string(models.WorkerStatusConnected),
+				CPUPercent:     hb.CpuPercent,
+				MemPercent:     hb.MemPercent,
+				ContainerCount: hb.ContainerCount,
+			},
+		})
 
 	case *proto.AgentMessage_CommandAck:
 		conn.resolveAck(p.CommandAck.CommandId, p.CommandAck.Accepted, p.CommandAck.Reason)
@@ -256,6 +283,15 @@ func (s *Server) handleMessage(
 func (s *Server) markDisconnected(worker *models.WorkerNode) {
 	worker.MarkDisconnected()
 	s.db.Model(worker).Update("status", models.WorkerStatusDisconnected)
+	s.bus.Publish(eventbus.Event{
+		Type:  eventbus.EventWorkerUpdated,
+		Topic: eventbus.TopicWorkers,
+		Payload: eventbus.WorkerUpdatedPayload{
+			ID:     worker.ID,
+			Name:   worker.Name,
+			Status: string(models.WorkerStatusDisconnected),
+		},
+	})
 }
 
 // ── TLS ───────────────────────────────────────────────────────────────────────
@@ -266,7 +302,6 @@ func (s *Server) buildTLSConfig() (*tls.Config, error) {
 		return nil, fmt.Errorf("get CA cert: %w", err)
 	}
 
-	// Collect DNS SANs from env so the plane cert is valid for the public hostname
 	var dnsNames []string
 	if instanceURL := os.Getenv("INSTANCE_URL"); instanceURL != "" {
 		host := strings.TrimPrefix(instanceURL, "https://")
@@ -278,7 +313,6 @@ func (s *Server) buildTLSConfig() (*tls.Config, error) {
 	}
 	if caddyDomain := os.Getenv("CADDY_BASE_DOMAIN"); caddyDomain != "" {
 		candidate := "dashboard." + caddyDomain
-		// avoid duplicates
 		found := false
 		for _, n := range dnsNames {
 			if n == candidate {
