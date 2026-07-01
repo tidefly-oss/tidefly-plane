@@ -242,8 +242,8 @@ func ProvideCAService(cfg *config.Config, db *gorm.DB) (*ca.Service, error) {
 	return svc, nil
 }
 
-func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service) *agent.Server {
-	return agent.NewServer(db, caService, ":"+cfg.App.AgentGRPCPort)
+func ProvideAgentServer(cfg *config.Config, db *gorm.DB, caService *ca.Service, bus *eventbus.Bus) *agent.Server {
+	return agent.NewServer(db, caService, bus, ":"+cfg.App.AgentGRPCPort)
 }
 
 func ProvideAgentClient(srv *agent.Server) *agent.Client {

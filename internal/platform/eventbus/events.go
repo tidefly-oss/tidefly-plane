@@ -110,11 +110,12 @@ type DeployFailedPayload struct {
 }
 
 type WorkerUpdatedPayload struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Status     string  `json:"status"`
-	CPUPercent float64 `json:"cpu_percent"`
-	MemPercent float64 `json:"mem_percent"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Status         string  `json:"status"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	MemPercent     float64 `json:"mem_percent"`
+	ContainerCount int32   `json:"container_count"`
 }
 
 type GitIntegrationPayload struct {
