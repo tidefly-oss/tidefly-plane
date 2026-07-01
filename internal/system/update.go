@@ -110,7 +110,6 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	h.log.Info("self_update", "docker client initialized")
 	defer func(cli *dockerclient.Client) { _ = cli.Close() }(cli)
 
-	// ── Pull all new images in parallel ──────────────────────────────────
 	var wg sync.WaitGroup
 	for _, c := range components {
 		img, ok := componentImages[c.Name]
@@ -143,7 +142,6 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 	}
 	wg.Wait()
 
-	// ── Update Caddy first (config backup/restore) ────────────────────────
 	for _, c := range components {
 		if c.Name != componentCaddy {
 			continue
@@ -156,7 +154,6 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		h.publishProgress("restarted", "tidefly_caddy updated and running")
 	}
 
-	// ── Blue-Green for UI then Plane ──────────────────────────────────────
 	blueGreenOrder := []string{componentUI, componentPlane}
 	for _, name := range blueGreenOrder {
 		var comp *ComponentVersion
@@ -187,6 +184,9 @@ func (h *Handler) pullAndRestartAll(ctx context.Context, components []ComponentV
 		h.publishProgress("restarted", cn+" updated with zero downtime")
 	}
 
+	// Invalidate version cache so frontend shows updated versions immediately
+	globalVersionCache.set(nil)
+
 	h.bus.Publish(eventbus.Event{
 		Type:    eventbus.EventDeployDone,
 		Topic:   eventbus.TopicDeploy,
@@ -204,11 +204,16 @@ func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client,
 		return fmt.Errorf("inspect %s: %w", name, err)
 	}
 
+	// Save original port bindings to restore after update
+	originalPortBindings := info.HostConfig.PortBindings
+
 	_ = cli.ContainerRemove(ctx, greenName, dockercontainer.RemoveOptions{Force: true})
 
 	containerCfg := info.Config
 	containerCfg.Image = newImage
 	hostCfg := info.HostConfig
+
+	// Remove port bindings for green to avoid conflicts with old container
 	hostCfg.PortBindings = nil
 	hostCfg.PublishAllPorts = false
 
@@ -273,6 +278,26 @@ func (h *Handler) blueGreenUpdate(ctx context.Context, cli *dockerclient.Client,
 
 	if err := cli.ContainerRename(ctx, created.ID, name); err != nil {
 		return fmt.Errorf("rename %s → %s: %w", greenName, name, err)
+	}
+
+	// Restore original port bindings by recreating the container
+	if len(originalPortBindings) > 0 {
+		h.publishProgress("restarting", fmt.Sprintf("restoring port bindings for %s", name))
+		_ = cli.ContainerStop(ctx, name, dockercontainer.StopOptions{Timeout: new(5)})
+		_ = cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true})
+
+		containerCfg.Image = newImage
+		hostCfg.PortBindings = originalPortBindings
+		hostCfg.PublishAllPorts = false
+
+		restored, err := cli.ContainerCreate(ctx, containerCfg, hostCfg, networkCfg, nil, name)
+		if err != nil {
+			h.log.Warnw("self_update", "restore port bindings failed", "error", err)
+		} else {
+			if err := cli.ContainerStart(ctx, restored.ID, dockercontainer.StartOptions{}); err != nil {
+				h.log.Warnw("self_update", "start with restored port bindings failed", "error", err)
+			}
+		}
 	}
 
 	go func() {
